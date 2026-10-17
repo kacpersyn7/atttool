@@ -1,0 +1,1620 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"></head><body>
+<title>AttTool</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: mission-console — fixed control rail left, live 3D viewport right, instrument overlays on the viewport.
+   Deliberately single dark look (space viewport); all colors explicit. */
+:root{
+  color-scheme: dark;
+  --ink0:#0a1018;      /* page / viewport ground */
+  --ink1:#101925;      /* rail */
+  --ink2:#162232;      /* cards */
+  --ink3:#1e2d41;      /* inputs */
+  --line:#263750;
+  --text:#d9e2ee;
+  --muted:#8697ae;
+  --faint:#5d6e86;
+  --sun:#f2a93b;       /* accent = sunlight */
+  --sun-soft:rgba(242,169,59,.14);
+  --ax-x:#ff6161; --ax-y:#46d38a; --ax-z:#4f8cff;
+  --eig:#c48bff; --probe:#ff7bd5; --cyan:#4fd6e8;
+  --ok:#46d38a; --warn:#f2c23b; --bad:#ff5f5f;
+  --f-ui:"Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+  --f-mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --rail:388px;
+}
+html,body{height:100%}
+body{background:var(--ink0);color:var(--text);font-family:var(--f-ui);font-size:14px;margin:0;overflow:hidden}
+*{box-sizing:border-box}
+button,input,select,textarea{font:inherit;color:inherit}
+#app{display:grid;grid-template-rows:auto 1fr;grid-template-columns:minmax(0,1fr);height:100%}
+header{display:flex;align-items:center;gap:16px;padding:0 16px;height:50px;border-bottom:1px solid var(--line);background:var(--ink1)}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.06em;font-size:17px;white-space:nowrap}
+.brand svg{flex:none}
+.brand small{font-weight:500;color:var(--muted);letter-spacing:.02em;font-size:13px}
+nav.tabs{display:flex;gap:2px;height:100%;overflow-x:auto;scrollbar-width:none}
+nav.tabs button{background:none;border:0;border-bottom:2px solid transparent;padding:0 14px;color:var(--muted);font-weight:600;font-size:14.5px;letter-spacing:.02em;cursor:pointer;white-space:nowrap}
+nav.tabs button:hover{color:var(--text)}
+nav.tabs button[aria-selected="true"]{color:var(--text);border-bottom-color:var(--sun)}
+nav.tabs button .k{font-family:var(--f-mono);font-size:11px;color:var(--faint);margin-right:6px}
+.hspace{flex:1}
+.hbtn{background:var(--ink2);border:1px solid var(--line);border-radius:6px;padding:5px 10px;cursor:pointer;color:var(--text);font-weight:500;white-space:nowrap}
+.hbtn:hover{border-color:var(--sun)}
+main{display:grid;grid-template-columns:var(--rail) 1fr;min-height:0}
+aside{min-width:0;background:var(--ink1);border-right:1px solid var(--line);overflow-y:auto;padding:12px 12px 40px;display:flex;flex-direction:column;gap:10px;min-height:0}
+#vp{position:relative;min-width:0;min-height:0;overflow:hidden;background:var(--ink0)}
+#vp canvas.main{display:block;width:100%;height:100%;outline:none}
+.card{background:var(--ink2);border:1px solid var(--line);border-radius:8px;padding:10px 12px 12px;display:flex;flex-direction:column;gap:8px}
+.card h3{margin:0;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:8px}
+.card h3 .sp{flex:1}
+.card h3 .tag{font-family:var(--f-mono);letter-spacing:0;text-transform:none;font-size:11px;color:var(--faint);font-weight:400}
+.tip{font-size:13px;color:var(--muted);line-height:1.4;margin:0}
+.tip b{color:var(--text);font-weight:600}
+.row{display:grid;grid-template-columns:108px 1fr 70px;align-items:center;gap:8px}
+.row.two{grid-template-columns:108px 1fr}
+.row label,.lbl{color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row label .ax{font-family:var(--f-mono);font-size:12px}
+input[type=range]{width:100%;accent-color:var(--sun);height:18px;margin:0;min-width:0}
+input[type=number],input[type=text],input[type=datetime-local],select,textarea{background:var(--ink3);border:1px solid var(--line);border-radius:5px;padding:4px 6px;min-width:0;width:100%}
+input[type=number]{font-family:var(--f-mono);font-size:12.5px;text-align:right;-moz-appearance:textfield}
+input::-webkit-inner-spin-button{opacity:.4}
+input:focus-visible,select:focus-visible,button:focus-visible,textarea:focus-visible{outline:2px solid var(--sun);outline-offset:1px}
+select{padding:5px 6px;cursor:pointer}
+textarea{font-family:var(--f-mono);font-size:11.5px;min-height:90px;resize:vertical}
+.grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.cell{display:flex;flex-direction:column;gap:2px;min-width:0}
+.cell span{font-family:var(--f-mono);font-size:11px;color:var(--faint)}
+.btns{display:flex;flex-wrap:wrap;gap:6px}
+.btn{background:var(--ink3);border:1px solid var(--line);border-radius:5px;padding:4px 9px;cursor:pointer;font-weight:500;font-size:13px;white-space:nowrap}
+.btn:hover{border-color:var(--sun);color:#fff}
+.btn.primary{background:var(--sun);color:#1a1205;border-color:var(--sun);font-weight:600}
+.btn.primary:hover{filter:brightness(1.08);color:#1a1205}
+.btn.on{border-color:var(--sun);background:var(--sun-soft)}
+.btn.mono{font-family:var(--f-mono);font-size:12px}
+.btn.danger:hover{border-color:var(--bad)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:5px;overflow:hidden}
+.seg button{background:var(--ink3);border:0;padding:3px 9px;cursor:pointer;font-size:12.5px;color:var(--muted)}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button.on{background:var(--sun-soft);color:var(--text)}
+.mat{font-family:var(--f-mono);font-size:12.5px;display:grid;grid-template-columns:repeat(3,1fr);gap:2px 10px;padding:8px 10px;background:var(--ink0);border-radius:6px;border-left:2px solid var(--line);border-right:2px solid var(--line);font-variant-numeric:tabular-nums}
+.mat div{text-align:right}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:13px}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0;font-family:var(--f-mono);font-size:12.5px;text-align:right;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid var(--line);white-space:nowrap}
+.chip::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.chip.ok{color:var(--ok)} .chip.warn{color:var(--warn)} .chip.bad{color:var(--bad)} .chip.dim{color:var(--muted)}
+.chk{display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer;color:var(--text)}
+.chk input{accent-color:var(--sun)}
+.checks{display:grid;grid-template-columns:1fr 1fr;gap:4px 10px}
+.formula{font-family:var(--f-mono);font-size:12px;color:var(--text);background:var(--ink0);border-radius:5px;padding:6px 8px;overflow-x:auto;white-space:nowrap}
+details.more summary{cursor:pointer;color:var(--muted);font-size:13px}
+details.more[open] summary{margin-bottom:6px}
+.complist{display:flex;flex-direction:column;gap:2px;max-height:240px;overflow-y:auto}
+.comp{display:grid;grid-template-columns:10px 1fr auto;gap:8px;align-items:center;padding:4px 8px;border-radius:5px;cursor:pointer;border:1px solid transparent;background:none;text-align:left;width:100%}
+.comp:hover{background:var(--ink3)}
+.comp.sel{border-color:var(--sun);background:var(--sun-soft)}
+.comp i{width:10px;height:10px;border-radius:2px}
+.comp small{color:var(--faint);font-family:var(--f-mono);font-size:11px}
+/* viewport overlays */
+.ov{position:absolute;pointer-events:none;font-size:12.5px}
+.ov>*{pointer-events:auto}
+.hud{background:rgba(10,16,24,.78);backdrop-filter:blur(6px);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+#hudTL{top:12px;left:12px;max-width:min(340px,calc(100% - 24px))}
+#hudTR{top:12px;right:12px;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;max-width:60%}
+#caption{left:50%;transform:translateX(-50%);bottom:18px;max-width:min(560px,calc(100% - 24px));text-align:center;font-size:14px}
+#caption .hud{padding:8px 14px}
+#inset{position:absolute;right:12px;width:min(290px,42%);aspect-ratio:1/1;border:1px solid var(--line);border-radius:8px;cursor:grab;touch-action:none}
+#inset .t{position:absolute;top:6px;left:8px;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);pointer-events:none}
+#timeline{position:absolute;left:12px;right:12px;bottom:12px;height:auto}
+#timeline canvas{width:100%;display:block;cursor:crosshair}
+.legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted)}
+.legend i{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}
+.hud .kv{min-width:220px}
+.hud h4{margin:0 0 6px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.vbtn{background:rgba(16,25,37,.85);border:1px solid var(--line);border-radius:5px;padding:3px 8px;cursor:pointer;font-family:var(--f-mono);font-size:11.5px;color:var(--text)}
+.vbtn:hover,.vbtn.on{border-color:var(--sun)}
+#modal{position:fixed;inset:0;background:rgba(4,8,14,.7);display:flex;align-items:center;justify-content:center;padding:16px;z-index:20}
+#modal .box{background:var(--ink1);border:1px solid var(--line);border-radius:10px;max-width:720px;width:100%;max-height:88vh;overflow-y:auto;padding:18px 22px}
+#modal h2{margin:0 0 6px;font-size:20px}
+#modal h3{font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--sun);margin:18px 0 6px}
+#modal p,#modal li{color:var(--text);line-height:1.5;max-width:68ch}
+#modal code{font-family:var(--f-mono);font-size:12.5px;background:var(--ink0);padding:1px 5px;border-radius:4px}
+#toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--sun);color:#1a1205;font-weight:600;padding:6px 14px;border-radius:6px;z-index:30;transition:opacity .2s}
+.status{display:flex;flex-wrap:wrap;gap:6px}
+.contents{display:contents}
+[hidden]{display:none!important}
+@media (max-width:860px){
+  body{overflow:auto}
+  #app{height:auto;min-height:100%}
+  main{grid-template-columns:minmax(0,1fr);grid-template-rows:62vh auto}
+  nav.tabs{min-width:0;flex:1 1 auto}
+  .hspace{display:none}
+  .hbtn{padding:5px 8px}
+  #hudTL{font-size:11px}
+  #hudTL .hud{padding:6px 8px}
+  #hudTL .kv{min-width:0;font-size:11.5px}
+  #hudTL .kv dd{font-size:11px}
+  #hudTL .legend,#hudTL .tip{display:none}
+  #vp{grid-row:1;min-height:360px}
+  aside{grid-row:2;border-right:0;border-top:1px solid var(--line);overflow:visible;padding-inline:16px}
+  .brand small{display:none}
+  header{padding-inline:12px;gap:8px}
+  #inset{width:min(180px,40%)}
+  #hudTR{max-width:50%}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div id="app">
+  <header>
+    <div class="brand">
+      <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5" fill="none" stroke="#263750" stroke-width="1.4"/><path d="M12 12 L21 12" stroke="#ff6161" stroke-width="2.2" stroke-linecap="round"/><path d="M12 12 L5.6 5.6" stroke="#46d38a" stroke-width="2.2" stroke-linecap="round"/><path d="M12 12 L12 2.6" stroke="#4f8cff" stroke-width="2.2" stroke-linecap="round"/><circle cx="12" cy="12" r="2" fill="#f2a93b"/></svg>
+      ATTTOOL <small>attitude workbench</small>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button role="tab" id="tab-rot" data-tab="rot"><span class="k">1</span>Rotation Lab</button>
+      <button role="tab" id="tab-orbit" data-tab="orbit"><span class="k">2</span>Orbit &amp; Frames</button>
+      <button role="tab" id="tab-layout" data-tab="layout"><span class="k">3</span>Spacecraft Layout</button>
+    </nav>
+    <div class="hspace"></div>
+    <button class="hbtn" id="btnConv">Conventions</button>
+  </header>
+  <main>
+    <aside id="rail"></aside>
+    <div id="vp">
+      <div class="ov" id="hudTL"></div>
+      <div class="ov" id="hudTR"></div>
+      <div class="ov" id="caption" hidden><div class="hud" id="captionText"></div></div>
+      <div id="inset" hidden><span class="t">Body frame view · drag</span></div>
+      <div class="ov" id="timeline" hidden><div class="hud"><canvas id="tlc" height="110"></canvas></div></div>
+    </div>
+  </main>
+</div>
+<div id="modal" hidden></div>
+<div id="toast" hidden></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js"></script>
+<script>
+/* ===================== ATTITUDE MATH CORE =====================
+ Conventions (documented in-app):
+ - C_BR : DCM, reference -> body. v_B = C_BR * v_R. Rows = body axes expressed in R.
+ - Quaternion q = {w,x,y,z}. Same numbers can be read two ways:
+     * Hamilton, active: R(q) = C_RB  (rotates reference axes onto body axes)
+     * Shuster/JPL (Markley & Crassidis): A(q) = C_BR
+ - Euler "i-j-k" (e.g. 3-2-1): C_BR = R_k(t3) R_j(t2) R_i(t1), R_n = frame (passive) rotations.
+   i.e. rotate frame by t1 about axis i, then t2 about NEW axis j, then t3 about NEWEST axis k.
+================================================================ */
+const AM = (() => {
+  const D2R = Math.PI / 180, R2D = 180 / Math.PI;
+  const v = {
+    add: (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]],
+    sub: (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]],
+    scale: (a, s) => [a[0] * s, a[1] * s, a[2] * s],
+    dot: (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2],
+    cross: (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]],
+    norm: a => Math.hypot(a[0], a[1], a[2]),
+    unit: a => { const n = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / n, a[1] / n, a[2] / n]; },
+    angle: (a, b) => Math.acos(Math.max(-1, Math.min(1, v.dot(v.unit(a), v.unit(b))))),
+  };
+  // 3x3 matrices as arrays of rows
+  const m = {
+    I: () => [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+    mul: (A, B) => A.map((r, i) => [0, 1, 2].map(j => r[0] * B[0][j] + r[1] * B[1][j] + r[2] * B[2][j])),
+    mulv: (A, x) => A.map(r => r[0] * x[0] + r[1] * x[1] + r[2] * x[2]),
+    T: A => [0, 1, 2].map(i => [A[0][i], A[1][i], A[2][i]]),
+    det: A => A[0][0] * (A[1][1] * A[2][2] - A[1][2] * A[2][1]) - A[0][1] * (A[1][0] * A[2][2] - A[1][2] * A[2][0]) + A[0][2] * (A[1][0] * A[2][1] - A[1][1] * A[2][0]),
+    fromCols: (c0, c1, c2) => [[c0[0], c1[0], c2[0]], [c0[1], c1[1], c2[1]], [c0[2], c1[2], c2[2]]],
+    fromRows: (r0, r1, r2) => [r0.slice(), r1.slice(), r2.slice()],
+    col: (A, j) => [A[0][j], A[1][j], A[2][j]],
+  };
+  // passive (frame) elementary rotation about axis n (1,2,3)
+  function Rp(n, a) {
+    const c = Math.cos(a), s = Math.sin(a);
+    if (n === 1) return [[1, 0, 0], [0, c, s], [0, -s, c]];
+    if (n === 2) return [[c, 0, -s], [0, 1, 0], [s, 0, c]];
+    return [[c, s, 0], [-s, c, 0], [0, 0, 1]];
+  }
+  const Ra = (n, a) => m.T(Rp(n, a)); // active rotation
+  // ---- quaternion ----
+  const q = {
+    id: () => ({ w: 1, x: 0, y: 0, z: 0 }),
+    norm: p => Math.hypot(p.w, p.x, p.y, p.z),
+    unit: p => { const n = q.norm(p) || 1; return { w: p.w / n, x: p.x / n, y: p.y / n, z: p.z / n }; },
+    neg: p => ({ w: -p.w, x: -p.x, y: -p.y, z: -p.z }),
+    conj: p => ({ w: p.w, x: -p.x, y: -p.y, z: -p.z }),
+    // Hamilton product a∘b
+    hmul: (a, b) => ({
+      w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+      x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+      y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+      z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+    }),
+    canon: p => (p.w < 0 ? q.neg(p) : p),
+  };
+  // q -> C_BR (Shuster attitude matrix A(q))
+  function q2C(p) {
+    const { w, x, y, z } = p;
+    return [
+      [w * w + x * x - y * y - z * z, 2 * (x * y + w * z), 2 * (x * z - w * y)],
+      [2 * (x * y - w * z), w * w - x * x + y * y - z * z, 2 * (y * z + w * x)],
+      [2 * (x * z + w * y), 2 * (y * z - w * x), w * w - x * x - y * y + z * z],
+    ];
+  }
+  // C_BR -> q (Shepperd)
+  function C2q(A) {
+    const tr = A[0][0] + A[1][1] + A[2][2];
+    let r;
+    const cands = [tr, A[0][0], A[1][1], A[2][2]];
+    const k = cands.indexOf(Math.max(...cands));
+    if (k === 0) { const w = 0.5 * Math.sqrt(1 + tr); r = { w, x: (A[1][2] - A[2][1]) / (4 * w), y: (A[2][0] - A[0][2]) / (4 * w), z: (A[0][1] - A[1][0]) / (4 * w) }; }
+    else if (k === 1) { const x = 0.5 * Math.sqrt(1 + A[0][0] - A[1][1] - A[2][2]); r = { x, w: (A[1][2] - A[2][1]) / (4 * x), y: (A[0][1] + A[1][0]) / (4 * x), z: (A[0][2] + A[2][0]) / (4 * x) }; }
+    else if (k === 2) { const y = 0.5 * Math.sqrt(1 - A[0][0] + A[1][1] - A[2][2]); r = { y, w: (A[2][0] - A[0][2]) / (4 * y), x: (A[0][1] + A[1][0]) / (4 * y), z: (A[1][2] + A[2][1]) / (4 * y) }; }
+    else { const z = 0.5 * Math.sqrt(1 - A[0][0] - A[1][1] + A[2][2]); r = { z, w: (A[0][1] - A[1][0]) / (4 * z), x: (A[0][2] + A[2][0]) / (4 * z), y: (A[1][2] + A[2][1]) / (4 * z) }; }
+    return q.canon(q.unit(r));
+  }
+  // ---- Euler ----
+  const SEQS = ['321', '312', '213', '231', '123', '132', '313', '323', '121', '131', '212', '232'];
+  const seqAxes = s => s.split('').map(Number);
+  const isSymmetric = s => s[0] === s[2];
+  function euler2C(seq, t) { // t in rad
+    const [i, j, k] = seqAxes(seq);
+    return m.mul(Rp(k, t[2]), m.mul(Rp(j, t[1]), Rp(i, t[0])));
+  }
+  function rotAngleAbout(M, n) { // active rotation M about axis n (0-based) -> angle
+    const p = (n + 1) % 3, r = (n + 2) % 3;
+    return Math.atan2(M[r][p], M[p][p]);
+  }
+  // C_BR -> euler (rad). Uses Bernardes & Viollet (2022) on the Hamilton active quaternion of C_RB,
+  // intrinsic sequence. Gimbal-lock: t1 := 0, t3 solved from residual.
+  function C2euler(seq, C) {
+    const qq = C2q(C);
+    const Q = [qq.w, qq.x, qq.y, qq.z];
+    let [I, J, K] = seqAxes(seq);
+    // intrinsic (I,J,K) == extrinsic (K,J,I)
+    let i = K, j = J, k = I;
+    const proper = i === k;
+    if (proper) k = 6 - i - j;
+    const eps = (i - j) * (j - k) * (k - i) / 2;
+    let a, b, c, d;
+    if (proper) { a = Q[0]; b = Q[i]; c = Q[j]; d = Q[k] * eps; }
+    else { a = Q[0] - Q[j]; b = Q[i] + Q[k] * eps; c = Q[j] + Q[0]; d = Q[k] * eps - Q[i]; }
+    let th2 = 2 * Math.atan2(Math.hypot(c, d), Math.hypot(a, b));
+    const tp = Math.atan2(b, a), tm = Math.atan2(d, c);
+    let e1 = tp - tm, e3 = tp + tm; // extrinsic first / third
+    const sing = Math.abs(th2) < 1e-7 || Math.abs(th2 - Math.PI) < 1e-7;
+    if (!proper) { e3 *= eps; th2 -= Math.PI / 2; }
+    // back to intrinsic order
+    let t1 = e3, t2 = th2, t3 = e1;
+    // the formulas above can come out as (e1,e3) swapped depending on paper conventions -> verify & fix
+    const wrap = x => Math.atan2(Math.sin(x), Math.cos(x));
+    let cand = [[wrap(t1), t2, wrap(t3)], [wrap(t3), t2, wrap(t1)]];
+    if (sing) {
+      // gimbal lock: t1 = 0, solve t3 from residual
+      const [Ii, Jj, Kk] = seqAxes(seq);
+      const CRB = m.T(C);
+      const Mres = m.mul(m.T(Ra(Jj, t2)), CRB); // Ra(I,0)=I
+      const t3s = rotAngleAbout(Mres, Kk - 1);
+      cand = [[0, t2, t3s]];
+    }
+    let best = cand[0], bestErr = 1e9;
+    for (const c3 of cand) {
+      const E = euler2C(seq, c3);
+      let err = 0; for (let r = 0; r < 3; r++) for (let s = 0; s < 3; s++) err += Math.abs(E[r][s] - C[r][s]);
+      if (err < bestErr) { bestErr = err; best = c3; }
+    }
+    return best;
+  }
+  function gimbalInfo(seq, t) {
+    // distance (rad) of middle angle from singularity
+    const d = isSymmetric(seq) ? Math.min(Math.abs(Math.sin(t[1]))) : Math.abs(Math.cos(t[1]));
+    return Math.asin(Math.min(1, d)); // approx angular margin
+  }
+  // ---- axis-angle ----
+  function q2axisAngle(p) {
+    p = q.canon(q.unit(p));
+    const ang = 2 * Math.acos(Math.min(1, p.w));
+    const s = Math.sqrt(Math.max(0, 1 - p.w * p.w));
+    const axis = s < 1e-9 ? [1, 0, 0] : [p.x / s, p.y / s, p.z / s];
+    return { axis, angle: ang };
+  }
+  function axisAngle2q(axis, ang) {
+    const u = v.unit(axis), s = Math.sin(ang / 2);
+    return { w: Math.cos(ang / 2), x: u[0] * s, y: u[1] * s, z: u[2] * s };
+  }
+  function C2axisAngle(C) { return q2axisAngle(C2q(C)); }
+  // triad / two-vector alignment: body vectors b1 (primary), b2 (secondary) -> ref vectors r1, r2. returns C_BR
+  function triad(b1, b2, r1, r2) {
+    const tb1 = v.unit(b1), tb2 = v.unit(v.cross(b1, b2)), tb3 = v.cross(tb1, tb2);
+    const tr1 = v.unit(r1), tr2 = v.unit(v.cross(r1, r2)), tr3 = v.cross(tr1, tr2);
+    const Mb = m.fromCols(tb1, tb2, tb3), Mr = m.fromCols(tr1, tr2, tr3);
+    return m.mul(Mb, m.T(Mr));
+  }
+  // symmetric 3x3 eigen (Jacobi). returns {vals, vecs(cols)}
+  function eigSym(S) {
+    let A = S.map(r => r.slice()); let V = m.I();
+    for (let it = 0; it < 50; it++) {
+      let p = 0, qq = 1, mx = Math.abs(A[0][1]);
+      if (Math.abs(A[0][2]) > mx) { mx = Math.abs(A[0][2]); p = 0; qq = 2; }
+      if (Math.abs(A[1][2]) > mx) { mx = Math.abs(A[1][2]); p = 1; qq = 2; }
+      if (mx < 1e-12) break;
+      const th = 0.5 * Math.atan2(2 * A[p][qq], A[qq][qq] - A[p][p]);
+      const c = Math.cos(th), s = Math.sin(th);
+      const J = m.I(); J[p][p] = c; J[qq][qq] = c; J[p][qq] = s; J[qq][p] = -s;
+      A = m.mul(m.T(J), m.mul(A, J)); V = m.mul(V, J);
+    }
+    const vals = [A[0][0], A[1][1], A[2][2]];
+    const idx = [0, 1, 2].sort((a, b) => vals[a] - vals[b]);
+    return { vals: idx.map(i => vals[i]), vecs: idx.map(i => m.col(V, i)) };
+  }
+  return { D2R, R2D, v, m, Rp, Ra, q, q2C, C2q, SEQS, seqAxes, isSymmetric, euler2C, C2euler, gimbalInfo, q2axisAngle, axisAngle2q, C2axisAngle, triad, eigSym };
+})();
+
+/* ===================== ORBIT / ENVIRONMENT ===================== */
+const ENV = (() => {
+  const MU = 398600.4418, RE = 6378.137, J2 = 1.08262668e-3, WE = 7.2921159e-5;
+  const D2R = Math.PI / 180;
+  function jd(date) { return date.getTime() / 86400000 + 2440587.5; }
+  function gmst(date) { // rad
+    const T = (jd(date) - 2451545.0) / 36525;
+    let g = 280.46061837 + 360.98564736629 * (jd(date) - 2451545.0) + 0.000387933 * T * T;
+    return (((g % 360) + 360) % 360) * D2R;
+  }
+  function sunECI(date) { // unit vector + distance (low precision, Astronomical Almanac)
+    const n = jd(date) - 2451545.0;
+    const L = (280.460 + 0.9856474 * n) * D2R, g = (357.528 + 0.9856003 * n) * D2R;
+    const lam = L + (1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * D2R;
+    const eps = (23.439 - 0.0000004 * n) * D2R;
+    return [Math.cos(lam), Math.cos(eps) * Math.sin(lam), Math.sin(eps) * Math.sin(lam)];
+  }
+  function sunRA(date) { const s = sunECI(date); return Math.atan2(s[1], s[0]); }
+  function kepler(M, e) { let E = e < 0.8 ? M : Math.PI; for (let i = 0; i < 30; i++) { const d = (E - e * Math.sin(E) - M) / (1 - e * Math.cos(E)); E -= d; if (Math.abs(d) < 1e-12) break; } return E; }
+  // el: {a(km), e, i, raan, argp, nu0 (rad)}; t seconds since epoch; j2 bool
+  function propagate(el, t, j2) {
+    const { a, e } = el;
+    const n = Math.sqrt(MU / (a * a * a));
+    const p = a * (1 - e * e);
+    let raan = el.raan, argp = el.argp;
+    if (j2) {
+      const k = 1.5 * n * J2 * (RE / p) ** 2;
+      raan += -k * Math.cos(el.i) * t;
+      argp += k * (2 - 2.5 * Math.sin(el.i) ** 2) * t;
+    }
+    const E0 = 2 * Math.atan(Math.sqrt((1 - e) / (1 + e)) * Math.tan(el.nu0 / 2));
+    const M0 = E0 - e * Math.sin(E0);
+    const M = M0 + n * t;
+    const E = kepler(((M % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI), e);
+    const nu = 2 * Math.atan2(Math.sqrt(1 + e) * Math.sin(E / 2), Math.sqrt(1 - e) * Math.cos(E / 2));
+    const r = p / (1 + e * Math.cos(nu));
+    const rp = [r * Math.cos(nu), r * Math.sin(nu), 0];
+    const vp = [-Math.sqrt(MU / p) * Math.sin(nu), Math.sqrt(MU / p) * (e + Math.cos(nu)), 0];
+    const R = AM.m.mul(AM.Ra(3, raan), AM.m.mul(AM.Ra(1, el.i), AM.Ra(3, argp)));
+    return { r: AM.m.mulv(R, rp), v: AM.m.mulv(R, vp), nu, raan, argp, period: 2 * Math.PI / n };
+  }
+  function lvlh(r, vel) { // returns C_LI (rows = LVLH axes in ECI)
+    const z = AM.v.unit(AM.v.scale(r, -1));
+    const y = AM.v.unit(AM.v.scale(AM.v.cross(r, vel), -1));
+    const x = AM.v.cross(y, z);
+    return AM.m.fromRows(x, y, z);
+  }
+  function eclipse(r, sun) { // cylindrical shadow
+    const d = AM.v.dot(r, sun);
+    if (d > 0) return false;
+    const perp = AM.v.sub(r, AM.v.scale(sun, d));
+    return AM.v.norm(perp) < RE;
+  }
+  // tilted dipole, returns B in ECI (nT)
+  const POLE_LAT = 80.8 * D2R, POLE_LON = -72.7 * D2R, B0 = 29900;
+  function bfieldECI(r, date) {
+    const th = gmst(date);
+    const npEcef = [Math.cos(POLE_LAT) * Math.cos(POLE_LON), Math.cos(POLE_LAT) * Math.sin(POLE_LON), Math.sin(POLE_LAT)];
+    const np = AM.m.mulv(AM.Ra(3, th), npEcef);
+    const mhat = AM.v.scale(np, -1);
+    const rn = AM.v.norm(r), rh = AM.v.scale(r, 1 / rn);
+    const f = B0 * (RE / rn) ** 3;
+    return AM.v.scale(AM.v.sub(AM.v.scale(rh, 3 * AM.v.dot(mhat, rh)), mhat), f);
+  }
+  function ecef2eci(p, date) { return AM.m.mulv(AM.Ra(3, gmst(date)), p); }
+  function eci2ecef(p, date) { return AM.m.mulv(AM.Rp(3, gmst(date)), p); }
+  function llh2ecef(lat, lon, h = 0) { const r = RE + h; return [r * Math.cos(lat) * Math.cos(lon), r * Math.cos(lat) * Math.sin(lon), r * Math.sin(lat)]; }
+  function ecef2ll(p) { return { lat: Math.atan2(p[2], Math.hypot(p[0], p[1])), lon: Math.atan2(p[1], p[0]) }; }
+  function rayEarth(o, d) { // first intersection of ray with sphere RE
+    const b = AM.v.dot(o, d), c = AM.v.dot(o, o) - RE * RE, disc = b * b - c;
+    if (disc < 0) return null; const t = -b - Math.sqrt(disc); return t > 0 ? AM.v.add(o, AM.v.scale(d, t)) : null;
+  }
+  function betaAngle(r, vel, sun) { const h = AM.v.unit(AM.v.cross(r, vel)); return Math.asin(AM.v.dot(h, sun)); }
+  function ssoInc(a, e = 0) { // inclination for sun-synchronous
+    const n = Math.sqrt(MU / a ** 3), p = a * (1 - e * e), rate = 2 * Math.PI / (365.2422 * 86400);
+    const c = -rate / (1.5 * n * J2 * (RE / p) ** 2); return Math.acos(Math.max(-1, Math.min(1, c)));
+  }
+  return { MU, RE, WE, jd, gmst, sunECI, sunRA, propagate, lvlh, eclipse, bfieldECI, ecef2eci, eci2ecef, llh2ecef, ecef2ll, rayEarth, betaAngle, ssoInc };
+})();
+function startApp() {
+/* ===================== STATE ===================== */
+const D2R = AM.D2R, R2D = AM.R2D;
+const deg = x => x * R2D, rad = x => x * D2R;
+const fmt = (x, n = 3) => (Math.abs(x) < 0.5 * Math.pow(10, -n) ? 0 : x).toFixed(n);
+const fmtS = (x, n = 3) => { const r = +fmt(x, n); return (r >= 0 ? '+' : '−') + Math.abs(r).toFixed(n); };
+
+const TYPES = {
+  payload: { label: 'Payload camera', color: '#e8ecf2', fov: 2.5, mass: 15, cone: true },
+  str: { label: 'Star tracker', color: '#9db8e0', fov: 20, sunExcl: 30, earthExcl: 20, mass: 0.4, cone: true },
+  css: { label: 'Sun sensor', color: '#f0c64a', fov: 120, mass: 0.05, cone: true },
+  mtq: { label: 'Magnetorquer', color: '#cf7e43', dipole: 15, mass: 0.6, len: 0.36 },
+  rw: { label: 'Reaction wheel', color: '#8a9ab3', hmax: 0.4, mass: 1.1 },
+  mag: { label: 'Magnetometer', color: '#57c7b8', mass: 0.12 },
+  gyro: { label: 'Gyro / IMU', color: '#a58cf0', mass: 0.7 },
+  gnss: { label: 'GNSS antenna', color: '#dfe3ea', fov: 160, mass: 0.15, cone: true },
+  ant: { label: 'X-band antenna', color: '#c9ced8', fov: 60, mass: 0.4, cone: true },
+  thr: { label: 'Thruster', color: '#b8bcc6', mass: 0.25 },
+  sa: { label: 'Solar array', color: '#2b4f97', mass: 2.5, w: 1.0, h: 0.7 },
+};
+
+let _id = 1;
+const newId = () => 'c' + (_id++) + Math.random().toString(36).slice(2, 5);
+// orientation of a component whose +Z (boresight / spin / dipole / normal) points along dir in body frame
+function qFromBoresight(dir, hint) {
+  dir = AM.v.unit(dir);
+  if (!hint || Math.abs(AM.v.dot(AM.v.unit(hint), dir)) > 0.98) hint = Math.abs(dir[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+  const C_CB = AM.triad([0, 0, 1], [1, 0, 0], dir, hint);
+  return AM.C2q(C_CB);
+}
+function mkComp(type, name, pos, dir, hint, extra = {}) {
+  const T = TYPES[type];
+  const c = { id: newId(), type, name, pos: pos.slice(), q: qFromBoresight(dir, hint), mass: T.mass };
+  for (const k of ['fov', 'sunExcl', 'earthExcl', 'dipole', 'hmax', 'w', 'h', 'len']) if (T[k] !== undefined) c[k] = T[k];
+  return Object.assign(c, extra);
+}
+function defaultSC() {
+  const b = 54.7356 * D2R, comps = [];
+  comps.push(mkComp('payload', 'PL cam', [0, 0, 0.42], [0, 0, 1], [1, 0, 0]));
+  comps.push(mkComp('str', 'STR-1', [0.22, 0.24, -0.56], [0.34, 0.5, -0.8], [1, 0, 0]));
+  comps.push(mkComp('str', 'STR-2', [0.22, -0.24, -0.56], [0.34, -0.5, -0.8], [1, 0, 0]));
+  comps.push(mkComp('mtq', 'MTQ-X', [0, 0.3, 0.15], [1, 0, 0], [0, 1, 0]));
+  comps.push(mkComp('mtq', 'MTQ-Y', [0.3, 0, 0.15], [0, 1, 0], [1, 0, 0]));
+  comps.push(mkComp('mtq', 'MTQ-Z', [-0.3, -0.3, 0], [0, 0, 1], [1, 0, 0]));
+  [45, 135, 225, 315].forEach((p, i) => {
+    const ph = p * D2R;
+    comps.push(mkComp('rw', 'RW-' + (i + 1), [0.2 * Math.cos(ph), 0.2 * Math.sin(ph), -0.22],
+      [Math.cos(ph) * Math.sin(b), Math.sin(ph) * Math.sin(b), Math.cos(b)], [0, 0, 1]));
+  });
+  comps.push(mkComp('css', 'CSS-+X', [0.4, 0, -0.2], [1, 0, 0], [0, 1, 0]));
+  comps.push(mkComp('css', 'CSS--X', [-0.4, 0, -0.2], [-1, 0, 0], [0, 1, 0]));
+  comps.push(mkComp('css', 'CSS-+Y', [0, 0.4, -0.35], [0, 1, 0], [1, 0, 0]));
+  comps.push(mkComp('css', 'CSS--Y', [0, -0.4, -0.35], [0, -1, 0], [1, 0, 0]));
+  comps.push(mkComp('css', 'CSS--Z', [-0.15, 0, -0.5], [0, 0, -1], [1, 0, 0]));
+  comps.push(mkComp('mag', 'MAG', [-0.28, 0.28, -0.5], [0, 0, 1], [1, 0, 0]));
+  comps.push(mkComp('gyro', 'IMU', [0, 0, -0.05], [0, 0, 1], [1, 0, 0]));
+  comps.push(mkComp('gnss', 'GNSS', [-0.25, -0.25, -0.5], [0, 0, -1], [1, 0, 0]));
+  comps.push(mkComp('ant', 'X-band', [0.25, -0.25, 0.5], [0, 0, 1], [1, 0, 0]));
+  comps.push(mkComp('thr', 'THR', [-0.4, 0, 0.25], [-1, 0, 0], [0, 0, 1]));
+  comps.push(mkComp('sa', 'SA +Y', [0, 0.98, -0.2], [0, 0, -1], [0, 1, 0]));
+  comps.push(mkComp('sa', 'SA −Y', [0, -0.98, -0.2], [0, 0, -1], [0, 1, 0]));
+  return { bus: { x: 0.8, y: 0.8, z: 1.0, mass: 75 }, comps };
+}
+const EPOCH0 = '2026-10-05T10:00';
+function defaultState() {
+  return {
+    tab: 'rot',
+    rot: { seq: '321', euler: [30, 20, 10], q: AM.C2q(AM.euler2C('321', [30 * D2R, 20 * D2R, 10 * D2R])), scalarFirst: true, dcmView: 'BR', probe: [1, 1, 0], showProbe: true, showGhosts: true, showTrails: true, showSC: true, nudge: 15 },
+    orbit: { preset: 'sso1030', epoch: EPOCH0, hp: 550, ha: 550, i: 97.59, raan: 0, argp: 0, nu0: 0, j2: true, t: 0, playing: true, speed: 60,
+      mode: 'lvlh', roll: 0, pitch: 0, yaw: 0, sunAxis: '-Z', sunSec: 'nadir', tgtLat: 52.23, tgtLon: 21.01, tgtComp: '',
+      show: { eci: true, lvlh: true, track: true, sunv: true, bv: true, cones: true, follow: false }, scale: 1.0 },
+    layout: { sel: null, gizmo: 'translate', show: { cones: true, excl: false, labels: true, bus: 0.55, principal: false, com: true } },
+    sc: defaultSC(),
+  };
+}
+let S;
+try { const raw = localStorage.getItem('atttool.v1'); S = raw ? JSON.parse(raw) : null; } catch (e) { S = null; }
+if (!S || !S.sc || !S.rot || !S.orbit) S = defaultState();
+{ const d = defaultState(); for (const k of ['rot', 'orbit', 'layout']) S[k] = Object.assign({}, d[k], S[k]); S.orbit.show = Object.assign({}, d.orbit.show, S.orbit.show); S.layout.show = Object.assign({}, d.layout.show, S.layout.show); }
+let saveT = 0;
+function save() { clearTimeout(saveT); saveT = setTimeout(() => { try { localStorage.setItem('atttool.v1', JSON.stringify(S)); } catch (e) { } }, 300); }
+let scVersion = 1; // bump when spacecraft config changes
+function scChanged() { scVersion++; save(); }
+
+/* ===================== DOM HELPERS ===================== */
+const $ = (s, r = document) => r.querySelector(s);
+function h(tag, props, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (v === undefined || v === null || v === false) continue;
+    if (k === 'class') e.className = v; else if (k === 'style') e.style.cssText = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (k === 'html') e.innerHTML = v; else e.setAttribute(k, v === true ? '' : v);
+  }
+  for (const c of kids.flat(3)) if (c !== null && c !== undefined && c !== false) e.append(c.nodeType ? c : document.createTextNode(String(c)));
+  return e;
+}
+let syncs = [];
+function syncAll() { for (const f of syncs) f(); }
+let live = []; // per-frame readouts
+function card(title, tag, ...kids) { return h('section', { class: 'card' }, h('h3', null, title, h('span', { class: 'sp' }), tag ? h('span', { class: 'tag' }, tag) : null), ...kids); }
+function tip(html) { return h('p', { class: 'tip', html }); }
+function slider({ id, label, min, max, step = 0.1, get, set, dec = 1 }) {
+  const r = h('input', { type: 'range', id: id + '-r', min, max, step, 'aria-label': typeof label === 'string' ? label : id });
+  const n = h('input', { type: 'number', id: id + '-n', step, 'aria-label': (typeof label === 'string' ? label : id) + ' value' });
+  r.addEventListener('input', () => { set(+r.value); n.value = (+r.value).toFixed(dec); });
+  n.addEventListener('change', () => { let x = +n.value; if (!isFinite(x)) return; set(x); r.value = x; });
+  const lab = h('label', { for: id + '-n' }); if (typeof label === 'string') lab.textContent = label; else lab.append(label);
+  syncs.push(() => { const x = get(); if (document.activeElement !== r) r.value = x; if (document.activeElement !== n) n.value = (+x).toFixed(dec); });
+  return h('div', { class: 'row' }, lab, r, n);
+}
+function numCell(id, label, get, set, step = 0.01, dec = 3) {
+  const n = h('input', { type: 'number', id, step, 'aria-label': label });
+  n.addEventListener('change', () => { const x = +n.value; if (isFinite(x)) set(x); });
+  syncs.push(() => { if (document.activeElement !== n) n.value = (+get()).toFixed(dec); });
+  return h('div', { class: 'cell' }, h('span', null, label), n);
+}
+function selectRow({ id, label, options, get, set }) {
+  const s = h('select', { id }, options.map(([v, t]) => h('option', { value: v }, t)));
+  s.addEventListener('change', () => set(s.value));
+  syncs.push(() => { if (s.value !== String(get())) s.value = get(); });
+  return h('div', { class: 'row two' }, h('label', { for: id }, label), s);
+}
+function check(id, label, get, set) {
+  const c = h('input', { type: 'checkbox', id });
+  c.addEventListener('change', () => set(c.checked));
+  syncs.push(() => { c.checked = !!get(); });
+  return h('label', { class: 'chk', for: id }, c, label);
+}
+function seg(options, get, set) {
+  const w = h('div', { class: 'seg', role: 'group' });
+  const bs = options.map(([v, t]) => { const b = h('button', { type: 'button', onclick: () => { set(v); syncAll(); } }, t); b._v = v; w.append(b); return b; });
+  syncs.push(() => bs.forEach(b => b.classList.toggle('on', b._v === get())));
+  return w;
+}
+function liveText(fn, cls) { const s = h('span', { class: cls }); live.push(() => { const t = fn(); if (s._t !== t) { s._t = t; s.innerHTML = t; } }); return s; }
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(t._h); t._h = setTimeout(() => t.hidden = true, 1600); }
+function copyText(text, what) {
+  const done = () => toast(what + ' copied');
+  try { navigator.clipboard.writeText(text).then(done, () => fallback()); } catch (e) { fallback(); }
+  function fallback() { showModal(h('div', null, h('h2', null, 'Copy ' + what), h('p', null, 'Clipboard access is blocked here. Select the text and copy it manually.'), h('textarea', { style: 'width:100%;min-height:260px', readonly: true }, text))); const ta = $('#modal textarea'); ta.focus(); ta.select(); }
+}
+function showModal(content) {
+  const m = $('#modal'); m.innerHTML = ''; const box = h('div', { class: 'box', role: 'dialog', 'aria-modal': 'true' }, h('div', { style: 'display:flex;justify-content:flex-end' }, h('button', { class: 'btn', onclick: () => m.hidden = true }, 'Close')), content);
+  m.append(box); m.hidden = false; m.onclick = e => { if (e.target === m) m.hidden = true; };
+}
+const matHTML = (M, n = 4) => M.flat().map(x => `<div>${fmtS(x, n)}</div>`).join('');
+
+/* ===================== THREE HELPERS ===================== */
+const COL = { x: 0xff6161, y: 0x46d38a, z: 0x4f8cff, sun: 0xf2a93b, eig: 0xc48bff, probe: 0xff7bd5, cyan: 0x4fd6e8, teal: 0x57c7b8, muted: 0x8697ae };
+function V3(a) { return new THREE.Vector3(a[0], a[1], a[2]); }
+function matFromC(CRB) { // rows/cols -> THREE.Matrix4 whose rotation = CRB (columns = body axes in ref)
+  const M = new THREE.Matrix4();
+  M.set(CRB[0][0], CRB[0][1], CRB[0][2], 0, CRB[1][0], CRB[1][1], CRB[1][2], 0, CRB[2][0], CRB[2][1], CRB[2][2], 0, 0, 0, 0, 1);
+  return M;
+}
+function setObjFromCBR(obj, CBR) { obj.quaternion.setFromRotationMatrix(matFromC(AM.m.T(CBR))); }
+const labelCache = new Map();
+function makeLabel(text, color = '#d9e2ee', px = 26, opts = {}) {
+  const c = document.createElement('canvas'); const ctx = c.getContext('2d');
+  const font = `${opts.weight || 600} ${px}px "JetBrains Mono", ui-monospace, monospace`;
+  ctx.font = font; const w = Math.ceil(ctx.measureText(text).width) + 16, hh = px + 12;
+  c.width = w; c.height = hh; ctx.font = font; ctx.textBaseline = 'middle';
+  if (opts.bg) { ctx.fillStyle = opts.bg; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(0, 0, w, hh, 6) : ctx.rect(0, 0, w, hh); ctx.fill(); }
+  ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(8,12,18,.9)'; ctx.strokeText(text, 8, hh / 2 + 1);
+  ctx.fillStyle = color; ctx.fillText(text, 8, hh / 2 + 1);
+  const tex = new THREE.CanvasTexture(c); tex.minFilter = THREE.LinearFilter;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, depthWrite: false, transparent: true, sizeAttenuation: false }));
+  const k = (opts.scale || 1) * 0.00062; sp.scale.set(w * k, hh * k, 1); sp.renderOrder = 999; sp.center.set(0, 0.5); sp.userData.base = [w * k, hh * k];
+  return sp;
+}
+class Arrow extends THREE.Group {
+  constructor(color, len = 1, r = 0.012, opts = {}) {
+    super();
+    const mat = new THREE.MeshBasicMaterial({ color, transparent: !!opts.opacity, opacity: opts.opacity ?? 1, depthWrite: !opts.opacity });
+    this.shaft = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 1, 10), mat);
+    this.head = new THREE.Mesh(new THREE.ConeGeometry(r * 3, r * 9, 14), mat);
+    this.add(this.shaft, this.head); this.r = r; this.mat = mat;
+    if (opts.label) { this.label = makeLabel(opts.label, opts.labelColor || '#' + new THREE.Color(color).getHexString(), 26, opts); this.add(this.label); }
+    this.setLength(len); this.dir = new THREE.Vector3(0, 1, 0);
+  }
+  setLength(L) {
+    const hl = Math.min(this.r * 9, L * 0.4);
+    this.shaft.scale.y = Math.max(1e-4, L - hl); this.shaft.position.y = (L - hl) / 2;
+    this.head.scale.setScalar(hl / (this.r * 9)); this.head.position.y = L - hl / 2;
+    if (this.label) this.label.position.y = L + this.r * 4;
+    this.L = L; return this;
+  }
+  setDir(d) { const v = (d.isVector3 ? d.clone() : V3(d)).normalize(); this.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), v); return this; }
+}
+function makeTriad(len, r, names, opts = {}) {
+  const g = new THREE.Group(); const cols = [COL.x, COL.y, COL.z]; const dirs = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  g.arrows = dirs.map((d, i) => { const a = new Arrow(cols[i], len, r, { label: names ? names[i] : null, opacity: opts.opacity, scale: opts.labelScale }); a.setDir(d); g.add(a); return a; });
+  return g;
+}
+function dashedLine(points, color, dash = 0.05, gap = 0.04, opacity = 1) {
+  const g = new THREE.BufferGeometry().setFromPoints(points.map(p => p.isVector3 ? p : V3(p)));
+  const l = new THREE.Line(g, new THREE.LineDashedMaterial({ color, dashSize: dash, gapSize: gap, transparent: opacity < 1, opacity }));
+  l.computeLineDistances(); return l;
+}
+function coneGeom(halfAngleDeg, L, seg = 40) {
+  const ha = Math.min(89, halfAngleDeg) * D2R; const R = L * Math.tan(ha);
+  const g = new THREE.ConeGeometry(R, L, seg, 1, true); g.translate(0, -L / 2, 0); g.rotateX(-Math.PI / 2); return g;
+}
+const _ws = new THREE.Vector3();
+function fixLabels(root) { root.traverse(o => { if (o.isSprite && o.userData.base && o.parent) { o.parent.getWorldScale(_ws); const s = _ws.x || 1; o.scale.set(o.userData.base[0] / s, o.userData.base[1] / s, 1); } }); }
+function disposeTree(o) { o.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) { (Array.isArray(c.material) ? c.material : [c.material]).forEach(m => { if (m.map) m.map.dispose(); m.dispose(); }); } }); }
+
+/* ===================== SPACECRAFT MODEL ===================== */
+function compCBC(c) { return AM.m.T(AM.q2C(c.q)); } // columns = component axes in body
+function compAxis(c) { return AM.m.col(compCBC(c), 2); } // +Z_comp in body
+function std(color, o = {}) { return new THREE.MeshStandardMaterial(Object.assign({ color, roughness: 0.55, metalness: 0.25 }, o)); }
+function compMesh(c) {
+  const g = new THREE.Group(); const T = TYPES[c.type]; const col = T.color;
+  const cyl = (r1, r2, hgt, mat, z = 0, seg = 24) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(r1, r2, hgt, seg), mat); m.rotation.x = Math.PI / 2; m.position.z = z; g.add(m); return m; };
+  const box = (x, y, z, mat, pz = 0) => { const m = new THREE.Mesh(new THREE.BoxGeometry(x, y, z), mat); m.position.z = pz; g.add(m); return m; };
+  switch (c.type) {
+    case 'payload': cyl(0.13, 0.13, 0.22, std(col, { metalness: .5 }), 0); cyl(0.14, 0.15, 0.06, std('#1b2230'), 0.13); cyl(0.1, 0.1, 0.01, std('#0b2a4a', { metalness: .9, roughness: .1 }), 0.165); break;
+    case 'str': box(0.09, 0.09, 0.06, std('#3a4458')); cyl(0.04, 0.065, 0.12, std(col, { metalness: .6 }), 0.09); cyl(0.03, 0.03, 0.005, std('#081626', { metalness: 1, roughness: .05 }), 0.04); break;
+    case 'css': box(0.05, 0.05, 0.015, std('#3a4458')); cyl(0.012, 0.012, 0.008, std(col, { emissive: col, emissiveIntensity: .3 }), 0.01); break;
+    case 'mtq': cyl(0.022, 0.022, c.len || 0.36, std(col, { metalness: .7, roughness: .35 }), 0); cyl(0.03, 0.03, 0.03, std('#333a46'), (c.len || 0.36) / 2); cyl(0.03, 0.03, 0.03, std('#333a46'), -(c.len || 0.36) / 2); break;
+    case 'rw': cyl(0.09, 0.09, 0.07, std(col, { metalness: .6 })); cyl(0.05, 0.05, 0.075, std('#2b3240'), 0); { const a = new Arrow(0xc8d2e0, 0.14, 0.006); a.setDir([0, 0, 1]); a.position.z = 0.035; g.add(a); } break;
+    case 'mag': box(0.06, 0.04, 0.03, std(col)); break;
+    case 'gyro': box(0.12, 0.12, 0.09, std(col, { metalness: .4 })); break;
+    case 'gnss': cyl(0.06, 0.06, 0.02, std(col)); cyl(0.04, 0.04, 0.02, std('#d6b13e'), 0.01); break;
+    case 'ant': box(0.12, 0.12, 0.02, std(col)); for (let i = 0; i < 4; i++) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.035, 0.004), std('#c2953a', { metalness: .9 })); m.position.set((i % 2 - .5) * .05, (Math.floor(i / 2) - .5) * .05, 0.012); g.add(m); } break;
+    case 'thr': { const m = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.07, 16, 1, true), std(col, { side: THREE.DoubleSide, metalness: .8 })); m.rotation.x = -Math.PI / 2; m.position.z = 0.035; g.add(m); cyl(0.015, 0.015, 0.05, std('#4a5160'), -0.02); break; }
+    case 'sa': {
+      const w = c.w || 1, hh = c.h || 0.7;
+      const cv = document.createElement('canvas'); cv.width = 256; cv.height = 180; const x = cv.getContext('2d');
+      x.fillStyle = '#16264a'; x.fillRect(0, 0, 256, 180); x.strokeStyle = '#3b5d9e'; x.lineWidth = 2;
+      for (let i = 0; i <= 8; i++) { x.beginPath(); x.moveTo(i * 32, 0); x.lineTo(i * 32, 180); x.stroke(); } for (let j = 0; j <= 6; j++) { x.beginPath(); x.moveTo(0, j * 30); x.lineTo(256, j * 30); x.stroke(); }
+      const tex = new THREE.CanvasTexture(cv);
+      const front = new THREE.Mesh(new THREE.BoxGeometry(w, hh, 0.02), [std('#9aa3b2'), std('#9aa3b2'), std('#9aa3b2'), std('#9aa3b2'), std('#ffffff', { map: tex, metalness: .3, roughness: .35 }), std('#c9ccd3', { metalness: .1 })]);
+      g.add(front); break;
+    }
+  }
+  g.traverse(o => { if (o.isMesh) o.userData.compId = c.id; });
+  return g;
+}
+// opts: {cones, excl, labels, busOpacity, triad, triadLen, labelScale, sel}
+function buildSC(sc, opts = {}) {
+  const root = new THREE.Group();
+  const { x, y, z } = sc.bus;
+  const busMat = std('#c99a3e', { metalness: .55, roughness: .45, transparent: (opts.busOpacity ?? 1) < 1, opacity: opts.busOpacity ?? 1, depthWrite: (opts.busOpacity ?? 1) >= 1 });
+  const bus = new THREE.Mesh(new THREE.BoxGeometry(x, y, z), busMat); bus.userData.isBus = true; root.add(bus);
+  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(bus.geometry), new THREE.LineBasicMaterial({ color: 0xffe2a8, transparent: true, opacity: 0.55 })); root.add(edges);
+  // nadir face panel (darker) to make +Z face recognisable
+  const fp = new THREE.Mesh(new THREE.PlaneGeometry(x * 0.96, y * 0.96), std('#2a2f38', { side: THREE.DoubleSide, transparent: (opts.busOpacity ?? 1) < 1, opacity: Math.min(1, (opts.busOpacity ?? 1) + .2) })); fp.position.z = z / 2 + 0.002; root.add(fp);
+  root.compGroups = {};
+  for (const c of sc.comps) {
+    const g = compMesh(c); g.position.set(...c.pos); g.quaternion.set(c.q.x, c.q.y, c.q.z, c.q.w); g.userData.compId = c.id;
+    if (opts.cones && c.fov && TYPES[c.type].cone) {
+      const L = c.type === 'payload' ? 1.6 : c.type === 'str' ? 0.9 : 0.35;
+      const col = new THREE.Color(TYPES[c.type].color);
+      const cm = new THREE.Mesh(coneGeom(c.fov / 2, L), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: c.type === 'css' || c.type === 'gnss' ? 0.07 : 0.16, side: THREE.DoubleSide, depthWrite: false }));
+      cm.userData.noPick = true; cm.userData.isCone = true; g.add(cm);
+      const rim = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(Array.from({ length: 48 }, (_, k) => { const a = k / 48 * Math.PI * 2, R = L * Math.tan(Math.min(89, c.fov / 2) * D2R); return new THREE.Vector3(R * Math.cos(a), R * Math.sin(a), L); })), new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: .5 }));
+      rim.userData.isCone = true; g.add(rim);
+      if (opts.excl && c.type === 'str') {
+        const ex = new THREE.Mesh(coneGeom(c.sunExcl, 0.7, 32), new THREE.MeshBasicMaterial({ color: COL.sun, wireframe: true, transparent: true, opacity: .25 })); ex.userData.noPick = true; ex.userData.isCone = true; g.add(ex);
+      }
+    }
+    if (c.type === 'mtq' && opts.dipoles) { const a = new Arrow(0xff9b5e, (c.len || .36) / 2 + 0.12, 0.007); a.setDir([0, 0, 1]); g.add(a); }
+    if (opts.labels) { const l = makeLabel(c.name, '#' + new THREE.Color(TYPES[c.type].color).getHexString(), 22, { scale: opts.labelScale || 0.85, weight: 500 }); l.position.set(0, 0, 0.02); g.add(l); g.userData.label = l; }
+    root.add(g); root.compGroups[c.id] = g;
+  }
+  if (opts.triad) { const t = makeTriad(opts.triadLen || 1, opts.triadR || 0.012, ['X_B', 'Y_B', 'Z_B'], { labelScale: opts.labelScale }); root.add(t); root.triad = t; }
+  return root;
+}
+/* ===================== MASS PROPERTIES ===================== */
+function massProps(sc) {
+  const { x, y, z, mass: Mb } = sc.bus;
+  const parts = [{ m: Mb, p: [0, 0, 0], I: [[Mb / 12 * (y * y + z * z), 0, 0], [0, Mb / 12 * (x * x + z * z), 0], [0, 0, Mb / 12 * (x * x + y * y)]] }];
+  for (const c of sc.comps) {
+    let Ic = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+    if (c.type === 'sa') { const w = c.w || 1, hh = c.h || .7, m = c.mass; const Il = [[m * hh * hh / 12, 0, 0], [0, m * w * w / 12, 0], [0, 0, m * (w * w + hh * hh) / 12]]; const C = compCBC(c); Ic = AM.m.mul(C, AM.m.mul(Il, AM.m.T(C))); }
+    parts.push({ m: c.mass || 0, p: c.pos, I: Ic });
+  }
+  const M = parts.reduce((s, p) => s + p.m, 0);
+  const com = [0, 1, 2].map(k => parts.reduce((s, p) => s + p.m * p.p[k], 0) / M);
+  const I = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  for (const p of parts) {
+    const d = AM.v.sub(p.p, com), dd = AM.v.dot(d, d);
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) I[i][j] += p.I[i][j] + p.m * ((i === j ? dd : 0) - d[i] * d[j]);
+  }
+  const E = AM.eigSym(I);
+  return { M, com, I, E };
+}
+
+/* ===================== EARTH TEXTURE (coarse coastlines, lon/lat deg) ===================== */
+const LAND = [
+[[-168,65],[-165,69],[-156,71.3],[-140,69.7],[-128,70],[-115,68.5],[-100,68],[-90,69],[-82,67],[-80,63],[-78,62],[-70,60],[-64,60],[-61,56],[-56,52],[-60,47],[-66,45],[-70,43],[-70,41.5],[-74,40.5],[-76,38],[-76,35],[-81,31.5],[-80,27],[-80.5,25.2],[-82,26.5],[-83,29.5],[-86,30.3],[-89,30],[-90,29],[-94,29.6],[-97,27.5],[-97.5,24],[-97,21],[-95,18.5],[-91,18.7],[-90.5,21],[-87,21.5],[-88,18],[-88.5,16],[-84,15.5],[-83.5,11],[-81.5,9],[-79.5,9.5],[-77.5,8.5],[-78,7],[-80,7.5],[-81.5,8],[-83,8.5],[-85.7,10],[-87.5,13],[-91,13.9],[-94.5,16],[-96.5,15.7],[-101,17.3],[-105.5,20],[-105.7,22.7],[-109,25.5],[-112.5,29.8],[-114.8,31.8],[-113.5,29],[-112,27],[-110,23],[-112,24.5],[-114,27.5],[-115.5,30],[-117.1,32.5],[-118.5,34],[-120.6,34.6],[-122.5,37.7],[-124,40.5],[-124.2,43],[-124,46.3],[-124.7,48.4],[-123,49],[-127,50.5],[-130.5,54.5],[-133,57],[-137,58.5],[-141,60],[-146,60.8],[-150,61],[-152,59],[-157,57],[-162,55],[-164.5,54.5],[-160,57.5],[-158,58.7],[-162,60],[-165,62],[-164.5,63.5],[-161,64.5],[-166,65.3]],
+[[-73,78],[-60,82],[-35,83.5],[-20,82],[-18,77],[-20,73],[-22,70],[-30,68],[-40,65],[-43,60],[-48,61],[-52,65],[-54,69],[-58,75],[-68,76.5]],
+[[-120,72],[-100,73],[-90,74],[-80,76],[-75,79],[-65,82.5],[-85,82],[-100,80],[-115,77],[-122,74]],
+[[-90,71],[-80,73.5],[-72,71.5],[-67,69],[-62,66.5],[-65,62.5],[-72,63],[-78,64.5],[-84,66],[-86,69]],
+[[-80,0],[-81,-5],[-79,-8],[-76.5,-14],[-70.5,-18.5],[-70,-25],[-71.5,-30],[-71.5,-37],[-73.5,-41],[-74,-46],[-75,-50],[-74,-53],[-71,-54],[-68.5,-55.5],[-66,-55],[-68,-52.5],[-69,-51],[-68,-48],[-65.5,-45],[-65,-42],[-62,-39],[-57.5,-38],[-56.7,-36.5],[-58.5,-34.5],[-53.5,-34],[-51,-31.5],[-48.5,-28],[-48.5,-25.5],[-44.7,-23],[-41,-22],[-39,-17.5],[-39,-13.5],[-35,-9],[-35,-5.5],[-37.5,-4.5],[-41,-3],[-44.5,-2.5],[-48.5,-1],[-50,0.5],[-51,4],[-54,5.7],[-57.5,6],[-61,8.5],[-64,10.5],[-68,10.5],[-71.5,12],[-72,11],[-75.5,10.5],[-77.5,8.5],[-78,7],[-77.5,4],[-78.5,2]],
+[[-9.5,43],[-9,39],[-9,37],[-6,36.2],[-2,36.7],[0,38.5],[0.5,40],[3.2,42],[3,43.3],[5,43.3],[7.5,43.8],[10,44],[12.5,41.8],[15.5,40],[16,38],[17,39],[18.5,40.3],[16,41.5],[13.5,43.5],[12.3,45.3],[13.7,45.6],[15,44.5],[17,43],[19.5,41.8],[19.3,40],[21,38],[22.5,36.5],[24,38],[23,39.5],[24,40.8],[26.2,40.6],[26.5,39],[27,37.5],[28.5,36.7],[32,36.2],[36,36.8],[35.9,35],[35,33],[34.5,31.5],[34.9,29.5],[35,28],[37,25.5],[39,21.5],[42.5,15],[43.3,12.7],[45,12.8],[49,14],[52,15.5],[55,17.5],[57,18.8],[58.5,20.5],[59.8,22.5],[57,23.8],[56.3,26.2],[54,24.2],[51.5,24.5],[51,26],[50,27],[48.5,28.5],[48,30],[50,30],[51,28],[54,26.7],[57,25.7],[61.5,25.2],[66.5,25.4],[68,23.8],[70,21],[72.8,19],[73.5,16],[74.8,12.8],[76.5,8.7],[77.5,8],[79.5,10.3],[80,13],[80.3,15.8],[82.3,17],[85,19.5],[87,21.5],[89,22],[91.8,22.4],[92.3,20.8],[94.4,16],[97.6,16.6],[98.6,13.8],[98.3,8.5],[100.3,6],[101.2,2.8],[103.4,1.3],[104.2,1.5],[103.4,4.5],[102.3,6.2],[100.4,8.2],[99.2,10],[99.5,13],[100.9,13.3],[102.6,12.2],[104.8,10.4],[105.2,8.7],[106.8,10.4],[109.2,11.6],[109.3,13.5],[108.8,15.3],[106.6,17.8],[105.7,19],[106.7,20.7],[108,21.5],[110.5,21.2],[113.5,22.3],[117,23.5],[119.5,25.5],[120.5,27.8],[122,30],[121,32],[120.5,34],[119.2,35],[120.6,36.5],[122.5,37.2],[119,37.2],[118,38.4],[117.8,39],[119,39.3],[121.5,40.9],[121.3,39],[122.5,40.5],[124.3,40],[125.2,37.8],[126.5,34.5],[129.4,35.5],[129.4,36.8],[128.5,38.5],[127.5,39.8],[129.7,41],[130.7,42.4],[133,42.8],[135.5,43.9],[138.5,47],[140.5,50],[140.5,53.5],[137,54],[135.2,54.7],[138.2,56.4],[142,59],[148,59.4],[152,59],[155,59.5],[156,57],[156.7,51],[160,53.5],[162.5,56.2],[163,58.5],[164,60],[167,60.5],[170,60],[173,61.7],[178,62.5],[180,65],[180,68.9],[176,69.8],[170,70],[161,69.6],[152,70.9],[143,72.7],[132,71.8],[128,73],[122,73],[113,73.6],[110,76.8],[104.5,77.7],[100,76.5],[95,76],[89,75.5],[86,74],[80.5,73.5],[80.5,72],[78,72.3],[75,72.8],[73,71.5],[72.5,68.5],[69,68.5],[67.5,70],[69,73],[66,71],[60,69],[54,68.4],[44,68.4],[43.5,66.2],[40,67.5],[35,69.2],[28,71],[24,71],[20,70],[16,68.6],[14,67],[12.5,65.5],[10.5,63.5],[5,61.6],[5,59],[6,58],[8,58.1],[10.5,59.2],[11.5,58.8],[12.3,56.4],[12.5,56],[13,55.4],[14.3,55.6],[16,56.2],[16.6,57.5],[18.5,59.3],[17.3,60.7],[17.5,62.5],[21,64.5],[22.3,65.8],[25.5,65.5],[25.3,64.8],[21.5,63],[21.3,60.7],[22.9,59.8],[26,60.4],[30,60],[28,59.5],[24,59.3],[23.5,58.5],[24.3,57.2],[21,57],[21.1,56],[21,55],[19.5,54.4],[18.5,54.8],[16,54.2],[13.5,54.1],[11,54],[10.8,55.5],[10.6,57.7],[8.6,57.1],[8,55.5],[8.6,53.9],[7,53.5],[5,53],[4,51.5],[2.5,51],[1.5,50],[-1,49.5],[-1.5,48.7],[-4.7,48.4],[-4.3,47.8],[-2,47],[-1.2,46],[-1.4,44],[-1.8,43.4],[-4,43.4],[-8,43.7]],
+[[-5.7,50],[1.4,51.2],[1.7,52.7],[0,53.5],[-1.5,55],[-2,56],[-1.8,57.5],[-3.2,58.6],[-5,58.6],[-6.2,57.5],[-5.6,56.3],[-5,55],[-3,54.5],[-3,53.4],[-4.6,53.3],[-4.2,52.3],[-5.2,51.7],[-3,51.4]],
+[[-6,52.2],[-6,54],[-7.3,55.3],[-8.4,54.6],[-10,54.2],[-10,52.2],[-9.5,51.5],[-8,51.8]],
+[[-24,65.5],[-22,66.4],[-16,66.5],[-14,65.3],[-15,64.3],[-18.7,63.4],[-22.5,63.8]],
+[[130,31.5],[131.5,31.4],[132,33.8],[135,33.5],[136.8,34.3],[139.8,35],[140.8,36],[141,38.3],[142,39.6],[141.4,41.4],[140,40.7],[139.8,39.8],[139.5,38],[137,36.8],[136,35.7],[133,35.5],[131,34.3],[130,33]],
+[[140,41.5],[141.5,42.5],[143.3,42],[145.5,43.3],[144,44.2],[141.8,45.4],[141.5,43.3],[140,42.5]],
+[[-17,21],[-16,24],[-14.5,26],[-13,27.8],[-10,29.5],[-9.7,31.5],[-6.8,34],[-5.9,35.8],[-2,35.1],[1.5,36.6],[6,37],[10,37.3],[11,36.8],[10.3,34],[11.5,33.1],[15,32.3],[15.5,31.5],[19,30.3],[20,31],[20,32.3],[22,32.9],[25,31.9],[29,30.9],[32,31.2],[32.5,30],[33.5,28],[35.5,24],[37.3,21],[38.5,18],[39.7,15.5],[41.5,13.6],[43.3,12.5],[44,10.5],[51.3,11.9],[51,10.5],[49.5,6.5],[47.7,4.2],[44,-1.5],[41.5,-1.7],[40,-3.5],[39.2,-6],[39.5,-8],[40.5,-10.5],[40.5,-15],[37,-17.5],[35.5,-21],[35.5,-24],[33,-25.5],[32.8,-28.5],[31,-30],[28,-33],[25.6,-34],[22.5,-34],[20,-34.8],[18.4,-34.2],[18.2,-32],[17.3,-29.5],[15.2,-27],[14.5,-23],[13.2,-20],[11.8,-17],[12.3,-14],[13.7,-11],[13.2,-8.8],[12.2,-6],[11.8,-4],[9.6,-2],[9.3,0.5],[9.8,3],[8.7,4.5],[6,4.3],[4.5,6.3],[2,6.3],[-2,4.7],[-4.5,5.1],[-7.5,4.4],[-9.5,5.5],[-12,7.3],[-13.3,8.8],[-15,10.8],[-16.7,12.4],[-17.5,14.7],[-16.4,16.5],[-16.2,19]],
+[[49.3,-12],[50.5,-15.5],[49.8,-17],[48.5,-20.5],[47.1,-24.9],[45.2,-25.5],[43.7,-23.5],[43.3,-21.7],[44.4,-19.9],[44,-17],[46,-15.7],[47.9,-13.6]],
+[[114,-22],[114.6,-26.5],[115,-30.2],[115,-33.6],[116.6,-35],[118,-35],[123.5,-33.9],[126,-32.3],[131,-31.5],[134,-32.8],[135.6,-34.8],[137.7,-35.6],[138.3,-34.2],[140,-37.6],[143.5,-38.8],[146.3,-39.1],[150,-37.5],[151.2,-33.8],[153.1,-30.5],[153.2,-25.7],[150.8,-22.5],[149.4,-21.6],[146.3,-19],[145.4,-16],[145.3,-14.8],[143.6,-14],[142.5,-10.7],[141.5,-13.5],[141.6,-16.6],[140.6,-17.6],[139.3,-17.4],[137,-15.9],[135.8,-15],[136.9,-12.2],[135,-12.2],[132.5,-11.5],[131,-12.2],[129.5,-14.9],[127,-13.8],[125,-14.6],[122.2,-17],[121.5,-19],[118.8,-20.3]],
+[[144.6,-40.7],[148.3,-40.9],[148,-43.2],[146,-43.6],[145.2,-42]],
+[[172.7,-34.4],[174.5,-36],[175.9,-37.5],[178.5,-37.7],[177,-39.3],[176,-41.3],[174.7,-41.3],[175.3,-40],[173.8,-39.2],[174.6,-37.3]],
+[[172.7,-40.5],[174.3,-41.7],[173,-43.8],[171.3,-44.5],[169.3,-46.6],[166.5,-46],[168.3,-44.2],[171,-42.4]],
+[[95.3,5.5],[97.5,5.2],[100.3,2.2],[104,-1],[106,-3],[105.8,-5.8],[104.5,-5.9],[102.3,-4],[100.5,-1.2],[98.7,1.8]],
+[[109,1.6],[110.5,-1],[111,-3],[114,-3.4],[116,-3.8],[116.5,-1],[118,1],[117.5,4.2],[119.2,5.3],[117,7],[115.5,5.2],[113,3.2],[111,1.8]],
+[[105.2,-6.8],[108,-6.3],[111,-6.4],[114.5,-7.8],[114.5,-8.7],[110,-8.1],[106.5,-7.4]],
+[[119.5,-5.5],[120.5,-2],[121,1],[124.8,1.5],[121.5,0.5],[123,-1],[122,-4.5],[121,-3]],
+[[131,-1],[134,-0.9],[137.5,-1.5],[141,-2.6],[145,-4.3],[147.5,-6],[147.8,-8],[150,-10.5],[146,-8.1],[143.7,-9],[142.5,-9.3],[141,-9.1],[139,-8.1],[138,-5.5],[135,-4.3],[132.7,-4],[132,-2.8]],
+[[120.6,18.5],[122.2,18.5],[122,17],[121.5,15.5],[124,13],[120.6,14.2],[120,16]],
+[[122,7],[123.6,7.8],[125.5,9.6],[126.6,7.2],[125.4,5.6],[124,6.4]],
+[[120.1,23],[121,25.2],[122,25],[120.9,22]],
+[[79.8,8],[80.2,9.8],[81.9,7.2],[80.6,5.9]],
+[[-85,21.9],[-82,23.1],[-77,22.5],[-74.2,20.2],[-77.5,19.9],[-78,21.3],[-82,22]],
+[[-74.4,18.5],[-72.8,19.9],[-69.5,19.6],[-68.4,18.6],[-71.5,17.6]],
+[[142,46],[143.5,49.5],[143,53.3],[142.5,54.3],[141.8,52]],
+[[52,71.5],[56,73.3],[61,76],[68,76.9],[64,75],[57,72]],
+[[11,78.5],[17,80],[27,80.3],[22,78],[16,76.6]],
+[[-180,-84],[-150,-77.5],[-140,-75],[-120,-74],[-100,-73],[-75,-73],[-62,-64],[-58,-63.5],[-62,-68],[-65,-74],[-60,-77],[-40,-78],[-25,-75],[-15,-72],[0,-70],[20,-70],[40,-69],[60,-67],[80,-67],[100,-66],[120,-66.5],[140,-66.5],[160,-70],[170,-72],[166,-77.5],[180,-78],[180,-90],[-180,-90]],
+];
+const WATER = [[[-95,59],[-94,61],[-88,64],[-82,64.5],[-78,62.5],[-77,60],[-79,56],[-79,51.5],[-82,53],[-86,55.3],[-92.5,57]], // Hudson Bay
+  [[-5.5,36],[0,37],[5,37.5],[10,38],[13,37.5],[16,38],[17,39.5],[20,40],[24,35],[28,36],[30,31.5],[25,32],[20,31],[15,32.4],[10,34],[10.5,37],[5,36.8],[0,35.8]], // (Med touch-up)
+  [[27.5,41],[30,41.2],[34,42],[38,41],[41.5,41.5],[40,43.5],[38,44.5],[36,45.3],[33,46],[30.5,46.5],[29,44.5],[28,42.5]], // Black Sea
+  [[47,45],[50,46.5],[53,47],[54,44.5],[52.5,41.5],[54,39.5],[53,37],[50.5,37],[49,38.5],[49.5,40.5],[47.5,42.5]]]; // Caspian
+function earthTexture() {
+  const W = 2048, H = 1024, c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+  const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#1d3f63'); g.addColorStop(.5, '#16507a'); g.addColorStop(1, '#1d3f63');
+  x.fillStyle = g; x.fillRect(0, 0, W, H);
+  const P = ([lo, la]) => [(lo + 180) / 360 * W, (90 - la) / 180 * H];
+  const poly = (pts, fill) => { x.beginPath(); pts.forEach((p, i) => { const [a, b] = P(p); i ? x.lineTo(a, b) : x.moveTo(a, b); }); x.closePath(); x.fillStyle = fill; x.fill(); };
+  LAND.forEach(p => poly(p, '#5f7f4e'));
+  // subtle relief tint by latitude
+  x.globalCompositeOperation = 'source-atop';
+  const lg = x.createLinearGradient(0, 0, 0, H); lg.addColorStop(0, 'rgba(235,240,245,.85)'); lg.addColorStop(.12, 'rgba(235,240,245,0)'); lg.addColorStop(.35, 'rgba(160,140,90,.25)'); lg.addColorStop(.5, 'rgba(60,110,50,.25)'); lg.addColorStop(.65, 'rgba(160,140,90,.25)'); lg.addColorStop(.86, 'rgba(235,240,245,0)'); lg.addColorStop(.92, 'rgba(235,240,245,.9)');
+  x.fillStyle = lg; x.fillRect(0, 0, W, H); x.globalCompositeOperation = 'source-over';
+  WATER.forEach((p, i) => { if (i !== 1) poly(p, '#17507a'); });
+  // graticule
+  x.strokeStyle = 'rgba(200,225,255,.16)'; x.lineWidth = 1.2;
+  for (let lo = -180; lo <= 180; lo += 30) { const [a] = P([lo, 0]); x.beginPath(); x.moveTo(a, 0); x.lineTo(a, H); x.stroke(); }
+  for (let la = -60; la <= 60; la += 30) { const [, b] = P([0, la]); x.beginPath(); x.moveTo(0, b); x.lineTo(W, b); x.stroke(); }
+  x.strokeStyle = 'rgba(242,169,59,.55)'; x.lineWidth = 2; { const [, b] = P([0, 0]); x.beginPath(); x.moveTo(0, b); x.lineTo(W, b); x.stroke(); }
+  x.strokeStyle = 'rgba(255,97,97,.5)'; { const [a] = P([0, 0]); x.beginPath(); x.moveTo(a, 0); x.lineTo(a, H); x.stroke(); }
+  const t = new THREE.CanvasTexture(c); t.anisotropy = 4; return t;
+}
+function earthGeometry(R, nLat = 64, nLon = 128) {
+  const pos = [], uv = [], nor = [], idx = [];
+  for (let i = 0; i <= nLat; i++) {
+    const la = -Math.PI / 2 + Math.PI * i / nLat;
+    for (let j = 0; j <= nLon; j++) {
+      const lo = -Math.PI + 2 * Math.PI * j / nLon;
+      const p = [Math.cos(la) * Math.cos(lo), Math.cos(la) * Math.sin(lo), Math.sin(la)];
+      pos.push(p[0] * R, p[1] * R, p[2] * R); nor.push(...p); uv.push(j / nLon, i / nLat);
+    }
+  }
+  for (let i = 0; i < nLat; i++) for (let j = 0; j < nLon; j++) { const a = i * (nLon + 1) + j, b = a + nLon + 1; idx.push(a, a + 1, b, b, a + 1, b + 1); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx);
+  return g;
+}
+function starfield(n = 2500, R = 900) {
+  const p = []; for (let i = 0; i < n; i++) { const u = Math.random() * 2 - 1, t = Math.random() * Math.PI * 2, s = Math.sqrt(1 - u * u); p.push(R * s * Math.cos(t), R * s * Math.sin(t), R * u); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
+  return new THREE.Points(g, new THREE.PointsMaterial({ color: 0x9fb2cc, size: 1.4, sizeAttenuation: false, transparent: true, opacity: .7 }));
+}
+function glowSprite(color = '#ffd27a', size = 1) {
+  const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d');
+  const g = x.createRadialGradient(64, 64, 0, 64, 64, 64); g.addColorStop(0, '#fffbe8'); g.addColorStop(.18, color); g.addColorStop(.45, 'rgba(242,169,59,.25)'); g.addColorStop(1, 'rgba(242,169,59,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 128, 128);
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthWrite: false, transparent: true, blending: THREE.AdditiveBlending }));
+  s.scale.setScalar(size); return s;
+}
+/* ===================== RENDERER & VIEW FRAMEWORK ===================== */
+const vp = $('#vp');
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: false });
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+renderer.domElement.className = 'main'; renderer.domElement.tabIndex = 0;
+renderer.domElement.setAttribute('aria-label', '3D view. Drag to orbit, scroll to zoom, right-drag to pan.');
+vp.prepend(renderer.domElement);
+const BG = new THREE.Color(0x0a1018);
+function mkView({ up = [0, 0, 1], pos, target = [0, 0, 0], fov = 40, near = 0.01, far = 200 }) {
+  const scene = new THREE.Scene(); scene.background = BG;
+  const camera = new THREE.PerspectiveCamera(fov, 1, near, far); camera.up.set(...up); camera.position.set(...pos);
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.target.set(...target); controls.enableDamping = true; controls.dampingFactor = 0.12; controls.enabled = false; controls.update();
+  return { scene, camera, controls };
+}
+function addLights(scene, k = 1) {
+  scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x1a2230, 0.75 * k));
+  const d = new THREE.DirectionalLight(0xffffff, 0.9 * k); d.position.set(3, -2, 4); scene.add(d);
+  const d2 = new THREE.DirectionalLight(0x9fb4ff, 0.35 * k); d2.position.set(-3, 3, -2); scene.add(d2);
+}
+function viewPreset(view, dir, dist) {
+  const t = view.controls.target; const d = V3(dir).normalize().multiplyScalar(dist || view.camera.position.distanceTo(t));
+  view.camera.position.copy(t).add(d); view.controls.update();
+}
+function sizeOf() { const r = vp.getBoundingClientRect(); return { w: Math.max(1, r.width), h: Math.max(1, r.height) }; }
+
+/* ===================== ROTATION LAB ===================== */
+const ROT = (() => {
+  const V = mkView({ up: [0, 0, 1], pos: [3.2, 2.4, 2.1], fov: 38 });
+  addLights(V.scene);
+  // unit sphere guide + grid
+  const sph = new THREE.Group(); V.scene.add(sph);
+  const ringMat = new THREE.LineBasicMaterial({ color: 0x2a3a52, transparent: true, opacity: .55 });
+  const ring = (rot) => { const pts = Array.from({ length: 97 }, (_, k) => { const a = k / 96 * Math.PI * 2; return new THREE.Vector3(Math.cos(a), Math.sin(a), 0); }); const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), ringMat); rot(l); sph.add(l); };
+  ring(() => { }); ring(l => l.rotation.x = Math.PI / 2); ring(l => l.rotation.y = Math.PI / 2);
+  const grid = new THREE.GridHelper(4, 16, 0x223047, 0x182234); grid.rotation.x = Math.PI / 2; grid.material.transparent = true; grid.material.opacity = .5; V.scene.add(grid);
+  const refTriad = makeTriad(1.65, 0.008, ['X_R', 'Y_R', 'Z_R'], { opacity: 0.42 }); V.scene.add(refTriad);
+  const body = new THREE.Group(); V.scene.add(body);
+  const bodyTriad = makeTriad(1.3, 0.017, ['X_B', 'Y_B', 'Z_B']); body.add(bodyTriad);
+  let scModel = null, scVer = -1;
+  const ghosts = [0, 1].map(k => { const g = makeTriad(1.05, 0.007, k ? ['X″', 'Y″', 'Z″'] : ['X′', 'Y′', 'Z′'], { opacity: .55, labelScale: .8 }); V.scene.add(g); return g; });
+  const eigArrow = new Arrow(COL.eig, 1.9, 0.011, { label: 'ê' }); V.scene.add(eigArrow);
+  const eigBack = dashedLine([[0, 0, 0], [0, -1.5, 0]], COL.eig, .06, .05, .7); eigArrow.add(eigBack);
+  let arc = null, arcLabel = null;
+  const probe = new Arrow(COL.probe, 1, 0.012, { label: 'v' }); V.scene.add(probe);
+  const stepAxis = new Arrow(0xffffff, 2.0, 0.02, { opacity: .35 }); stepAxis.visible = false; V.scene.add(stepAxis);
+  // trails
+  const TR = 600; const trails = [COL.x, COL.y, COL.z].map(c => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TR * 3), 3)); g.setDrawRange(0, 0); const l = new THREE.Line(g, new THREE.LineBasicMaterial({ color: c, transparent: true, opacity: .85 })); l.n = 0; V.scene.add(l); return l; });
+  function clearTrails() { trails.forEach(t => { t.n = 0; t.geometry.setDrawRange(0, 0); }); }
+  function pushTrail(CRB) { const L = 1.3; trails.forEach((t, i) => { if (t.n >= TR) return; const a = t.geometry.attributes.position; a.setXYZ(t.n, CRB[0][i] * L, CRB[1][i] * L, CRB[2][i] * L); t.n++; a.needsUpdate = true; t.geometry.setDrawRange(0, t.n); }); }
+
+  let anim = null; // {kind, t, ...}
+  const seqNames = { 1: 'X', 2: 'Y', 3: 'Z' };
+  const greek = s => s === '321' ? ['ψ yaw', 'θ pitch', 'φ roll'] : ['θ₁', 'θ₂', 'θ₃'];
+  function eulerRad() { return S.rot.euler.map(rad); }
+  function CBR() { return AM.q2C(AM.q.unit(S.rot.q)); }
+  function setQ(qn, opts = {}) {
+    S.rot.q = AM.q.unit(qn);
+    if (!opts.keepEuler) S.rot.euler = AM.C2euler(S.rot.seq, AM.q2C(S.rot.q)).map(deg);
+    const aa = AM.q2axisAngle(S.rot.q); if (aa.angle > 1e-6 && !opts.keepAxis) S.rot.aaAxis = aa.axis;
+    save(); if (!opts.noSync) syncAll();
+  }
+  function setEuler(i, x) { S.rot.euler[i] = x; setQ(AM.C2q(AM.euler2C(S.rot.seq, eulerRad())), { keepEuler: true }); }
+  function animateTo(qTarget, dur = 0.45) {
+    const a = new THREE.Quaternion(S.rot.q.x, S.rot.q.y, S.rot.q.z, S.rot.q.w);
+    // NOTE three quaternion represents C_RB (active, Hamilton) -> same components as ours
+    const b = new THREE.Quaternion(qTarget.x, qTarget.y, qTarget.z, qTarget.w);
+    anim = { kind: 'slerp', t: 0, dur, a, b }; setQ(qTarget);
+  }
+  function playEuler() { clearTrails(); anim = { kind: 'euler', t: 0, step: 1.25, pause: 0.35 }; }
+  function playEig() { clearTrails(); anim = { kind: 'eig', t: 0, dur: 2.2 }; }
+  // compute display C_BR
+  function displayC() {
+    if (!anim) return CBR();
+    if (anim.kind === 'slerp') { const q = anim.a.clone().slerp(anim.b, easeIO(Math.min(1, anim.t / anim.dur))); return AM.q2C({ w: q.w, x: q.x, y: q.y, z: q.z }); }
+    if (anim.kind === 'eig') { const aa = AM.q2axisAngle(S.rot.q); const s = easeIO(Math.min(1, anim.t / anim.dur)); return AM.q2C(AM.axisAngle2q(aa.axis, aa.angle * s)); }
+    if (anim.kind === 'euler') { const t = eulerRad(); const st = anim.step + anim.pause; const f = [0, 1, 2].map(k => easeIO(Math.max(0, Math.min(1, (anim.t - k * st) / anim.step)))); return AM.euler2C(S.rot.seq, t.map((x, k) => x * f[k])); }
+    return CBR();
+  }
+  const easeIO = x => x < .5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
+  function update(dt) {
+    if (scVer !== scVersion) { if (scModel) { body.remove(scModel); disposeTree(scModel); } const b = S.sc.bus; const sc = 0.95 / Math.max(b.x, b.y, b.z); scModel = buildSC(S.sc, { busOpacity: 1 }); scModel.scale.setScalar(sc); body.add(scModel); scVer = scVersion; }
+    scModel.visible = S.rot.showSC;
+    let cap = null;
+    if (anim) {
+      anim.t += dt;
+      if (anim.kind === 'euler') {
+        const st = anim.step + anim.pause, k = Math.min(2, Math.floor(anim.t / st)); const [i, j, kk] = AM.seqAxes(S.rot.seq); const ax = [i, j, kk][k];
+        const t = eulerRad(); const partial = [0, 1, 2].map(n => n < k ? t[n] : 0);
+        const Cpre = AM.euler2C(S.rot.seq, partial); const axisW = AM.m.T(Cpre).map(r => r[ax - 1]); // column ax of C_RB
+        stepAxis.visible = true; stepAxis.setDir(axisW); stepAxis.mat.color.setHex([COL.x, COL.y, COL.z][ax - 1]);
+        const prime = ['_R', '′', '″'][k];
+        cap = `<b>Step ${k + 1}/3</b> · rotate <b>${greek(S.rot.seq)[k]} = ${S.rot.euler[k].toFixed(1)}°</b> about <b style="color:${['var(--ax-x)', 'var(--ax-y)', 'var(--ax-z)'][ax - 1]}">${seqNames[ax]}${prime}</b>${k ? ' (axis of the frame produced by the previous step)' : ' (reference axis)'}`;
+        if (anim.t > 3 * st) { anim = null; stepAxis.visible = false; }
+      } else if (anim.kind === 'eig') {
+        const aa = AM.q2axisAngle(S.rot.q);
+        cap = `<b>Eigenaxis rotation</b> · one rotation of <b>${deg(aa.angle).toFixed(1)}°</b> about ê = [${aa.axis.map(x => fmt(x, 3)).join(', ')}] reaches the same attitude`;
+        if (anim.t > anim.dur + .4) anim = null;
+      } else if (anim.t > anim.dur) anim = null;
+    }
+    const C = displayC();
+    setObjFromCBR(body, C);
+    if (anim && S.rot.showTrails) pushTrail(AM.m.T(C));
+    trails.forEach(t => t.visible = S.rot.showTrails);
+    // ghosts (intermediate frames of Euler sequence)
+    const t = eulerRad();
+    const showG = S.rot.showGhosts;
+    ghosts[0].visible = ghosts[1].visible = showG;
+    if (showG) { setObjFromCBR(ghosts[0], AM.euler2C(S.rot.seq, [t[0], 0, 0])); setObjFromCBR(ghosts[1], AM.euler2C(S.rot.seq, [t[0], t[1], 0])); }
+    // eigen axis + arc
+    const aa = AM.q2axisAngle(S.rot.q);
+    eigArrow.visible = aa.angle > 1e-4; eigArrow.setDir(aa.axis);
+    if (!arc || arc._key !== aa.angle.toFixed(5) + aa.axis.map(x => x.toFixed(4)).join()) {
+      if (arc) { V.scene.remove(arc); disposeTree(arc); }
+      let u = AM.v.sub([1, 0, 0], AM.v.scale(aa.axis, aa.axis[0])); if (AM.v.norm(u) < .2) u = AM.v.sub([0, 1, 0], AM.v.scale(aa.axis, aa.axis[1])); u = AM.v.unit(u);
+      const w = AM.v.cross(aa.axis, u), R = 0.62, n = 64, pts = [];
+      for (let k = 0; k <= n; k++) { const s = aa.angle * k / n; pts.push(V3(AM.v.add(AM.v.scale(u, R * Math.cos(s)), AM.v.scale(w, R * Math.sin(s))))); }
+      arc = new THREE.Group(); arc._key = aa.angle.toFixed(5) + aa.axis.map(x => x.toFixed(4)).join();
+      arc.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: COL.eig })));
+      arc.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), pts[0]]), new THREE.LineBasicMaterial({ color: COL.eig, transparent: true, opacity: .4 })));
+      arc.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), pts[n]]), new THREE.LineBasicMaterial({ color: COL.eig, transparent: true, opacity: .4 })));
+      const lb = makeLabel('φ ' + deg(aa.angle).toFixed(1) + '°', '#c48bff', 24, { scale: .85 }); lb.position.copy(pts[n >> 1]).multiplyScalar(1.12); arc.add(lb);
+      arc.visible = aa.angle > 1e-4; V.scene.add(arc);
+    }
+    // probe
+    probe.visible = S.rot.showProbe; const pv = S.rot.probe; const pn = AM.v.norm(pv);
+    if (pn > 1e-9) { probe.setDir(pv); probe.setLength(Math.min(2.2, 1.45)); }
+    const ce = $('#caption'); if (cap) { ce.hidden = false; $('#captionText').innerHTML = cap; } else if (!ce.hidden && S.tab === 'rot') ce.hidden = true;
+    V.controls.update();
+  }
+  function render() { renderer.setViewport(0, 0, sizeOf().w, sizeOf().h); renderer.setScissorTest(false); renderer.render(V.scene, V.camera); }
+
+  /* ---------- panel ---------- */
+  function seqLabel(s) { const a = s.split('').map(n => seqNames[n]).join('-'); const extra = { '321': ' · yaw–pitch–roll', '313': ' · classical (orbit RAAN-i-ω)', '123': ' · roll–pitch–yaw (X first)' }[s] || ''; return `${s[0]}-${s[1]}-${s[2]}  (${a})${extra}`; }
+  function panel() {
+    const out = [];
+    const [i, j, k] = AM.seqAxes(S.rot.seq); const sym = AM.isSymmetric(S.rot.seq);
+    const names = greek(S.rot.seq);
+    out.push(card('Euler angles', 'intrinsic',
+      selectRow({ id: 'seq', label: 'Sequence', options: AM.SEQS.map(s => [s, seqLabel(s)]), get: () => S.rot.seq, set: v => { S.rot.seq = v; setQ(S.rot.q, { noSync: true }); renderRail(); toast('Same attitude, new angles'); } }),
+      slider({ id: 'e1', label: h('span', null, names[0], ' · ', h('span', { class: 'ax', style: `color:var(--ax-${'xyz'[i - 1]})` }, seqNames[i] + '_R')), min: -180, max: 180, step: .5, get: () => S.rot.euler[0], set: x => setEuler(0, x) }),
+      slider({ id: 'e2', label: h('span', null, names[1], ' · ', h('span', { class: 'ax', style: `color:var(--ax-${'xyz'[j - 1]})` }, seqNames[j] + '′')), min: sym ? 0 : -90, max: sym ? 180 : 90, step: .5, get: () => S.rot.euler[1], set: x => setEuler(1, x) }),
+      slider({ id: 'e3', label: h('span', null, names[2], ' · ', h('span', { class: 'ax', style: `color:var(--ax-${'xyz'[k - 1]})` }, seqNames[k] + '″')), min: -180, max: 180, step: .5, get: () => S.rot.euler[2], set: x => setEuler(2, x) }),
+      h('div', { class: 'status' }, liveText(() => {
+        const t2 = S.rot.euler[1] * D2R; const m = sym ? Math.abs(Math.sin(t2)) : Math.abs(Math.cos(t2)); const marg = deg(Math.asin(Math.min(1, m)));
+        return marg < 0.05 ? `<span class="chip bad">Gimbal lock: θ₁ and θ₃ rotate about the same axis</span>` : marg < 10 ? `<span class="chip warn">Near gimbal lock · ${marg.toFixed(1)}° margin</span>` : `<span class="chip ok">Well defined · ${marg.toFixed(0)}° from singularity</span>`;
+      })),
+      h('div', { class: 'btns' }, h('button', { class: 'btn primary', onclick: playEuler }, '▶ Play step by step'), h('button', { class: 'btn', onclick: () => { animateTo(AM.q.id()); } }, 'Reset to identity')),
+      h('div', { class: 'formula' }, `C_BR = R${k}(θ₃) · R${j}(θ₂) · R${i}(θ₁)`),
+      tip(`Each rotation is about an axis of the frame you <b>just produced</b> (′, ″). Singular when θ₂ = ${sym ? '0° or 180°' : '±90°'}: then the first and last axes line up and only θ₁${sym ? '+' : '±'}θ₃ is defined.`)
+    ));
+    const qOrder = () => S.rot.scalarFirst ? [['w', 'q₀'], ['x', 'q₁'], ['y', 'q₂'], ['z', 'q₃']] : [['x', 'q₁'], ['y', 'q₂'], ['z', 'q₃'], ['w', 'q₄']];
+    const qset = (key, x) => { const q = Object.assign({}, S.rot.q); q[key] = x; if (AM.q.norm(q) < 1e-9) return; setQ(q); };
+    out.push(card('Quaternion', null,
+      h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, seg([[true, 'Scalar first'], [false, 'Scalar last']], () => S.rot.scalarFirst, v => { S.rot.scalarFirst = v; save(); renderRail(); }), liveText(() => `<span class="lbl">‖q‖ = ${AM.q.norm(S.rot.q).toFixed(6)}</span>`)),
+      h('div', { class: 'grid4' }, qOrder().map(([kk, lab]) => numCell('q' + kk, lab + (kk === 'w' ? ' (scalar)' : ''), () => S.rot.q[kk], x => qset(kk, x), 0.01, 5))),
+      h('div', { class: 'btns' }, h('button', { class: 'btn', onclick: () => { S.rot.q = AM.q.neg(S.rot.q); save(); syncAll(); toast('−q: same attitude'); } }, 'Negate  (−q)'), h('button', { class: 'btn', onclick: () => { S.rot.q = AM.q.canon(S.rot.q); save(); syncAll(); } }, 'Make scalar ≥ 0')),
+      tip('q = [cos(φ/2), ê·sin(φ/2)]. <b>q and −q are the same attitude</b> (double cover). Edit any component; the quaternion is re-normalised.'),
+      h('details', { class: 'more' }, h('summary', null, 'Hamilton vs. JPL/Shuster — what these numbers mean'),
+        tip('The same four numbers are read two ways. <b>Hamilton</b> (Three.js, Eigen, ROS): R(q) rotates reference axes onto body axes, R(q) = C_RB. <b>JPL/Shuster</b> (Markley & Crassidis, many AOCS codes): A(q) = C_BR. A(q) = R(q)ᵀ, so the components match; what differs is the composition order: Hamilton q_CA = q_BA ∘ q_CB, Shuster q_CA = q_CB ⊗ q_BA. Check which one your flight code uses.'))
+    ));
+    out.push(card('Euler axis & angle', 'eigenaxis',
+      h('div', { class: 'grid3' }, [0, 1, 2].map(n => numCell('ea' + n, 'ê' + 'xyz'[n], () => (S.rot.aaAxis || [1, 0, 0])[n], x => { const ax = (S.rot.aaAxis || [1, 0, 0]).slice(); ax[n] = x; if (AM.v.norm(ax) < 1e-9) return; S.rot.aaAxis = AM.v.unit(ax); const ang = AM.q2axisAngle(S.rot.q).angle; setQ(AM.axisAngle2q(S.rot.aaAxis, ang), { keepAxis: true }); }, 0.05, 4))),
+      slider({ id: 'eang', label: 'Angle φ', min: 0, max: 360, step: .5, get: () => deg(AM.q2axisAngle(S.rot.q).angle), set: x => setQ(AM.axisAngle2q(S.rot.aaAxis || AM.q2axisAngle(S.rot.q).axis, rad(x)), { keepAxis: true }) }),
+      h('div', { class: 'kv' }, h('dt', null, 'Rotation vector φ·ê'), h('dd', null, liveText(() => { const a = AM.q2axisAngle(S.rot.q); return '[' + a.axis.map(x => fmt(x * deg(a.angle), 2)).join(', ') + ']°'; }))),
+      h('div', { class: 'btns' }, h('button', { class: 'btn primary', onclick: playEig }, '▶ Play eigenaxis rotation')),
+      tip('Euler\'s theorem: any attitude is <b>one</b> rotation about a fixed axis ê. ê has the same components in R and B. Compare the trails from this and the step-by-step Euler play.')
+    ));
+    out.push(card('Direction cosine matrix', null,
+      h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, seg([['BR', 'C_BR  (R → B)'], ['RB', 'C_RB  (B → R)']], () => S.rot.dcmView, v => { S.rot.dcmView = v; save(); }),),
+      h('div', { class: 'mat' }, liveText(() => { const C = CBR(); return matHTML(S.rot.dcmView === 'BR' ? C : AM.m.T(C), 4); }, 'contents')),
+      h('div', { class: 'kv' }, h('dt', null, 'det C'), h('dd', null, liveText(() => fmt(AM.m.det(CBR()), 6))), h('dt', null, 'trace C = 1 + 2cos φ'), h('dd', null, liveText(() => { const C = CBR(); return fmt(C[0][0] + C[1][1] + C[2][2], 4); }))),
+      liveText(() => S.rot.dcmView === 'BR' ? '<p class="tip"><b>Rows</b> of C_BR are the body axes X_B, Y_B, Z_B written in R. v_B = C_BR · v_R.</p>' : '<p class="tip"><b>Columns</b> of C_RB are the body axes written in R. C_RB = C_BRᵀ = C_BR⁻¹.</p>')
+    ));
+    const nud = (axis, sign) => { const a = rad(S.rot.nudge * sign); const C = CBR(); const Cn = S.rot.nudgeFrame === 'ref' ? AM.m.mul(C, AM.Rp(axis, a)) : AM.m.mul(AM.Rp(axis, a), C); animateTo(AM.C2q(Cn)); };
+    out.push(card('Rotate step by step', 'compose',
+      h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;align-items:center' }, seg([['body', 'About body axes'], ['ref', 'About reference axes']], () => S.rot.nudgeFrame || 'body', v => { S.rot.nudgeFrame = v; save(); }),
+        selectRow({ id: 'nudge', label: 'Step', options: [[5, '5°'], [15, '15°'], [45, '45°'], [90, '90°']], get: () => S.rot.nudge, set: v => { S.rot.nudge = +v; save(); } })),
+      h('div', { class: 'grid3' }, [1, 2, 3].map(n => h('div', { class: 'btns', style: 'flex-wrap:nowrap' }, h('button', { class: 'btn mono', style: `flex:1;color:var(--ax-${'xyz'[n - 1]})`, onclick: () => nud(n, -1) }, '−' + 'XYZ'[n - 1]), h('button', { class: 'btn mono', style: `flex:1;color:var(--ax-${'xyz'[n - 1]})`, onclick: () => nud(n, +1) }, '+' + 'XYZ'[n - 1])))),
+      liveText(() => `<div class="formula">${(S.rot.nudgeFrame || 'body') === 'body' ? 'C_BR ← R_n(Δ) · C_BR   (pre-multiply)' : 'C_BR ← C_BR · R_n(Δ)   (post-multiply)'}</div>`),
+      tip('Try +90° X then +90° Y, then undo in the opposite order: rotations do not commute. Body-axis steps are what a reaction wheel slew about a body axis does.')
+    ));
+    out.push(card('Vector transform', 'v_B = C_BR · v_R',
+      h('div', { class: 'grid3' }, [0, 1, 2].map(n => numCell('pv' + n, 'v_R ' + 'xyz'[n], () => S.rot.probe[n], x => { S.rot.probe[n] = x; save(); }, 0.1, 3))),
+      h('div', { class: 'kv' }, h('dt', null, 'v_B (body)'), h('dd', null, liveText(() => '[' + AM.m.mulv(CBR(), S.rot.probe).map(x => fmt(x, 3)).join(', ') + ']'))),
+      check('showProbe', 'Show v (pink)', () => S.rot.showProbe, v => { S.rot.showProbe = v; save(); }),
+      tip('One physical arrow, two sets of coordinates. Example: Sun vector from the ephemeris (inertial) → what the sun sensor should measure (body).')
+    ));
+    out.push(card('Display', null,
+      h('div', { class: 'checks' },
+        check('showSC', 'Spacecraft model', () => S.rot.showSC, v => { S.rot.showSC = v; save(); }),
+        check('showGhosts', 'Intermediate frames ′ ″', () => S.rot.showGhosts, v => { S.rot.showGhosts = v; save(); }),
+        check('showTrails', 'Axis-tip trails', () => S.rot.showTrails, v => { S.rot.showTrails = v; save(); })),
+      h('div', { class: 'btns' }, h('button', { class: 'btn', onclick: clearTrails }, 'Clear trails'))
+    ));
+    return out;
+  }
+  function hud() {
+    $('#hudTL').append(h('div', { class: 'hud' }, h('h4', null, 'Body B relative to reference R'),
+      h('dl', { class: 'kv' },
+        h('dt', null, 'q ' + (S.rot.scalarFirst ? '[q₀ q₁ q₂ q₃]' : '[q₁ q₂ q₃ q₄]')), h('dd', null, liveText(() => { const q = S.rot.q; const a = S.rot.scalarFirst ? [q.w, q.x, q.y, q.z] : [q.x, q.y, q.z, q.w]; return a.map(x => fmt(x, 4)).join(' '); })),
+        h('dt', null, 'Euler ' + S.rot.seq), h('dd', null, liveText(() => S.rot.euler.map(x => x.toFixed(1) + '°').join('  '))),
+        h('dt', null, 'φ about ê'), h('dd', null, liveText(() => { const a = AM.q2axisAngle(S.rot.q); return deg(a.angle).toFixed(1) + '° · [' + a.axis.map(x => fmt(x, 2)).join(' ') + ']'; }))),
+      h('div', { class: 'legend', style: 'margin-top:6px' }, h('span', null, h('i', { style: 'background:var(--muted);opacity:.6' }), 'R (faint)'), h('span', null, h('i', { style: 'background:var(--text)' }), 'B (bold)'), h('span', null, h('i', { style: 'background:var(--eig)' }), 'Euler axis'), h('span', null, h('i', { style: 'background:var(--probe)' }), 'v'))));
+    const vb = (t, d) => h('button', { class: 'vbtn', onclick: () => viewPreset(V, d, 4.6) }, t);
+    $('#hudTR').append(vb('Iso', [1.4, 1, .9]), vb('+X', [1, 0, 0.0001]), vb('+Y', [0, 1, 0.0001]), vb('+Z', [0.0001, 0, 1]));
+  }
+  return { V, update, render, panel, hud, setQ, animateTo, CBR };
+})();
+/* ===================== ORBIT & FRAMES ===================== */
+const ORB = (() => {
+  const U = 1 / 1000; // scene unit = 1000 km
+  const V = mkView({ up: [0, 0, 1], pos: [17, -15, 9], fov: 40, near: 0.002, far: 4000 });
+  V.controls.minDistance = 0.05;
+  V.scene.add(starfield());
+  V.scene.add(new THREE.AmbientLight(0x6d7f99, 0.28));
+  const sunLight = new THREE.DirectionalLight(0xfff3dc, 1.25); V.scene.add(sunLight); V.scene.add(sunLight.target);
+  const sunGlow = glowSprite('#ffd27a', 60); V.scene.add(sunGlow);
+  const RE = ENV.RE * U;
+  const earth = new THREE.Group(); V.scene.add(earth);
+  const earthMesh = new THREE.Mesh(earthGeometry(RE), new THREE.MeshPhongMaterial({ map: earthTexture(), shininess: 10, specular: 0x1d2b3a }));
+  earth.add(earthMesh);
+  const atmo = new THREE.Mesh(new THREE.SphereGeometry(RE * 1.03, 64, 48), new THREE.ShaderMaterial({
+    vertexShader: 'varying vec3 vN; varying vec3 vP; void main(){ vN = normalize(normalMatrix*normal); vec4 p = modelViewMatrix*vec4(position,1.); vP = p.xyz; gl_Position = projectionMatrix*p; }',
+    fragmentShader: 'varying vec3 vN; varying vec3 vP; void main(){ float f = pow(1.0 - abs(dot(normalize(-vP), vN)), 3.0); gl_FragColor = vec4(0.35,0.62,1.0, f*0.9); }',
+    side: THREE.BackSide, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+  V.scene.add(atmo);
+  const eciTriad = makeTriad(RE * 1.9, 0.035, ['X_ECI ♈', 'Y_ECI', 'Z_ECI'], { opacity: .55 }); V.scene.add(eciTriad);
+  // equatorial plane ring
+  { const pts = Array.from({ length: 129 }, (_, k) => { const a = k / 128 * Math.PI * 2; return new THREE.Vector3(Math.cos(a) * RE * 1.9, Math.sin(a) * RE * 1.9, 0); }); V.scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0x2a3a52, transparent: true, opacity: .6 }))); }
+  // orbit line (vertex colours for eclipse)
+  const NO = 400;
+  const orbitGeo = new THREE.BufferGeometry(); orbitGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array((NO + 1) * 3), 3)); orbitGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array((NO + 1) * 3), 3));
+  const orbitLine = new THREE.Line(orbitGeo, new THREE.LineBasicMaterial({ vertexColors: true })); V.scene.add(orbitLine);
+  const NT = 500;
+  const trackGeo = new THREE.BufferGeometry(); trackGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(NT * 3), 3));
+  const track = new THREE.LineSegments(trackGeo, new THREE.LineBasicMaterial({ color: 0xf2a93b, transparent: true, opacity: .8 })); earth.add(track);
+  // spacecraft
+  const scNode = new THREE.Group(); V.scene.add(scNode);
+  let scModel = null, scVer = -1;
+  const lvlhTriad = makeTriad(1, 0.006, ['x_L', 'y_L', 'z_L ⊕'], { opacity: .5, labelScale: .8 }); V.scene.add(lvlhTriad);
+  const sunArrow = new Arrow(COL.sun, 1, 0.008, { label: 'Sun' }); V.scene.add(sunArrow);
+  const bArrow = new Arrow(COL.teal, 1, 0.008, { label: 'B' }); V.scene.add(bArrow);
+  const vArrow = new Arrow(COL.cyan, 1, 0.008, { label: 'v' }); V.scene.add(vArrow);
+  const ray = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(1, 0, 0)]), new THREE.LineBasicMaterial({ color: 0xe8ecf2, transparent: true, opacity: .8 })); V.scene.add(ray);
+  const foot = new THREE.Mesh(new THREE.RingGeometry(0.6, 1, 40), new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, transparent: true, opacity: .9, depthTest: false })); foot.renderOrder = 5; V.scene.add(foot);
+  const footLbl = makeLabel('PL footprint', '#e8ecf2', 22, { scale: .8 }); V.scene.add(footLbl);
+  const tgt = new THREE.Group(); { const m = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.12, 12), new THREE.MeshBasicMaterial({ color: 0xff7bd5 })); m.rotation.x = -Math.PI / 2; m.position.z = 0.06; tgt.add(m); const l = makeLabel('Target', '#ff7bd5', 22, { scale: .8 }); l.position.z = .14; tgt.add(l); } earth.add(tgt);
+
+  /* ---------- inset: body-frame view ---------- */
+  const insetEl = $('#inset');
+  const I = { scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(42, 1, 0.01, 200) };
+  I.scene.background = new THREE.Color(0x070c13);
+  I.camera.up.set(0, 0, -1); I.camera.position.set(2.6, -2.2, -1.4);
+  I.controls = new THREE.OrbitControls(I.camera, insetEl); I.controls.enableDamping = true; I.controls.enablePan = false; I.controls.minDistance = 1.2; I.controls.maxDistance = 6;
+  I.scene.add(new THREE.AmbientLight(0x8090a8, 0.45));
+  const iSun = new THREE.DirectionalLight(0xfff3dc, 1.1); I.scene.add(iSun); I.scene.add(iSun.target);
+  I.scene.add(new THREE.HemisphereLight(0xbfd0ff, 0x101820, .35));
+  const iEarth = new THREE.Mesh(earthGeometry(1, 48, 96), new THREE.MeshPhongMaterial({ map: earthMesh.material.map, shininess: 5 })); I.scene.add(iEarth);
+  let iModel = null, iVer = -1;
+  const iTriad = makeTriad(1.05, 0.012, ['X_B', 'Y_B', 'Z_B']); I.scene.add(iTriad);
+  const iSunA = new Arrow(COL.sun, 1.5, 0.014, { label: 'Sun' }); I.scene.add(iSunA);
+  const iSunGlow = glowSprite('#ffd27a', 0.9); I.scene.add(iSunGlow);
+  const iB = new Arrow(COL.teal, 1.35, 0.014, { label: 'B' }); I.scene.add(iB);
+  const iV = new Arrow(COL.cyan, 1.2, 0.01, { label: 'v' }); I.scene.add(iV);
+  const iPlane = new THREE.Mesh(new THREE.CircleGeometry(0.95, 48), new THREE.MeshBasicMaterial({ color: COL.teal, transparent: true, opacity: .13, side: THREE.DoubleSide, depthWrite: false })); I.scene.add(iPlane);
+  const iPlaneRim = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(Array.from({ length: 48 }, (_, k) => new THREE.Vector3(Math.cos(k / 48 * 6.283) * .95, Math.sin(k / 48 * 6.283) * .95, 0))), new THREE.LineBasicMaterial({ color: COL.teal, transparent: true, opacity: .45 })); iPlane.add(iPlaneRim);
+  const iPlaneLbl = makeLabel('MTQ torque plane ⊥ B', '#57c7b8', 20, { scale: .75 }); iPlaneLbl.position.set(.95, 0, 0); iPlane.add(iPlaneLbl);
+
+  /* ---------- model ---------- */
+  function epochDate() { const d = new Date(S.orbit.epoch + ':00Z'); return isNaN(d) ? new Date(EPOCH0 + ':00Z') : d; }
+  function els() {
+    const o = S.orbit, rp = ENV.RE + Math.min(o.hp, o.ha), ra = ENV.RE + Math.max(o.hp, o.ha);
+    return { a: (ra + rp) / 2, e: (ra - rp) / (ra + rp), i: rad(o.i), raan: rad(o.raan), argp: rad(o.argp), nu0: rad(o.nu0) };
+  }
+  function axisSpec(spec) {
+    if (!spec) return [0, 0, 1];
+    if (spec.startsWith('comp:')) { const c = S.sc.comps.find(c => 'comp:' + c.id === spec); return c ? compAxis(c) : [0, 0, 1]; }
+    const s = spec[0] === '-' ? -1 : 1, k = 'XYZ'.indexOf(spec[1]); const a = [0, 0, 0]; a[k] = s; return a;
+  }
+  function payloadComp() { return S.sc.comps.find(c => c.id === S.orbit.tgtComp) || S.sc.comps.find(c => c.type === 'payload') || null; }
+  function attitude(t, E = els()) {
+    const date = new Date(epochDate().getTime() + t * 1000);
+    const st = ENV.propagate(E, t, S.orbit.j2);
+    const sun = ENV.sunECI(date);
+    const CLI = ENV.lvlh(st.r, st.v);
+    const o = S.orbit; let CBI, flag = null;
+    const nadirI = AM.v.unit(AM.v.scale(st.r, -1)), hI = AM.v.unit(AM.v.cross(st.r, st.v));
+    const refVec = k => k === 'nadir' ? nadirI : k === 'normal' ? hI : k === 'antinormal' ? AM.v.scale(hI, -1) : k === 'velocity' ? AM.v.unit(st.v) : k === 'zenith' ? AM.v.scale(nadirI, -1) : nadirI;
+    if (o.mode === 'lvlh') CBI = AM.m.mul(AM.euler2C('321', [rad(o.yaw), rad(o.pitch), rad(o.roll)]), CLI);
+    else if (o.mode === 'sun') { let b1 = axisSpec(o.sunAxis), b2 = axisSpec(o.sunSecAxis || '+X'); if (AM.v.norm(AM.v.cross(b1, b2)) < 1e-3) b2 = Math.abs(b1[0]) < .9 ? [1, 0, 0] : [0, 1, 0]; CBI = AM.triad(b1, b2, sun, refVec(o.sunSec)); }
+    else if (o.mode === 'inertial') CBI = ROT.CBR();
+    else if (o.mode === 'target') {
+      const tE = ENV.llh2ecef(rad(o.tgtLat), rad(o.tgtLon)); const tI = ENV.ecef2eci(tE, date); const los = AM.v.sub(tI, st.r);
+      const elev = Math.PI / 2 - AM.v.angle(tI, AM.v.scale(los, -1));
+      const pc = payloadComp(); const b1 = pc ? compAxis(pc) : [0, 0, 1];
+      if (elev > 0) { let b2 = [1, 0, 0]; if (AM.v.norm(AM.v.cross(b1, b2)) < 1e-3) b2 = [0, 1, 0]; CBI = AM.triad(b1, b2, los, st.v); flag = { elev }; }
+      else { CBI = CLI; flag = { elev, below: true }; }
+    }
+    const ecl = ENV.eclipse(st.r, sun);
+    return { t, date, st, sun, CLI, CBI, ecl, flag };
+  }
+  function rate(t) { const a = attitude(t).CBI, b = attitude(t + 1).CBI; const d = AM.m.mul(b, AM.m.T(a)); return [(d[1][2] - d[2][1]) / 2, (d[2][0] - d[0][2]) / 2, (d[0][1] - d[1][0]) / 2]; }
+  function sensorEval(c, A) {
+    const bore = compAxis(c), sunB = AM.m.mulv(A.CBI, A.sun), nadB = AM.m.mulv(A.CBI, AM.v.unit(AM.v.scale(A.st.r, -1)));
+    const rho = Math.asin(ENV.RE / AM.v.norm(A.st.r));
+    const sunAng = deg(AM.v.angle(bore, sunB)), nadAng = deg(AM.v.angle(bore, nadB)), limb = nadAng - deg(rho);
+    const r = { sunAng, nadAng, limb };
+    if (c.type === 'str') { r.sunBlind = !A.ecl && sunAng < c.sunExcl; r.earthBlind = limb < c.earthExcl; r.ok = !r.sunBlind && !r.earthBlind; }
+    if (c.type === 'css') { r.sees = !A.ecl && sunAng < c.fov / 2; }
+    if (c.type === 'payload' || c.type === 'ant') { r.onGround = limb < 0; }
+    if (c.type === 'sa') { r.cosInc = A.ecl ? 0 : Math.max(0, Math.cos(sunAng * D2R)); }
+    return r;
+  }
+
+  /* ---------- geometry refresh ---------- */
+  let lastOrbitKey = '', lastTrackT = -1e9, lastTrackKey = '';
+  function refreshOrbit(t, E) {
+    const key = JSON.stringify(E) + S.orbit.j2 + S.orbit.epoch;
+    if (key === lastOrbitKey && Math.abs(t - refreshOrbit.t) < 300) return; lastOrbitKey = key; refreshOrbit.t = t;
+    const T = ENV.propagate(E, 0, false).period; const p = orbitGeo.attributes.position, c = orbitGeo.attributes.color; const e0 = epochDate().getTime();
+    for (let k = 0; k <= NO; k++) {
+      const tt = t + k / NO * T; const s = ENV.propagate(E, tt, S.orbit.j2); p.setXYZ(k, s.r[0] * U, s.r[1] * U, s.r[2] * U);
+      const ecl = ENV.eclipse(s.r, ENV.sunECI(new Date(e0 + tt * 1000)));
+      if (ecl) c.setXYZ(k, .22, .3, .45); else c.setXYZ(k, .95, .68, .25);
+    }
+    p.needsUpdate = c.needsUpdate = true; orbitGeo.computeBoundingSphere();
+  }
+  function refreshTrack(t, E) {
+    const key = lastOrbitKey;
+    if (key === lastTrackKey && Math.abs(t - lastTrackT) < 20) return; lastTrackKey = key; lastTrackT = t;
+    const T = ENV.propagate(E, 0, false).period; const p = trackGeo.attributes.position; const e0 = epochDate().getTime();
+    let prev = null, n = 0; const N = NT / 2;
+    for (let k = 0; k <= N; k++) {
+      const tt = t - T + 2 * T * k / N; const s = ENV.propagate(E, tt, S.orbit.j2); const pe = ENV.eci2ecef(s.r, new Date(e0 + tt * 1000));
+      const u = AM.v.scale(AM.v.unit(pe), RE * 1.003);
+      if (prev && n < NT - 1) { p.setXYZ(n++, prev[0], prev[1], prev[2]); p.setXYZ(n++, u[0], u[1], u[2]); }
+      prev = u;
+    }
+    trackGeo.setDrawRange(0, n); p.needsUpdate = true; trackGeo.computeBoundingSphere();
+  }
+  let cur = null, prevScPos = null;
+  function scDispScale() { return 0.13 * S.orbit.scale; }
+  function update(dt) {
+    const o = S.orbit;
+    if (o.playing) { o.t += dt * o.speed; if (o.t > 86400 * 3) o.t = 0; }
+    const E = els(); const A = attitude(o.t, E); cur = A;
+    const gm = ENV.gmst(A.date); earth.rotation.z = gm;
+    sunLight.position.set(...AM.v.scale(A.sun, 100)); sunGlow.position.set(...AM.v.scale(A.sun, 700));
+    refreshOrbit(o.t, E); refreshTrack(o.t, E); track.visible = o.show.track; eciTriad.visible = o.show.eci;
+    // spacecraft
+    if (scVer !== scVersion) { if (scModel) { scNode.remove(scModel); disposeTree(scModel); } scModel = buildSC(S.sc, { cones: true, triad: true, triadLen: 1.35, triadR: .02 }); scNode.add(scModel); scVer = scVersion; }
+    const k = scDispScale(); scModel.scale.setScalar(k);
+    scModel.traverse(x => { if (x.userData.isCone) x.visible = o.show.cones; });
+    const pos = V3(AM.v.scale(A.st.r, U)); scNode.position.copy(pos); setObjFromCBR(scNode, A.CBI);
+    lvlhTriad.visible = o.show.lvlh; lvlhTriad.position.copy(pos); setObjFromCBR(lvlhTriad, A.CLI); lvlhTriad.scale.setScalar(k * 2.2);
+    const L = k * 2.6;
+    sunArrow.visible = o.show.sunv; sunArrow.position.copy(pos); sunArrow.setDir(A.sun); sunArrow.setLength(L); sunArrow.mat.opacity = A.ecl ? .35 : 1; sunArrow.mat.transparent = true; sunArrow.scale.setScalar(Math.max(.4, k * 6));
+    sunArrow.setLength(L / Math.max(.4, k * 6));
+    const BI = ENV.bfieldECI(A.st.r, A.date);
+    bArrow.visible = o.show.bv; bArrow.position.copy(pos); bArrow.setDir(BI); bArrow.scale.setScalar(Math.max(.4, k * 6)); bArrow.setLength(L * .8 / Math.max(.4, k * 6));
+    vArrow.visible = o.show.lvlh; vArrow.position.copy(pos); vArrow.setDir(A.st.v); vArrow.scale.setScalar(Math.max(.4, k * 6)); vArrow.setLength(L * .9 / Math.max(.4, k * 6));
+    // payload ray & footprint
+    const pc = payloadComp();
+    if (pc) {
+      const bI = AM.m.mulv(AM.m.T(A.CBI), compAxis(pc)); const hit = ENV.rayEarth(A.st.r, bI);
+      ray.visible = foot.visible = footLbl.visible = !!hit;
+      if (hit) {
+        const pa = ray.geometry.attributes.position; pa.setXYZ(0, pos.x, pos.y, pos.z); pa.setXYZ(1, hit[0] * U, hit[1] * U, hit[2] * U); pa.needsUpdate = true; ray.geometry.computeBoundingSphere();
+        const slant = AM.v.norm(AM.v.sub(hit, A.st.r)); const rad_ = Math.max(slant * Math.tan(pc.fov / 2 * D2R), 0) * U;
+        const n = V3(AM.v.unit(hit)); foot.position.set(hit[0] * U, hit[1] * U, hit[2] * U).addScaledVector(n, 0.004); foot.lookAt(foot.position.clone().add(n));
+        const vis = Math.max(rad_, 0.025); foot.scale.setScalar(vis); footLbl.position.copy(foot.position).addScaledVector(n, 0.02);
+      }
+    } else ray.visible = foot.visible = footLbl.visible = false;
+    tgt.visible = o.mode === 'target'; if (tgt.visible) { const p = AM.v.scale(ENV.llh2ecef(rad(o.tgtLat), rad(o.tgtLon)), U); tgt.position.set(...p); tgt.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), V3(AM.v.unit(p))); }
+    V.scene.updateMatrixWorld(); [scModel, lvlhTriad, sunArrow, bArrow, vArrow].forEach(fixLabels);
+    // follow camera
+    if (o.show.follow) { if (prevScPos) { const d = pos.clone().sub(prevScPos); V.camera.position.add(d); } V.controls.target.copy(pos); }
+    prevScPos = pos.clone();
+    V.controls.update();
+    // inset
+    if (iVer !== scVersion) { if (iModel) { I.scene.remove(iModel); disposeTree(iModel); } const b = S.sc.bus; iModel = buildSC(S.sc, { cones: true, excl: true }); iModel.scale.setScalar(0.9 / Math.max(b.x, b.y, b.z)); I.scene.add(iModel); iVer = scVersion; }
+    const sunB = AM.m.mulv(A.CBI, A.sun), nadB = AM.m.mulv(A.CBI, AM.v.unit(AM.v.scale(A.st.r, -1))), vB = AM.m.mulv(A.CBI, A.st.v), BB = AM.m.mulv(A.CBI, BI);
+    const rho = Math.asin(ENV.RE / AM.v.norm(A.st.r)); const Dn = 5; iEarth.scale.setScalar(Dn * Math.sin(rho)); iEarth.position.set(...AM.v.scale(nadB, Dn));
+    setObjFromCBR(iEarth, AM.m.T(AM.m.mul(A.CBI, AM.Ra(3, gm))));
+    iSun.position.set(...AM.v.scale(sunB, 10)); iSun.intensity = A.ecl ? 0.05 : 1.1;
+    iSunA.setDir(sunB); iSunA.mat.transparent = true; iSunA.mat.opacity = A.ecl ? .3 : 1; iSunGlow.position.set(...AM.v.scale(sunB, 2.1)); iSunGlow.visible = !A.ecl;
+    iB.setDir(BB); iPlane.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), V3(AM.v.unit(BB))); iV.setDir(vB);
+    I.controls.update();
+  }
+  function render() {
+    const { w, h: H } = sizeOf();
+    renderer.setScissorTest(false); renderer.setViewport(0, 0, w, H); renderer.render(V.scene, V.camera);
+    if (!insetEl.hidden) {
+      const vr = vp.getBoundingClientRect(), r = insetEl.getBoundingClientRect();
+      const x = r.left - vr.left, y = H - (r.top - vr.top) - r.height;
+      I.camera.aspect = r.width / r.height; I.camera.updateProjectionMatrix();
+      renderer.setViewport(x, y, r.width, r.height); renderer.setScissor(x, y, r.width, r.height); renderer.setScissorTest(true);
+      renderer.render(I.scene, I.camera); renderer.setScissorTest(false);
+    }
+  }
+
+  /* ---------- timeline ---------- */
+  let tl = { key: '', W0: 0, T: 1, rows: [] };
+  function timelineRows() { const rows = [{ name: 'Eclipse', kind: 'ecl' }]; S.sc.comps.filter(c => c.type === 'str').forEach(c => rows.push({ name: c.name, kind: 'str', c })); if (S.sc.comps.some(c => c.type === 'css')) rows.push({ name: 'Sun sensors', kind: 'css' }); const sa = S.sc.comps.filter(c => c.type === 'sa'); if (sa.length) rows.push({ name: 'Array power', kind: 'sa', cs: sa }); const pc = payloadComp(); if (pc) rows.push({ name: pc.name + ' on ground', kind: 'pl', c: pc }); return rows; }
+  function computeTimeline() {
+    const E = els(); const T = ENV.propagate(E, 0, false).period; const W0 = Math.floor(S.orbit.t / T) * T;
+    const key = JSON.stringify([E, S.orbit.mode, S.orbit.roll, S.orbit.pitch, S.orbit.yaw, S.orbit.sunAxis, S.orbit.sunSecAxis, S.orbit.sunSec, S.orbit.tgtLat, S.orbit.tgtLon, S.orbit.tgtComp, S.orbit.epoch, S.orbit.j2, scVersion, W0, S.orbit.mode === 'inertial' ? S.rot.q : 0]);
+    if (key === tl.key) return; tl = { key, W0, T, rows: timelineRows(), N: 360 };
+    tl.rows.forEach(r => r.v = new Array(tl.N));
+    for (let n = 0; n < tl.N; n++) {
+      const A = attitude(W0 + (n + .5) / tl.N * T, E);
+      for (const r of tl.rows) {
+        if (r.kind === 'ecl') r.v[n] = A.ecl ? 1 : 0;
+        else if (r.kind === 'str') { const s = sensorEval(r.c, A); r.v[n] = s.sunBlind ? 2 : s.earthBlind ? 3 : 0; }
+        else if (r.kind === 'css') r.v[n] = S.sc.comps.filter(c => c.type === 'css').some(c => sensorEval(c, A).sees) ? 1 : 0;
+        else if (r.kind === 'sa') { const p = r.cs.reduce((s, c) => s + sensorEval(c, A).cosInc * c.w * c.h, 0) / r.cs.reduce((s, c) => s + c.w * c.h, 0); r.v[n] = p; }
+        else if (r.kind === 'pl') r.v[n] = sensorEval(r.c, A).onGround ? 1 : 0;
+      }
+    }
+    tl.stats = tl.rows.map(r => r.kind === 'str' ? (100 * r.v.filter(x => x === 0).length / tl.N) : r.kind === 'ecl' ? (100 * r.v.filter(x => x).length / tl.N) : r.kind === 'sa' ? (100 * r.v.reduce((s, x) => s + x, 0) / tl.N) : (100 * r.v.filter(x => x).length / tl.N));
+  }
+  const tlc = $('#tlc');
+  function drawTimeline() {
+    computeTimeline();
+    const dpr = Math.min(2, devicePixelRatio || 1), W = tlc.clientWidth, rowH = 15, top = 16, Hh = top + tl.rows.length * rowH + 4;
+    if (tlc.width !== Math.round(W * dpr) || tlc.height !== Math.round(Hh * dpr)) { tlc.width = Math.round(W * dpr); tlc.height = Math.round(Hh * dpr); tlc.style.height = Hh + 'px'; }
+    const x = tlc.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0); x.clearRect(0, 0, W, Hh);
+    const L = 112, R = 52, w = W - L - R;
+    x.font = '500 11px "JetBrains Mono", monospace'; x.textBaseline = 'middle';
+    x.fillStyle = '#8697ae'; x.fillText('One orbit · ' + (tl.T / 60).toFixed(1) + ' min', 0, 7);
+    for (let m = 10; m <= tl.T / 60; m += 10) { const px = L + m * 60 / tl.T * w; x.fillStyle = '#26375080'; x.fillRect(px, top - 2, 1, Hh - top); x.fillStyle = '#5d6e86'; x.textAlign = 'center'; x.fillText(m + 'm', px, 7); x.textAlign = 'left'; }
+    tl.rows.forEach((r, i) => {
+      const y = top + i * rowH; x.fillStyle = '#c8d3e2'; x.fillText(r.name.length > 15 ? r.name.slice(0, 14) + '…' : r.name, 0, y + rowH / 2);
+      x.fillStyle = '#162232'; x.fillRect(L, y + 2, w, rowH - 4);
+      for (let n = 0; n < tl.N; n++) {
+        const val = r.v[n]; let col = null;
+        if (r.kind === 'ecl') col = val ? '#33496b' : null;
+        else if (r.kind === 'str') col = val === 0 ? '#2f8f5f' : val === 2 ? '#f2a93b' : '#d65050';
+        else if (r.kind === 'css') col = val ? '#d8b23e' : null;
+        else if (r.kind === 'sa') col = `rgba(79,140,255,${0.15 + 0.85 * val})`;
+        else if (r.kind === 'pl') col = val ? '#9fb0c8' : null;
+        if (col) { x.fillStyle = col; x.fillRect(L + n / tl.N * w, y + 2, w / tl.N + .6, rowH - 4); }
+      }
+      x.fillStyle = '#8697ae'; x.textAlign = 'right'; x.fillText(tl.stats[i].toFixed(0) + '%', W, y + rowH / 2); x.textAlign = 'left';
+    });
+    const cx = L + ((S.orbit.t - tl.W0) / tl.T) * w; x.fillStyle = '#ffffff'; x.fillRect(cx - 1, top - 4, 2, Hh - top + 4);
+  }
+  tlc.addEventListener('pointerdown', e => {
+    const r = tlc.getBoundingClientRect(), L = 112, w = r.width - L - 52; const f = (e.clientX - r.left - L) / w; if (f < 0 || f > 1) return;
+    S.orbit.t = tl.W0 + f * tl.T; S.orbit.playing = false; save(); syncAll();
+  });
+
+  /* ---------- presets ---------- */
+  const PRESETS = {
+    sso1030: { label: 'SSO 550 km · LTAN 10:30 (EO)', hp: 550, ha: 550, ltan: 10.5, argp: 0, nu0: 0 },
+    ssodd: { label: 'SSO 600 km · dawn–dusk 06:00', hp: 600, ha: 600, ltan: 6, argp: 0, nu0: 0 },
+    iss: { label: 'ISS-like 420 km · 51.6°', hp: 418, ha: 422, i: 51.64, raan: 120, argp: 0, nu0: 0 },
+    molniya: { label: 'Molniya 600 × 39 800 km · 63.4°', hp: 600, ha: 39800, i: 63.4, raan: 60, argp: 270, nu0: 0 },
+    geo: { label: 'GEO 35 786 km', hp: 35786, ha: 35786, i: 0.05, raan: 0, argp: 0, nu0: 0 },
+  };
+  function applyPreset(k) {
+    const p = PRESETS[k]; if (!p) return; const o = S.orbit; o.preset = k;
+    Object.assign(o, { hp: p.hp, ha: p.ha, argp: p.argp, nu0: p.nu0 });
+    if (p.ltan !== undefined) { const a = ENV.RE + p.hp; o.i = +deg(ENV.ssoInc(a)).toFixed(3); let r = deg(ENV.sunRA(epochDate())) + (p.ltan - 12) * 15; o.raan = +(((r % 360) + 360) % 360).toFixed(2); }
+    else { o.i = p.i; o.raan = p.raan; }
+    if (k === 'ssodd' && o.mode === 'lvlh') { }
+    o.t = 0; save(); syncAll();
+  }
+  if (!S.orbit._init) { applyPreset(S.orbit.preset); S.orbit._init = true; }
+  function ltanOf() { const r = S.orbit.raan - deg(ENV.sunRA(epochDate())); return ((12 + r / 15) % 24 + 24) % 24; }
+  const hhmm = hr => { const h_ = Math.floor(hr), m = Math.round((hr - h_) * 60); return String(h_).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
+  const hms = s => { s = Math.max(0, Math.floor(s)); return `${String(Math.floor(s / 3600)).padStart(2, '0')}:${String(Math.floor(s % 3600 / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
+
+  /* ---------- panel ---------- */
+  function axisOptions(withComps = true) {
+    const base = ['+X', '-X', '+Y', '-Y', '+Z', '-Z'].map(a => [a, 'Body ' + a.replace('-', '−')]);
+    if (withComps) S.sc.comps.filter(c => TYPES[c.type].cone || c.type === 'sa').forEach(c => base.push(['comp:' + c.id, c.name + (c.type === 'sa' ? ' normal' : ' boresight')]));
+    return base;
+  }
+  function panel() {
+    const o = S.orbit, out = [];
+    const sl = (id, label, min, max, step, key, dec = 1) => slider({ id, label, min, max, step, dec, get: () => o[key], set: x => { o[key] = x; o.preset = 'custom'; save(); syncAll(); } });
+    out.push(card('Orbit', 'Keplerian + J2',
+      selectRow({ id: 'preset', label: 'Preset', options: [...Object.entries(PRESETS).map(([k, p]) => [k, p.label]), ['custom', 'Custom']], get: () => o.preset, set: v => { if (v !== 'custom') applyPreset(v); else o.preset = 'custom'; } }),
+      sl('hp', 'Perigee alt km', 200, 40000, 1, 'hp', 0), sl('ha', 'Apogee alt km', 200, 40000, 1, 'ha', 0),
+      sl('inc', 'Inclination i°', 0, 180, .01, 'i', 2), sl('raan', 'RAAN Ω°', 0, 360, .1, 'raan', 1), sl('argp', 'Arg. perigee ω°', 0, 360, .5, 'argp', 1), sl('nu0', 'True anomaly ν₀°', 0, 360, .5, 'nu0', 1),
+      h('div', { class: 'kv' },
+        h('dt', null, 'a · e'), h('dd', null, liveText(() => { const E = els(); return E.a.toFixed(1) + ' km · ' + E.e.toFixed(4); })),
+        h('dt', null, 'Period'), h('dd', null, liveText(() => (ENV.propagate(els(), 0, false).period / 60).toFixed(2) + ' min')),
+        h('dt', null, 'LTAN (at epoch)'), h('dd', null, liveText(() => hhmm(ltanOf()))),
+        h('dt', null, 'SSO inclination for this a'), h('dd', null, liveText(() => deg(ENV.ssoInc(els().a, els().e)).toFixed(2) + '°'))),
+      check('j2', 'J2 secular drift of Ω and ω (makes SSO work)', () => o.j2, v => { o.j2 = v; save(); })
+    ));
+    out.push(card('Time', null,
+      h('div', { class: 'row two' }, h('label', { for: 'epoch' }, 'Epoch (UTC)'), (() => { const e = h('input', { type: 'datetime-local', id: 'epoch' }); e.addEventListener('change', () => { if (e.value) { o.epoch = e.value.slice(0, 16); if (o.preset !== 'custom' && PRESETS[o.preset].ltan !== undefined) applyPreset(o.preset); save(); } }); syncs.push(() => { if (document.activeElement !== e) e.value = o.epoch; }); return e; })()),
+      h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' },
+        (() => { const b = h('button', { class: 'btn primary', style: 'min-width:84px', onclick: () => { o.playing = !o.playing; save(); syncAll(); } }); syncs.push(() => b.textContent = o.playing ? '❚❚ Pause' : '▶ Play'); return b; })(),
+        seg([[1, '1×'], [60, '60×'], [300, '300×'], [1000, '1000×']], () => o.speed, v => { o.speed = v; save(); })),
+      slider({ id: 'time', label: 'Time since epoch', min: 0, max: 86400 * 3, step: 1, dec: 0, get: () => o.t, set: x => { o.t = x; save(); } }),
+      h('div', { class: 'kv' }, h('dt', null, 'T+'), h('dd', null, liveText(() => hms(o.t))), h('dt', null, 'UTC'), h('dd', null, liveText(() => cur ? cur.date.toISOString().slice(0, 19).replace('T', ' ') : '')))
+    ));
+    const modeCtl = [];
+    if (o.mode === 'lvlh') modeCtl.push(
+      slider({ id: 'roll', label: h('span', null, 'Roll φ · ', h('span', { class: 'ax', style: 'color:var(--ax-x)' }, 'X″')), min: -60, max: 60, step: .5, get: () => o.roll, set: x => { o.roll = x; save(); } }),
+      slider({ id: 'pitch', label: h('span', null, 'Pitch θ · ', h('span', { class: 'ax', style: 'color:var(--ax-y)' }, 'Y′')), min: -60, max: 60, step: .5, get: () => o.pitch, set: x => { o.pitch = x; save(); } }),
+      slider({ id: 'yaw', label: h('span', null, 'Yaw ψ · ', h('span', { class: 'ax', style: 'color:var(--ax-z)' }, 'Z_L')), min: -180, max: 180, step: .5, get: () => o.yaw, set: x => { o.yaw = x; save(); } }),
+      tip('Body = LVLH rotated by a 3-2-1 sequence. <b>Roll</b> tilts the payload cross-track (side-looking imaging), <b>pitch</b> along-track (forward/backward stereo).'),
+      h('div', { class: 'btns' }, h('button', { class: 'btn', onclick: () => { o.roll = o.pitch = o.yaw = 0; save(); syncAll(); } }, 'Zero offsets'), h('button', { class: 'btn', onclick: () => { o.roll = 25; o.pitch = 0; o.yaw = 0; save(); syncAll(); } }, 'Side-look 25°'), h('button', { class: 'btn', onclick: () => { o.roll = 0; o.pitch = 20; save(); syncAll(); } }, 'Forward 20°')));
+    if (o.mode === 'sun') modeCtl.push(
+      selectRow({ id: 'sunAxis', label: 'Point at Sun', options: axisOptions(), get: () => o.sunAxis, set: v => { o.sunAxis = v; save(); } }),
+      selectRow({ id: 'sunSecAxis', label: 'Secondary axis', options: axisOptions(false), get: () => o.sunSecAxis || '+X', set: v => { o.sunSecAxis = v; save(); } }),
+      selectRow({ id: 'sunSec', label: '…toward', options: [['nadir', 'Nadir'], ['normal', 'Orbit normal +h'], ['antinormal', 'Orbit normal −h'], ['velocity', 'Velocity'], ['zenith', 'Zenith']], get: () => o.sunSec, set: v => { o.sunSec = v; save(); } }),
+      tip('Two-vector (TRIAD) pointing: the primary axis is aligned exactly, the secondary only as close as possible. Typical safe mode: array normal on the Sun.'));
+    if (o.mode === 'target') modeCtl.push(
+      h('div', { class: 'grid2' }, numCell('tlat', 'Latitude °', () => o.tgtLat, x => { o.tgtLat = x; save(); }, .1, 2), numCell('tlon', 'Longitude °', () => o.tgtLon, x => { o.tgtLon = x; save(); }, .1, 2)),
+      selectRow({ id: 'tgtComp', label: 'Pointing axis', options: S.sc.comps.filter(c => TYPES[c.type].cone).map(c => [c.id, c.name]), get: () => (payloadComp() || {}).id, set: v => { o.tgtComp = v; save(); } }),
+      h('div', { class: 'status' }, liveText(() => !cur || !cur.flag ? '' : cur.flag.below ? `<span class="chip dim">Target below horizon · holding nadir</span>` : `<span class="chip ok">Tracking · elevation ${deg(cur.flag.elev).toFixed(1)}°</span>`)),
+      tip('Boresight → line of sight to the ground point, body +X kept toward velocity. Watch the body rate rise near closest approach.'));
+    if (o.mode === 'inertial') modeCtl.push(tip('Body frame fixed in ECI using the attitude from <b>Rotation Lab</b> (reference R = ECI). Watch the Sun and Earth sweep around the spacecraft once per orbit.'));
+    out.push(card('Attitude guidance', null,
+      selectRow({ id: 'mode', label: 'Mode', options: [['lvlh', 'Nadir (LVLH) + offsets'], ['target', 'Ground target tracking'], ['sun', 'Sun pointing'], ['inertial', 'Inertial (from Rotation Lab)']], get: () => o.mode, set: v => { o.mode = v; save(); renderRail(); } }),
+      ...modeCtl));
+    out.push(card('Sensors now', 'live',
+      liveText(() => {
+        if (!cur) return ''; const rows = [];
+        for (const c of S.sc.comps) {
+          const s = sensorEval(c, cur);
+          if (c.type === 'str') rows.push(`<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span>${c.name}</span><span class="lbl" style="font-family:var(--f-mono);font-size:11.5px">☉ ${s.sunAng.toFixed(0)}° · limb ${s.limb.toFixed(0)}°</span>${s.ok ? '<span class="chip ok">Tracking</span>' : s.sunBlind ? '<span class="chip warn">Sun-blinded</span>' : '<span class="chip bad">Earth in FOV</span>'}</div>`);
+        }
+        const css = S.sc.comps.filter(c => c.type === 'css'); if (css.length) { const n = css.filter(c => sensorEval(c, cur).sees).length; rows.push(`<div style="display:flex;justify-content:space-between"><span>Sun sensors seeing Sun</span><span class="chip ${n ? 'ok' : 'dim'}">${n}/${css.length}</span></div>`); }
+        const pc = payloadComp(); if (pc) { const s = sensorEval(pc, cur); rows.push(`<div style="display:flex;justify-content:space-between"><span>${pc.name} off-nadir</span><span style="font-family:var(--f-mono)">${s.nadAng.toFixed(1)}°</span></div>`); }
+        return `<div style="display:flex;flex-direction:column;gap:6px">${rows.join('')}</div>`;
+      }),
+      tip('Star tracker is blinded if the Sun is inside its exclusion angle, or the Earth limb is closer than its Earth exclusion. Edit the angles in <b>Spacecraft Layout</b>.')));
+    out.push(card('Display', null,
+      h('div', { class: 'checks' },
+        check('s-eci', 'ECI frame', () => o.show.eci, v => { o.show.eci = v; save(); }), check('s-lvlh', 'LVLH frame + v', () => o.show.lvlh, v => { o.show.lvlh = v; save(); }),
+        check('s-track', 'Ground track', () => o.show.track, v => { o.show.track = v; save(); }), check('s-sun', 'Sun vector', () => o.show.sunv, v => { o.show.sunv = v; save(); }),
+        check('s-b', 'Magnetic field B', () => o.show.bv, v => { o.show.bv = v; save(); }), check('s-cones', 'Sensor FOV cones', () => o.show.cones, v => { o.show.cones = v; save(); }),
+        check('s-follow', 'Camera follows S/C', () => o.show.follow, v => { o.show.follow = v; if (v) zoomSC(); save(); }), check('s-inset', 'Body-frame inset', () => !o.hideInset, v => { o.hideInset = !v; insetEl.hidden = !v; save(); })),
+      slider({ id: 'scscale', label: 'S/C size (×)', min: .1, max: 4, step: .05, dec: 2, get: () => o.scale, set: x => { o.scale = x; save(); } }),
+      tip('The spacecraft is drawn hugely oversized (about 130 km per metre at 1×) so you can see it from orbit distance.')));
+    return out;
+  }
+  function zoomSC() { if (!cur) return; const p = V3(AM.v.scale(cur.st.r, U)); V.controls.target.copy(p); const off = p.clone().normalize().multiplyScalar(0.9).add(new THREE.Vector3(0.4, -0.5, 0.35)); V.camera.position.copy(p).add(off); prevScPos = p.clone(); V.controls.update(); }
+  function hud() {
+    $('#hudTL').append(h('div', { class: 'hud' }, h('h4', null, 'State'),
+      h('dl', { class: 'kv' },
+        h('dt', null, 'Altitude · speed'), h('dd', null, liveText(() => cur ? (AM.v.norm(cur.st.r) - ENV.RE).toFixed(1) + ' km · ' + AM.v.norm(cur.st.v).toFixed(3) + ' km/s' : '')),
+        h('dt', null, 'Lat · lon'), h('dd', null, liveText(() => { if (!cur) return ''; const ll = ENV.ecef2ll(ENV.eci2ecef(cur.st.r, cur.date)); return deg(ll.lat).toFixed(2) + '° · ' + deg(ll.lon).toFixed(2) + '°'; })),
+        h('dt', null, 'β angle · light'), h('dd', null, liveText(() => cur ? deg(ENV.betaAngle(cur.st.r, cur.st.v, cur.sun)).toFixed(1) + '° · ' + (cur.ecl ? '<span style="color:#7d93b5">ECLIPSE</span>' : '<span style="color:var(--sun)">SUNLIT</span>') : '')),
+        h('dt', null, 'q_BI [q₀ q₁ q₂ q₃]'), h('dd', null, liveText(() => { if (!cur) return ''; const q = AM.C2q(cur.CBI); return [q.w, q.x, q.y, q.z].map(x => fmt(x, 3)).join(' '); })),
+        h('dt', null, 'B vs LVLH (φ θ ψ)'), h('dd', null, liveText(() => { if (!cur) return ''; const e = AM.C2euler('321', AM.m.mul(cur.CBI, AM.m.T(cur.CLI))).map(deg); return [e[2], e[1], e[0]].map(x => x.toFixed(1) + '°').join(' '); })),
+        h('dt', null, 'Body rate |ω|'), h('dd', null, liveText(() => cur ? (deg(AM.v.norm(rate(cur.t)))).toFixed(3) + ' °/s' : '')),
+        h('dt', null, 'Sun in body'), h('dd', null, liveText(() => cur ? '[' + AM.m.mulv(cur.CBI, cur.sun).map(x => fmt(x, 2)).join(' ') + ']' : '')),
+        h('dt', null, 'B in body (nT)'), h('dd', null, liveText(() => cur ? '[' + AM.m.mulv(cur.CBI, ENV.bfieldECI(cur.st.r, cur.date)).map(x => x.toFixed(0)).join(' ') + ']' : ''))),
+      h('div', { class: 'legend', style: 'margin-top:6px' }, h('span', null, h('i', { style: 'background:var(--sun)' }), 'Sun'), h('span', null, h('i', { style: 'background:#57c7b8' }), 'B (dipole)'), h('span', null, h('i', { style: 'background:var(--cyan)' }), 'v'), h('span', null, h('i', { style: 'background:#38506f' }), 'orbit in eclipse'))));
+    $('#hudTR').append(h('button', { class: 'vbtn', onclick: () => { S.orbit.show.follow = false; V.controls.target.set(0, 0, 0); viewPreset(V, [1, -.9, .5], 28); syncAll(); } }, 'Earth view'),
+      h('button', { class: 'vbtn', onclick: () => { S.orbit.show.follow = true; zoomSC(); syncAll(); } }, 'Zoom to S/C'),
+      h('button', { class: 'vbtn', onclick: () => { if (!cur) return; S.orbit.show.follow = false; V.controls.target.set(0, 0, 0); const hI = AM.v.unit(AM.v.cross(cur.st.r, cur.st.v)); viewPreset(V, hI, AM.v.norm(cur.st.r) * U * 3.2); syncAll(); } }, 'Orbit-normal view'));
+  }
+  function enter() { insetEl.hidden = !!S.orbit.hideInset; $('#timeline').hidden = false; }
+  function leave() { insetEl.hidden = true; $('#timeline').hidden = true; }
+  function layoutOverlays() { const tlH = $('#timeline').getBoundingClientRect().height; insetEl.style.bottom = (tlH + 22) + 'px'; }
+  return { V, update, render, panel, hud, enter, leave, drawTimeline, layoutOverlays, attitude };
+})();
+/* ===================== SPACECRAFT LAYOUT ===================== */
+const LAY = (() => {
+  const V = mkView({ up: [0, 0, -1], pos: [2.3, -2.5, -1.5], fov: 38, near: 0.01, far: 100 });
+  addLights(V.scene, 1.1);
+  const grid = new THREE.GridHelper(4, 20, 0x2a3a52, 0x18222f); grid.rotation.x = Math.PI / 2; V.scene.add(grid);
+  const triad = makeTriad(1.0, 0.012, ['X_B', 'Y_B', 'Z_B ⊕ nadir']); V.scene.add(triad);
+  let model = null, ver = -1, dragging = false;
+  const selBox = new THREE.BoxHelper(undefined, 0xf2a93b); selBox.visible = false; V.scene.add(selBox);
+  // CoM marker (classic quadrant symbol)
+  const comTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'); for (let i = 0; i < 4; i++) { x.fillStyle = i % 2 ? '#111' : '#f2f2f2'; x.beginPath(); x.moveTo(32, 32); x.arc(32, 32, 30, i * Math.PI / 2, (i + 1) * Math.PI / 2); x.fill(); } x.strokeStyle = '#111'; x.lineWidth = 2; x.beginPath(); x.arc(32, 32, 30, 0, 7); x.stroke(); return new THREE.CanvasTexture(c); })();
+  const com = new THREE.Group(); V.scene.add(com);
+  { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: comTex, depthTest: false, sizeAttenuation: false })); sp.scale.set(.035, .035, 1); sp.renderOrder = 1000; sp.center.set(.5, .5); com.add(sp); const comLbl = makeLabel('CoM', '#f2f2f2', 22, { scale: .8 }); com.add(comLbl); }
+  const principal = new THREE.Group(); V.scene.add(principal);
+  const tc = new THREE.TransformControls(V.camera, renderer.domElement); tc.setSize(0.8); tc.setSpace('world'); V.scene.add(tc); tc.enabled = false;
+  tc.addEventListener('dragging-changed', e => { V.controls.enabled = !e.value && S.tab === 'layout'; dragging = e.value; if (!e.value) { scChanged(); ver = scVersion; refreshMass(); syncAll(); } });
+  tc.addEventListener('objectChange', () => {
+    const c = sel(); const g = tc.object; if (!c || !g) return;
+    c.pos = [g.position.x, g.position.y, g.position.z].map(x => +x.toFixed(4)); c.q = AM.q.unit({ w: g.quaternion.w, x: g.quaternion.x, y: g.quaternion.y, z: g.quaternion.z });
+    c.eul = AM.C2euler('321', AM.q2C(c.q)).map(deg); selBox.update(); refreshMass(); syncAll();
+  });
+  function sel() { return S.sc.comps.find(c => c.id === S.layout.sel) || null; }
+  function rebuild() {
+    if (model) { tc.detach(); V.scene.remove(model); disposeTree(model); }
+    const sh = S.layout.show;
+    model = buildSC(S.sc, { cones: sh.cones, excl: sh.excl, labels: sh.labels, busOpacity: sh.bus, dipoles: true });
+    V.scene.add(model); ver = scVersion; attach(); refreshMass();
+    grid.position.z = S.sc.bus.z / 2 + 0.35;
+  }
+  function attach() {
+    const c = sel(); const g = c && model && model.compGroups[c.id];
+    if (g && S.layout.gizmo !== 'off' && S.tab === 'layout') { tc.attach(g); tc.setMode(S.layout.gizmo); tc.enabled = true; } else { tc.detach(); tc.enabled = false; }
+    selBox.visible = !!g; if (g) { selBox.setFromObject(g); }
+  }
+  let MP = massProps(S.sc);
+  function refreshMass() {
+    MP = massProps(S.sc); com.position.set(...MP.com); com.visible = S.layout.show.com;
+    principal.clear(); principal.visible = S.layout.show.principal;
+    MP.E.vecs.forEach((v_, k) => { const L = 1.2; const l = dashedLine([AM.v.scale(v_, -L), AM.v.scale(v_, L)], 0xc48bff, .05, .035, .9); principal.add(l); const lb = makeLabel(`I${k + 1} ${MP.E.vals[k].toFixed(1)}`, '#c48bff', 20, { scale: .75 }); lb.position.set(...AM.v.scale(v_, L)); principal.add(lb); });
+    principal.position.set(...MP.com);
+  }
+  function update() {
+    if (ver !== scVersion && !dragging) rebuild();
+    if (selBox.visible && tc.object) selBox.update();
+    V.controls.update();
+  }
+  function render() { renderer.setScissorTest(false); renderer.setViewport(0, 0, sizeOf().w, sizeOf().h); renderer.render(V.scene, V.camera); }
+  // picking
+  const ray = new THREE.Raycaster(); let down = null;
+  renderer.domElement.addEventListener('pointerdown', e => { if (S.tab !== 'layout') return; down = { x: e.clientX, y: e.clientY, onGizmo: tc.axis !== null && tc.enabled }; });
+  renderer.domElement.addEventListener('pointerup', e => {
+    if (S.tab !== 'layout' || !down) return; const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4; const og = down.onGizmo; down = null; if (moved || og || !model) return;
+    const r = renderer.domElement.getBoundingClientRect(); ray.setFromCamera({ x: (e.clientX - r.left) / r.width * 2 - 1, y: -(e.clientY - r.top) / r.height * 2 + 1 }, V.camera);
+    const hits = ray.intersectObject(model, true).filter(h_ => h_.object.isMesh && !h_.object.userData.noPick && h_.object.userData.compId);
+    select(hits.length ? hits[0].object.userData.compId : null);
+  });
+  function select(id) { S.layout.sel = id; save(); attach(); renderRail(); }
+
+  /* ---------- panel ---------- */
+  function compEditor(c) {
+    const T = TYPES[c.type];
+    if (!c.eul) c.eul = AM.C2euler('321', AM.q2C(c.q)).map(deg);
+    const setPos = (k, x) => { c.pos[k] = x; scChanged(); };
+    const setEul = (k, x) => { c.eul[k] = x; c.q = AM.C2q(AM.euler2C('321', c.eul.map(rad))); scChanged(); };
+    const point = d => { c.q = qFromBoresight(d, Math.abs(d[2]) > .9 ? [1, 0, 0] : [0, 0, 1]); c.eul = AM.C2euler('321', AM.q2C(c.q)).map(deg); scChanged(); syncAll(); };
+    const spin = () => { const C = AM.q2C(c.q); c.q = AM.C2q(AM.m.mul(AM.Rp(3, Math.PI / 2), C)); c.eul = AM.C2euler('321', AM.q2C(c.q)).map(deg); scChanged(); syncAll(); };
+    const param = (key, label, step, dec, min = 0) => numCell('p-' + key, label, () => c[key], x => { c[key] = Math.max(min, x); scChanged(); refreshMass(); }, step, dec);
+    const params = [param('mass', 'Mass kg', .05, 2)];
+    if (c.fov !== undefined) params.push(param('fov', 'FOV full °', .5, 1));
+    if (c.type === 'str') params.push(param('sunExcl', 'Sun excl. °', 1, 0), param('earthExcl', 'Earth excl. °', 1, 0));
+    if (c.type === 'mtq') params.push(param('dipole', 'Dipole A·m²', 1, 1), param('len', 'Length m', .01, 2));
+    if (c.type === 'rw') params.push(param('hmax', 'H max N·m·s', .05, 2));
+    if (c.type === 'sa') params.push(param('w', 'Width m', .05, 2), param('h', 'Height m', .05, 2));
+    let delArmed = false;
+    const delBtn = h('button', { class: 'btn danger', onclick: () => { if (!delArmed) { delArmed = true; delBtn.textContent = 'Click again to delete'; setTimeout(() => { delArmed = false; delBtn.textContent = 'Delete'; }, 2500); return; } S.sc.comps = S.sc.comps.filter(x => x.id !== c.id); S.layout.sel = null; scChanged(); renderRail(); } }, 'Delete');
+    const axName = c.type === 'mtq' ? 'dipole axis' : c.type === 'rw' ? 'spin axis' : c.type === 'sa' ? 'panel normal' : c.type === 'thr' ? 'nozzle axis' : 'boresight';
+    const nameIn = h('input', { type: 'text', id: 'cname', value: c.name, 'aria-label': 'Component name' }); nameIn.addEventListener('change', () => { c.name = nameIn.value.slice(0, 24) || c.name; scChanged(); renderRail(); });
+    return card('Selected · ' + T.label, '+Z_C = ' + axName,
+      h('div', { class: 'row two' }, h('label', { for: 'cname' }, 'Name'), nameIn),
+      h('div', { class: 'lbl' }, 'Position in body frame (m)'),
+      h('div', { class: 'grid3' }, [0, 1, 2].map(k => numCell('pos' + k, 'xyz'[k], () => c.pos[k], x => setPos(k, x), .01, 3))),
+      h('div', { class: 'lbl' }, 'Mounting · 3-2-1 from body axes'),
+      slider({ id: 'my', label: h('span', null, 'Yaw · ', h('span', { class: 'ax', style: 'color:var(--ax-z)' }, 'Z_B')), min: -180, max: 180, step: .5, get: () => c.eul[0], set: x => setEul(0, x) }),
+      slider({ id: 'mp', label: h('span', null, 'Pitch · ', h('span', { class: 'ax', style: 'color:var(--ax-y)' }, 'Y′')), min: -90, max: 90, step: .5, get: () => c.eul[1], set: x => setEul(1, x) }),
+      slider({ id: 'mr', label: h('span', null, 'Roll · ', h('span', { class: 'ax', style: 'color:var(--ax-x)' }, 'X″')), min: -180, max: 180, step: .5, get: () => c.eul[2], set: x => setEul(2, x) }),
+      h('div', { class: 'lbl' }, 'Point ' + axName + ' along'),
+      h('div', { class: 'btns' }, [['+X', [1, 0, 0]], ['−X', [-1, 0, 0]], ['+Y', [0, 1, 0]], ['−Y', [0, -1, 0]], ['+Z', [0, 0, 1]], ['−Z', [0, 0, -1]]].map(([t, d]) => h('button', { class: 'btn mono', onclick: () => point(d) }, t)), h('button', { class: 'btn', onclick: spin }, '↻ 90° about own Z')),
+      h('div', { class: 'grid3' }, params),
+      h('div', { class: 'kv' }, h('dt', null, axName + ' in body'), h('dd', null, liveText(() => '[' + compAxis(c).map(x => fmt(x, 4)).join(', ') + ']')),
+        h('dt', null, 'q_BC [q₀ q₁ q₂ q₃]'), h('dd', null, liveText(() => [c.q.w, c.q.x, c.q.y, c.q.z].map(x => fmt(x, 4)).join(' ')))),
+      h('div', { class: 'lbl' }, 'C_CB (body → component), rows = component axes in body'),
+      h('div', { class: 'mat' }, liveText(() => matHTML(AM.q2C(c.q), 4), 'contents')),
+      tip('A sensor measures in its own frame C. To use it, rotate into body: v_B = C_CBᵀ · v_C. A star tracker reports q_CI; the body attitude is C_BI = C_CBᵀ · C_CI.'),
+      h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, h('span', { class: 'lbl' }, 'Drag handle'), seg([['translate', 'Move'], ['rotate', 'Rotate'], ['off', 'Off']], () => S.layout.gizmo, v => { S.layout.gizmo = v; save(); attach(); })),
+      h('div', { class: 'btns' }, h('button', { class: 'btn', onclick: () => { const n = JSON.parse(JSON.stringify(c)); n.id = newId(); n.name = c.name + ' copy'; n.pos = n.pos.map((x, k) => k === 0 ? x + 0.1 : x); S.sc.comps.push(n); S.layout.sel = n.id; scChanged(); renderRail(); } }, 'Duplicate'), delBtn, h('button', { class: 'btn', onclick: () => select(null) }, 'Deselect'))
+    );
+  }
+  function envelope(type, key) { const cs = S.sc.comps.filter(c => c.type === type); if (!cs.length) return null; return [[1, 0, 0], [0, 1, 0], [0, 0, 1]].map(e => cs.reduce((s, c) => s + Math.abs(AM.v.dot(compAxis(c), e)) * (c[key] || 0), 0)); }
+  function panel() {
+    const out = [], b = S.sc.bus, sh = S.layout.show;
+    const c = sel(); if (c) out.push(compEditor(c));
+    const typeSel = h('select', { id: 'addType', 'aria-label': 'Component type' }, Object.entries(TYPES).map(([k, t]) => h('option', { value: k }, t.label)));
+    const list = h('div', { class: 'complist' }, S.sc.comps.map(cc => h('button', { class: 'comp' + (cc.id === S.layout.sel ? ' sel' : ''), onclick: () => select(cc.id) }, h('i', { style: 'background:' + TYPES[cc.type].color }), h('span', null, cc.name), h('small', null, compAxis(cc).map(x => (x >= 0 ? '+' : '−') + Math.abs(x).toFixed(2)).join(' ')))));
+    out.push(card('Components', S.sc.comps.length + ' items',
+      h('div', { style: 'display:grid;grid-template-columns:1fr auto;gap:6px' }, typeSel, h('button', { class: 'btn primary', onclick: () => { const t = typeSel.value; const n = S.sc.comps.filter(x => x.type === t).length + 1; const cc = mkComp(t, t.toUpperCase() + '-' + n, [0, 0, -b.z / 2 - 0.05], [0, 0, -1], [1, 0, 0]); S.sc.comps.push(cc); S.layout.sel = cc.id; scChanged(); renderRail(); } }, '+ Add')),
+      list, tip('Click a part in the 3D view or the list. Drag the handles to move or rotate it. Right column: unit vector of its +Z axis in body.')));
+    out.push(card('Bus structure', 'body frame origin = bus centre',
+      h('div', { class: 'grid4' }, numCell('bx', 'X m', () => b.x, x => { b.x = Math.max(.05, x); scChanged(); }, .05, 2), numCell('by', 'Y m', () => b.y, x => { b.y = Math.max(.05, x); scChanged(); }, .05, 2), numCell('bz', 'Z m', () => b.z, x => { b.z = Math.max(.05, x); scChanged(); }, .05, 2), numCell('bm', 'Mass kg', () => b.mass, x => { b.mass = Math.max(0, x); scChanged(); }, 1, 1)),
+      slider({ id: 'busop', label: 'Bus opacity', min: .1, max: 1, step: .05, dec: 2, get: () => sh.bus, set: x => { sh.bus = x; scChanged(); } })));
+    out.push(card('Mass properties', 'about CoM, body axes',
+      h('div', { class: 'kv' }, h('dt', null, 'Total mass'), h('dd', null, liveText(() => MP.M.toFixed(2) + ' kg')), h('dt', null, 'CoM (m)'), h('dd', null, liveText(() => '[' + MP.com.map(x => fmt(x, 4)).join(', ') + ']'))),
+      h('div', { class: 'lbl' }, 'Inertia tensor J (kg·m²)'), h('div', { class: 'mat' }, liveText(() => matHTML(MP.I, 3), 'contents')),
+      h('div', { class: 'kv' }, h('dt', null, 'Principal moments'), h('dd', null, liveText(() => MP.E.vals.map(x => x.toFixed(2)).join(' · '))),
+        h('dt', null, 'Max principal-axis tilt'), h('dd', null, liveText(() => { const v = MP.E.vecs; let m = 0; v.forEach(a => { const k = a.map(Math.abs).indexOf(Math.max(...a.map(Math.abs))); m = Math.max(m, deg(Math.acos(Math.min(1, Math.abs(a[k]))))); }); return m.toFixed(2) + '°'; }))),
+      h('div', { class: 'checks' }, check('l-com', 'Show CoM', () => sh.com, v => { sh.com = v; save(); refreshMass(); }), check('l-pr', 'Principal axes', () => sh.principal, v => { sh.principal = v; save(); refreshMass(); })),
+      tip('Bus = uniform box, parts = point masses (arrays as thin plates). Off-diagonal terms couple the axes in Euler\'s equation J·ω̇ + ω×(J·ω) = τ.')));
+    out.push(card('Actuator authority', 'per body axis',
+      h('div', { class: 'kv' },
+        h('dt', null, 'RW momentum envelope (N·m·s)'), h('dd', null, liveText(() => { const e = envelope('rw', 'hmax'); return e ? 'X ' + e[0].toFixed(2) + ' · Y ' + e[1].toFixed(2) + ' · Z ' + e[2].toFixed(2) : '—'; })),
+        h('dt', null, 'MTQ dipole (A·m²)'), h('dd', null, liveText(() => { const e = envelope('mtq', 'dipole'); return e ? 'X ' + e[0].toFixed(1) + ' · Y ' + e[1].toFixed(1) + ' · Z ' + e[2].toFixed(1) : '—'; }))),
+      h('div', { class: 'lbl' }, 'RW spin-axis matrix A (columns = wheels), h_B = A · h_w'),
+      liveText(() => { const ws = S.sc.comps.filter(x => x.type === 'rw'); if (!ws.length) return '<p class="tip">No reaction wheels.</p>'; const ax = ws.map(compAxis); return `<div class="mat" style="grid-template-columns:repeat(${ws.length},1fr)">${[0, 1, 2].map(r => ax.map(a => `<div>${fmtS(a[r], 3)}</div>`).join('')).join('')}</div>`; }, 'contents'),
+      tip('Envelope = Σ hmax·|sᵢ·e| along each body axis (every wheel saturated with the right sign). Four wheels in a pyramid keep 3-axis control if one fails.')));
+    out.push(card('Display', null, h('div', { class: 'checks' },
+      check('l-cones', 'FOV cones', () => sh.cones, v => { sh.cones = v; scChanged(); }), check('l-excl', 'STR Sun-exclusion', () => sh.excl, v => { sh.excl = v; scChanged(); }),
+      check('l-lbl', 'Labels', () => sh.labels, v => { sh.labels = v; scChanged(); }))));
+    out.push(card('Save & share', null,
+      h('div', { class: 'btns' },
+        h('button', { class: 'btn', onclick: () => copyText(JSON.stringify({ atttool: 1, sc: S.sc }, null, 1), 'Configuration JSON') }, 'Copy config JSON'),
+        h('button', { class: 'btn', onclick: importDlg }, 'Import JSON…'),
+        h('button', { class: 'btn', onclick: () => copyText(exportCode(), 'Mounting matrices') }, 'Copy mounting matrices (Python)')),
+      (() => { let armed = false; const b_ = h('button', { class: 'btn danger', onclick: () => { if (!armed) { armed = true; b_.textContent = 'Click again to reset'; setTimeout(() => { armed = false; b_.textContent = 'Reset to example spacecraft'; }, 2500); return; } S.sc = defaultSC(); S.layout.sel = null; scChanged(); renderRail(); } }, 'Reset to example spacecraft'); return h('div', { class: 'btns' }, b_); })(),
+      tip('Your layout is kept in this browser automatically. Copy the JSON to keep a file or move it to another computer.')));
+    return out;
+  }
+  function exportCode() {
+    const lines = ['# AttTool export — body frame B, component frame C (+Z_C = boresight/spin/dipole/normal)', '# C_CB maps body-frame vectors into the component frame: v_C = C_CB @ v_B', 'import numpy as np', ''];
+    for (const c of S.sc.comps) {
+      const C = AM.q2C(c.q); const nm = c.name.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '');
+      lines.push(`# ${c.name} (${TYPES[c.type].label})`, `${nm}_pos_B = np.array([${c.pos.map(x => x.toFixed(4)).join(', ')}])  # m`, `${nm}_C_CB = np.array([`, ...C.map(r => `    [${r.map(x => x.toFixed(6)).join(', ')}],`), '])', `${nm}_q_BC = np.array([${[c.q.w, c.q.x, c.q.y, c.q.z].map(x => x.toFixed(6)).join(', ')}])  # scalar-first`, '');
+    }
+    const ws = S.sc.comps.filter(c => c.type === 'rw'); if (ws.length) lines.push('# reaction-wheel spin-axis matrix (columns = wheels)', `A_rw = np.array([${[0, 1, 2].map(r => '[' + ws.map(c => compAxis(c)[r].toFixed(6)).join(', ') + ']').join(', ')}])`, '');
+    lines.push('# mass properties about CoM, body axes', `mass = ${MP.M.toFixed(3)}  # kg`, `com_B = np.array([${MP.com.map(x => x.toFixed(5)).join(', ')}])`, `J = np.array([${MP.I.map(r => '[' + r.map(x => x.toFixed(5)).join(', ') + ']').join(', ')}])  # kg m^2`);
+    return lines.join('\n');
+  }
+  function importDlg() {
+    const ta = h('textarea', { style: 'width:100%;min-height:220px', placeholder: 'Paste a configuration JSON copied from AttTool' });
+    const err = h('p', { class: 'tip', style: 'color:var(--bad)' });
+    showModal(h('div', null, h('h2', null, 'Import configuration'), ta, err, h('div', { class: 'btns', style: 'margin-top:8px' }, h('button', { class: 'btn primary', onclick: () => {
+      try { const j = JSON.parse(ta.value); const sc = j.sc || j; if (!sc.bus || !Array.isArray(sc.comps)) throw new Error('Expected an object with "bus" and "comps".'); sc.comps.forEach(c => { if (!TYPES[c.type]) throw new Error('Unknown component type "' + c.type + '".'); c.id = c.id || newId(); c.q = AM.q.unit(c.q); delete c.eul; }); S.sc = sc; S.layout.sel = null; scChanged(); $('#modal').hidden = true; renderRail(); toast('Configuration imported'); }
+      catch (e) { err.textContent = 'Could not import: ' + e.message; }
+    } }, 'Import'))));
+  }
+  function hud() {
+    $('#hudTL').append(h('div', { class: 'hud' }, h('h4', null, 'Body frame B (example EO convention)'),
+      h('p', { class: 'tip', html: '<b style="color:var(--ax-z)">+Z</b> nadir (payload face, dark) · −Z zenith (up on screen)<br><b style="color:var(--ax-x)">+X</b> flight direction in nadir pointing · <b style="color:var(--ax-y)">+Y</b> completes the right-handed set' }),
+      liveText(() => { const c = sel(); return c ? `<p class="tip" style="margin-top:6px">Selected <b>${c.name}</b> at [${c.pos.map(x => fmt(x, 2)).join(', ')}] m</p>` : '<p class="tip" style="margin-top:6px">Click a component to select it.</p>'; })));
+    const vb = (t, d) => h('button', { class: 'vbtn', onclick: () => viewPreset(V, d, 3.6) }, t);
+    $('#hudTR').append(vb('Iso', [1, -1.1, -.7]), vb('+X', [1, 0, -0.0001]), vb('−X', [-1, 0, -0.0001]), vb('+Y', [0, 1, -0.0001]), vb('−Y', [0, -1, -0.0001]), vb('+Z nadir', [0.0001, 0, 1]), vb('−Z zenith', [0.0001, 0, -1]));
+  }
+  function enter() { if (ver !== scVersion) rebuild(); attach(); }
+  function leave() { tc.detach(); tc.enabled = false; }
+  return { V, update, render, panel, hud, enter, leave };
+})();
+
+/* ===================== APP SHELL ===================== */
+const VIEWS = { rot: ROT, orbit: ORB, layout: LAY };
+function renderRail() {
+  syncs = []; live = [];
+  const rail = $('#rail'); const st = rail.scrollTop; rail.innerHTML = ''; rail.append(...VIEWS[S.tab].panel());
+  $('#hudTL').innerHTML = ''; $('#hudTR').innerHTML = ''; VIEWS[S.tab].hud();
+  syncAll(); live.forEach(f => f()); rail.scrollTop = st;
+}
+function setTab(t) {
+  if (!VIEWS[t]) return; const prev = VIEWS[S.tab];
+  prev.V.controls.enabled = false; prev.leave && prev.leave();
+  S.tab = t; save();
+  document.querySelectorAll('nav.tabs button').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === t));
+  const v = VIEWS[t]; v.V.controls.enabled = true; v.enter && v.enter();
+  $('#caption').hidden = true; $('#rail').scrollTop = 0; renderRail(); resize();
+}
+document.querySelectorAll('nav.tabs button').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
+function resize() {
+  const { w, h: H } = sizeOf(); renderer.setSize(w, H, false);
+  for (const v of Object.values(VIEWS)) { v.V.camera.aspect = w / H; v.V.camera.updateProjectionMatrix(); }
+}
+new ResizeObserver(resize).observe(vp);
+window.addEventListener('keydown', e => {
+  if (/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
+  if (e.key === '1') setTab('rot'); else if (e.key === '2') setTab('orbit'); else if (e.key === '3') setTab('layout');
+  else if (e.key === ' ' && S.tab === 'orbit') { S.orbit.playing = !S.orbit.playing; save(); syncAll(); e.preventDefault(); }
+  else if (e.key === 'Escape') { $('#modal').hidden = true; }
+});
+$('#btnConv').addEventListener('click', () => showModal(h('div', { html: `
+<h2>Conventions used in AttTool</h2>
+<p>Every number in this tool follows one consistent set of rules. Most bugs in attitude code come from mixing two of them.</p>
+<h3>Frames</h3>
+<ul>
+<li><b>R</b> — generic reference frame in the Rotation Lab. In <i>Inertial</i> guidance it is ECI.</li>
+<li><b>ECI</b> — X to the vernal equinox ♈, Z to the celestial north pole (J2000-like; precession ignored).</li>
+<li><b>ECEF</b> — Earth-fixed, rotates about Z by GMST. Ground track and targets live here.</li>
+<li><b>LVLH</b> — z<sub>L</sub> = −r̂ (nadir), y<sub>L</sub> = −ĥ (negative orbit normal), x<sub>L</sub> = y<sub>L</sub>×z<sub>L</sub> (≈ velocity on a circular orbit).</li>
+<li><b>B</b> — body frame, origin at the bus centre. Example EO layout: +Z nadir/payload, +X flight direction when nadir pointing.</li>
+<li><b>C</b> — a component's own frame. +Z<sub>C</sub> is its boresight / spin axis / dipole axis / panel normal.</li>
+</ul>
+<h3>Direction cosine matrices</h3>
+<p><code>C_BR</code> transforms coordinates <i>from R to B</i>: <code>v_B = C_BR · v_R</code>. Its rows are the B axes written in R. <code>C_RB = C_BRᵀ</code>. Chains read right to left: <code>C_CI = C_CB · C_BI</code>.</p>
+<h3>Euler angles</h3>
+<p>Sequence i-j-k (e.g. 3-2-1) means intrinsic rotations: θ₁ about axis i of R, θ₂ about the <i>new</i> j axis, θ₃ about the <i>newest</i> k axis. <code>C_BR = R_k(θ₃)·R_j(θ₂)·R_i(θ₁)</code> with frame-rotation matrices, e.g. <code>R₃(ψ) = [[c, s, 0], [−s, c, 0], [0, 0, 1]]</code>. 3-2-1 = yaw ψ, pitch θ, roll φ.</p>
+<h3>Quaternions</h3>
+<p><code>q = [q₀; q₁ q₂ q₃] = [cos(φ/2); ê sin(φ/2)]</code>. The attitude matrix is <code>C_BR = A(q) = (q₀² − |q_v|²)I + 2 q_v q_vᵀ − 2 q₀[q_v×]</code> (Shuster/JPL reading, same numbers as the Hamilton quaternion of the active rotation R→B). Toggle scalar-first / scalar-last in the Rotation Lab. q and −q are the same attitude.</p>
+<h3>Environment models (deliberately simple)</h3>
+<ul>
+<li>Orbit: Keplerian two-body with optional J2 secular drift of Ω and ω. No drag, no SRP.</li>
+<li>Sun: low-precision almanac formula (~0.01°). Eclipse: cylindrical shadow (no penumbra).</li>
+<li>Magnetic field: tilted dipole, pole at 80.8°N 72.7°W, B₀ = 29 900 nT. Real IGRF differs by up to ~20 %.</li>
+<li>Star tracker availability: blinded if the Sun is inside the Sun-exclusion angle (outside eclipse) or the Earth limb is closer than the Earth-exclusion angle. Moon ignored.</li>
+</ul>
+<h3>Keyboard</h3>
+<p><code>1</code> <code>2</code> <code>3</code> switch workspaces · <code>Space</code> play/pause the orbit · drag = orbit camera, scroll = zoom, right-drag = pan.</p>` })));
+
+// main loop
+let last = performance.now(), acc = 0;
+function loop(now) {
+  requestAnimationFrame(loop);
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  const v = VIEWS[S.tab];
+  try { v.update(dt); v.render(); } catch (e) { console.error(e); }
+  acc += dt;
+  if (acc > 0.1) { acc = 0; live.forEach(f => f()); if (S.tab === 'orbit') { ORB.drawTimeline(); ORB.layoutOverlays(); if (S.orbit.playing) syncAll(); } }
+}
+function boot() {
+  if (!S.rot.aaAxis) S.rot.aaAxis = AM.q2axisAngle(S.rot.q).axis;
+  let t0 = location.hash.replace('#', ''); if (VIEWS[t0]) S.tab = t0;
+  const start = S.tab; S.tab = 'rot'; ROT.V.controls.enabled = false; setTab(start);
+  requestAnimationFrame(loop);
+}
+boot();
+}
+const __fontsReady = (document.fonts && document.fonts.load) ? Promise.race([Promise.all([document.fonts.load("600 26px \"JetBrains Mono\""), document.fonts.load("500 22px \"JetBrains Mono\""), document.fonts.load("500 14px \"Barlow Semi Condensed\"")]), new Promise(r => setTimeout(r, 2500))]) : Promise.resolve();
+__fontsReady.catch(() => {}).then(() => { if (!window.THREE) { document.getElementById("rail").innerHTML = "<p class=\"tip\" style=\"padding:12px\">The 3D library could not load. Check your internet connection and reload.</p>"; return; } startApp(); });
+</script>
+</body></html>

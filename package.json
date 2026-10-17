@@ -1,0 +1,13 @@
+{
+  "name": "atttool",
+  "version": "0.2.0",
+  "description": "Attitude workbench: rotations, LEO orbit & frames, spacecraft layout — an educational 3D tool.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/serve.mjs",
+    "test": "node --test tests/*.test.js",
+    "build": "node scripts/build.mjs"
+  },
+  "engines": { "node": ">=18" }
+}
