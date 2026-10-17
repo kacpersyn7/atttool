@@ -1,4 +1,5 @@
 # AttTool — attitude workbench
+WARN, totally vibecoded app
 
 An educational 3D tool for spacecraft attitude and LEO orbit geometry. It runs in the browser and has three workspaces:
 
@@ -60,9 +61,5 @@ The rule that keeps this maintainable is that **physics never imports graphics**
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) covers the data flow and the view interface. [docs/CONVENTIONS.md](docs/CONVENTIONS.md) defines every frame, DCM and quaternion convention, so read it before touching the math.
 
 ## Version control
-
-```bash
-git init && git add -A && git commit -m "AttTool: modular project structure"
-```
 
 `.gitignore` already excludes `dist/` and OS clutter.
