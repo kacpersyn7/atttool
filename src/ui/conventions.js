@@ -13,7 +13,7 @@ const HTML = `
 <li><b>VVLH</b> — Z = −r̂ (nadir), Y = −ĥ (negative orbit normal), X = Y×Z (toward velocity). Zero offsets in VVLH = nadir pointing.</li>
 <li><b>LVLH</b> — X = r̂ (radial out), Z = ĥ (orbit normal), Y = Z×X (toward velocity).</li>
 <li><b>VNC</b> — X = v̂, Y = ĥ, Z = X×Y. Orbital frames follow the STK definitions (ĥ = r×v / |r×v|).</li>
-<li><b>B</b> — body frame, origin at the bus centre. Example EO layout: +Z nadir/payload, +X flight direction when nadir pointing.</li>
+<li><b>B = SCF</b> — spacecraft frame, the body frame for attitude; components are defined in it. Origin anywhere (default bus centre), axes = bus axes possibly permuted. <b>G</b> = bus geometry frame (bus centre, box edges); p<sub>S</sub> = C<sub>SG</sub>·(p<sub>G</sub> − origin).</li>
 <li><b>C</b> — a component's own frame. +Z<sub>C</sub> is its boresight / spin axis / dipole axis / panel normal.</li>
 </ul>
 <h3>Direction cosine matrices</h3>

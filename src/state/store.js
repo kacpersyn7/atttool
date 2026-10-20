@@ -5,13 +5,14 @@
  *   S.rot     Rotation Lab settings (quaternion, Euler sequence, display toggles)
  *   S.orbit   orbit, time, guidance mode and display toggles
  *   S.layout  Spacecraft Layout UI settings (selection, gizmo, display)
- *   S.sc      the spacecraft: { bus, comps[] } — shared by all workspaces
+ *   S.sc      the spacecraft: { bus, frame, comps[] } — shared by all workspaces (see spacecraft/frame.js)
  *
  * Mutate S in place, then call save() (UI settings) or scChanged() (spacecraft geometry —
  * bumps scVersion() so 3D models rebuild). Bump STORAGE_KEY if you make an incompatible change.
  */
 import * as AM from '../core/attitude.js';
 import { defaultSC } from '../spacecraft/exampleSpacecraft.js';
+import { defaultFrame } from '../spacecraft/frame.js';
 import { EPOCH0 } from '../sim/scenario.js';
 
 export const STORAGE_KEY = 'atttool.v1';
@@ -48,6 +49,8 @@ function load() {
 function migrate(s) {
   // v0.2 -> v0.3: the old "LVLH" frame is STK's VVLH; nadir mode became the generic "offsets" mode
   if (s.orbit.mode === 'lvlh') { s.orbit.mode = 'offsets'; s.orbit.refFrame = 'vvlh'; }
+  // v0.3 -> v0.4: spacecraft frame; old layouts are in bus-centre axes = the default SCF
+  if (!s.sc.frame) s.sc.frame = defaultFrame();
   if ('lvlh' in s.orbit.show) { s.orbit.show.orbFrame = s.orbit.show.lvlh; delete s.orbit.show.lvlh; }
 }
 

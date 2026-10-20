@@ -2,7 +2,8 @@
 import * as THREE from 'three';
 import * as AM from '../core/attitude.js';
 import { TYPES } from '../spacecraft/componentTypes.js';
-import { Arrow, COL, coneGeom, makeLabel, makeTriad } from './primitives.js';
+import { busPose } from '../spacecraft/frame.js';
+import { Arrow, COL, coneGeom, makeLabel, makeTriad, setObjFromCBR } from './primitives.js';
 
 export function std(color, o = {}) { return new THREE.MeshStandardMaterial(Object.assign({ color, roughness: 0.55, metalness: 0.25 }, o)); }
 
@@ -37,7 +38,8 @@ export function compMesh(c) {
 }
 
 /**
- * Build the whole spacecraft. Body frame = group frame (origin at bus centre).
+ * Build the whole spacecraft. Group frame = spacecraft frame SCF = body frame B (see spacecraft/frame.js);
+ * the bus box is placed at its centre and rotated into SCF.
  * @param {object} [opts] cones, excl, labels, dipoles, busOpacity, triad, triadLen, triadR, labelScale
  * @returns THREE.Group with .compGroups[id] and optional .triad
  */
@@ -46,10 +48,13 @@ export function buildSC(sc, opts = {}) {
   const { x, y, z } = sc.bus;
   const busOp = opts.busOpacity ?? 1;
   const busMat = std('#c99a3e', { metalness: .55, roughness: .45, transparent: busOp < 1, opacity: busOp, depthWrite: busOp >= 1 });
-  const bus = new THREE.Mesh(new THREE.BoxGeometry(x, y, z), busMat); bus.userData.isBus = true; root.add(bus);
-  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(bus.geometry), new THREE.LineBasicMaterial({ color: 0xffe2a8, transparent: true, opacity: 0.55 })); root.add(edges);
-  // nadir face panel (darker) to make +Z face recognisable
-  const fp = new THREE.Mesh(new THREE.PlaneGeometry(x * 0.96, y * 0.96), std('#2a2f38', { side: THREE.DoubleSide, transparent: busOp < 1, opacity: Math.min(1, busOp + .2) })); fp.position.z = z / 2 + 0.002; root.add(fp);
+  const busG = new THREE.Group(); root.add(busG); // bus geometry frame G inside SCF
+  const bp = busPose(sc); busG.position.set(...bp.pos); setObjFromCBR(busG, AM.m.T(bp.C));
+  const bus = new THREE.Mesh(new THREE.BoxGeometry(x, y, z), busMat); bus.userData.isBus = true; busG.add(bus);
+  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(bus.geometry), new THREE.LineBasicMaterial({ color: 0xffe2a8, transparent: true, opacity: 0.55 })); busG.add(edges);
+  // nadir face panel (darker) to make the bus +Z face recognisable
+  const fp = new THREE.Mesh(new THREE.PlaneGeometry(x * 0.96, y * 0.96), std('#2a2f38', { side: THREE.DoubleSide, transparent: busOp < 1, opacity: Math.min(1, busOp + .2) })); fp.position.z = z / 2 + 0.002; busG.add(fp);
+  root.busGroup = busG;
   root.compGroups = {};
   for (const c of sc.comps) {
     const g = compMesh(c); g.position.set(...c.pos); g.quaternion.set(c.q.x, c.q.y, c.q.z, c.q.w); g.userData.compId = c.id;
@@ -68,6 +73,6 @@ export function buildSC(sc, opts = {}) {
     if (opts.labels) { const l = makeLabel(c.name, '#' + new THREE.Color(TYPES[c.type].color).getHexString(), 22, { scale: opts.labelScale || 0.85, weight: 500 }); l.position.set(0, 0, 0.02); g.add(l); g.userData.label = l; }
     root.add(g); root.compGroups[c.id] = g;
   }
-  if (opts.triad) { const t = makeTriad(opts.triadLen || 1, opts.triadR || 0.012, ['X_B', 'Y_B', 'Z_B'], { labelScale: opts.labelScale }); root.add(t); root.triad = t; }
+  if (opts.triad) { const t = makeTriad(opts.triadLen || 1, opts.triadR || 0.012, opts.triadNames || ['X_B', 'Y_B', 'Z_B'], { labelScale: opts.labelScale }); root.add(t); root.triad = t; }
   return root;
 }
