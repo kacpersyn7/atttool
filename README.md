@@ -6,7 +6,7 @@ An educational 3D tool for spacecraft attitude and LEO orbit geometry. It runs i
 | Key | Workspace | What it's for |
 |---|---|---|
 | `1` | **Rotation Lab** | Euler angles (all 12 sequences), quaternions, axis-angle and DCMs side by side, with step-by-step animations and gimbal-lock warnings |
-| `2` | **Orbit & Frames** | Keplerian + J2 orbit, ECI / ECEF / LVLH / body frames, Sun, eclipse, dipole B-field, guidance modes (nadir, target tracking, Sun pointing, inertial), sensor availability timeline |
+| `2` | **Orbit & Frames** | Keplerian + J2 orbit, ECI / ECEF / VVLH / LVLH / VNC / body frames (STK definitions), Sun, eclipse, dipole B-field, guidance modes (nadir, target tracking, Sun pointing, inertial), sensor availability timeline |
 | `3` | **Spacecraft Layout** | Place sensors and actuators on the bus, mounting matrices, mass properties, actuator authority, JSON / NumPy export |
 
 ## Quick start

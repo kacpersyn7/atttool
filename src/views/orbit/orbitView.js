@@ -1,7 +1,7 @@
 /**
  * Workspace 2 — Orbit & Frames.
  * Earth (ECEF texture, rotating by GMST), orbit line coloured by eclipse, ground track,
- * the spacecraft with ECI/LVLH/body frames, Sun & B-field vectors, payload footprint,
+ * the spacecraft with ECI / orbital (VVLH, LVLH, VNC) / body frames, Sun & B-field vectors, payload footprint,
  * a body-frame inset and a one-orbit sensor timeline.
  *
  * Scene unit = 1000 km. Physics lives in sim/ and env/; this file only draws.
@@ -57,7 +57,7 @@ export function createOrbitView({ renderRail }) {
   /* ---------- spacecraft & vectors ---------- */
   const scNode = new THREE.Group(); V.scene.add(scNode);
   let scModel = null, scVer = -1;
-  const lvlhTriad = makeTriad(1, 0.006, ['x_L', 'y_L', 'z_L ⊕'], { opacity: .5, labelScale: .8 }); V.scene.add(lvlhTriad);
+  let orbTriad = null, orbTriadFrame = null; // rebuilt when the selected orbital frame changes (labels differ)
   const sunArrow = new Arrow(COL.sun, 1, 0.008, { label: 'Sun' }); V.scene.add(sunArrow);
   const bArrow = new Arrow(COL.teal, 1, 0.008, { label: 'B' }); V.scene.add(bArrow);
   const vArrow = new Arrow(COL.cyan, 1, 0.008, { label: 'v' }); V.scene.add(vArrow);
@@ -115,13 +115,18 @@ export function createOrbitView({ renderRail }) {
     const k = scDispScale(); scModel.scale.setScalar(k);
     scModel.traverse(x => { if (x.userData.isCone) x.visible = o.show.cones; });
     const pos = V3(AM.v.scale(A.st.r, U)); scNode.position.copy(pos); setObjFromCBR(scNode, A.CBI);
-    lvlhTriad.visible = o.show.lvlh; lvlhTriad.position.copy(pos); setObjFromCBR(lvlhTriad, A.CLI); lvlhTriad.scale.setScalar(k * 2.2);
+    if (orbTriadFrame !== o.refFrame) {
+      if (orbTriad) { V.scene.remove(orbTriad); disposeTree(orbTriad); }
+      const f = ENV.ORBIT_FRAMES[o.refFrame] || ENV.ORBIT_FRAMES.vvlh;
+      orbTriad = makeTriad(1, 0.006, f.axes, { opacity: .5, labelScale: .8 }); V.scene.add(orbTriad); orbTriadFrame = o.refFrame;
+    }
+    orbTriad.visible = o.show.orbFrame; orbTriad.position.copy(pos); setObjFromCBR(orbTriad, A.CRI); orbTriad.scale.setScalar(k * 2.2);
     // vectors at the spacecraft (thickness scales with S/C size, length kept in scene units)
     const L = k * 2.6, vs = Math.max(.4, k * 6);
     sunArrow.visible = o.show.sunv; sunArrow.position.copy(pos); sunArrow.setDir(A.sun); sunArrow.mat.opacity = A.ecl ? .35 : 1; sunArrow.mat.transparent = true; sunArrow.scale.setScalar(vs); sunArrow.setLength(L / vs);
     const BI = ENV.bfieldECI(A.st.r, A.date);
     bArrow.visible = o.show.bv; bArrow.position.copy(pos); bArrow.setDir(BI); bArrow.scale.setScalar(vs); bArrow.setLength(L * .8 / vs);
-    vArrow.visible = o.show.lvlh; vArrow.position.copy(pos); vArrow.setDir(A.st.v); vArrow.scale.setScalar(vs); vArrow.setLength(L * .9 / vs);
+    vArrow.visible = o.show.orbFrame; vArrow.position.copy(pos); vArrow.setDir(A.st.v); vArrow.scale.setScalar(vs); vArrow.setLength(L * .9 / vs);
     // payload ray & footprint
     const pc = payloadComp(S);
     if (pc) {
@@ -136,7 +141,7 @@ export function createOrbitView({ renderRail }) {
     } else ray.visible = foot.visible = footLbl.visible = false;
     tgt.visible = o.mode === 'target';
     if (tgt.visible) { const p = AM.v.scale(ENV.llh2ecef(o.tgtLat * D2R, o.tgtLon * D2R), U); tgt.position.set(...p); tgt.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), V3(AM.v.unit(p))); }
-    V.scene.updateMatrixWorld(); [scModel, lvlhTriad, sunArrow, bArrow, vArrow].forEach(fixLabels);
+    V.scene.updateMatrixWorld(); [scModel, orbTriad, sunArrow, bArrow, vArrow].forEach(fixLabels);
     // follow camera
     if (o.show.follow) { if (prevScPos) { const d = pos.clone().sub(prevScPos); V.camera.position.add(d); } V.controls.target.copy(pos); }
     prevScPos = pos.clone();
@@ -168,7 +173,7 @@ export function createOrbitView({ renderRail }) {
         h('dt', null, 'Lat · lon'), h('dd', null, liveText(() => { if (!cur) return ''; const ll = ENV.ecef2ll(ENV.eci2ecef(cur.st.r, cur.date)); return deg(ll.lat).toFixed(2) + '° · ' + deg(ll.lon).toFixed(2) + '°'; })),
         h('dt', null, 'β angle · light'), h('dd', null, liveText(() => cur ? deg(ENV.betaAngle(cur.st.r, cur.st.v, cur.sun)).toFixed(1) + '° · ' + (cur.ecl ? '<span style="color:#7d93b5">ECLIPSE</span>' : '<span style="color:var(--sun)">SUNLIT</span>') : '')),
         h('dt', null, 'q_BI [q₀ q₁ q₂ q₃]'), h('dd', null, liveText(() => { if (!cur) return ''; const q = AM.C2q(cur.CBI); return [q.w, q.x, q.y, q.z].map(x => fmt(x, 3)).join(' '); })),
-        h('dt', null, 'B vs LVLH (φ θ ψ)'), h('dd', null, liveText(() => { if (!cur) return ''; const e = AM.C2euler('321', AM.m.mul(cur.CBI, AM.m.T(cur.CLI))).map(deg); return [e[2], e[1], e[0]].map(x => x.toFixed(1) + '°').join(' '); })),
+        h('dt', null, 'B vs ' + S.orbit.refFrame.toUpperCase() + ' (φ θ ψ)'), h('dd', null, liveText(() => { if (!cur) return ''; const e = AM.C2euler('321', AM.m.mul(cur.CBI, AM.m.T(cur.CRI))).map(deg); return [e[2], e[1], e[0]].map(x => x.toFixed(1) + '°').join(' '); })),
         h('dt', null, 'Body rate |ω|'), h('dd', null, liveText(() => cur ? (deg(AM.v.norm(bodyRate(S, cur.t)))).toFixed(3) + ' °/s' : '')),
         h('dt', null, 'Sun in body'), h('dd', null, liveText(() => cur ? '[' + AM.m.mulv(cur.CBI, cur.sun).map(x => fmt(x, 2)).join(' ') + ']' : '')),
         h('dt', null, 'B in body (nT)'), h('dd', null, liveText(() => cur ? '[' + AM.m.mulv(cur.CBI, ENV.bfieldECI(cur.st.r, cur.date)).map(x => x.toFixed(0)).join(' ') + ']' : ''))),

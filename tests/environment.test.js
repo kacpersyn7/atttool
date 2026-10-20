@@ -43,13 +43,43 @@ test('J2 RAAN drift of an SSO is ~0.9856°/day', () => {
   close(s.raan / D2R, 0.9856, 0.001);
 });
 
-test('LVLH: z nadir, y = -orbit normal, right-handed', () => {
-  const s = ENV.propagate(leo, 123, false); const C = ENV.lvlh(s.r, s.v);
-  const [x, y, z] = C;
-  close(v.dot(z, v.unit(s.r)), -1, 1e-12);
-  close(v.dot(y, v.unit(v.cross(s.r, s.v))), -1, 1e-12);
-  close(v.dot(v.cross(x, y), z), 1, 1e-12);
-  close(v.dot(x, v.unit(s.v)), 1, 1e-9); // circular: x along velocity
+// Orbital frames follow STK: https://help.agi.com/stk/Content/gator/eq-coordsys.htm
+const ecc = { a: 9000, e: 0.2, i: 0.9, raan: 0.4, argp: 1.1, nu0: 0 };
+const frameCase = () => { const s = ENV.propagate(ecc, 1500, false); return { s, rh: v.unit(s.r), hh: v.unit(v.cross(s.r, s.v)) }; };
+const rightHanded = C => { close(v.dot(v.cross(C[0], C[1]), C[2]), 1, 1e-12, 'right-handed'); C.forEach((a, i) => close(v.norm(a), 1, 1e-12, 'unit ' + i)); };
+
+test('VVLH (STK): Z = nadir, Y = −orbit normal, X toward velocity', () => {
+  const { s, rh, hh } = frameCase(); const [x, y, z] = ENV.vvlh(s.r, s.v);
+  close(v.dot(z, rh), -1, 1e-12); close(v.dot(y, hh), -1, 1e-12);
+  close(v.dot(x, rh), 0, 1e-12); assert.ok(v.dot(x, s.v) > 0, 'X toward velocity');
+  rightHanded([x, y, z]);
+});
+
+test('LVLH (STK): X = radial, Z = orbit normal, Y toward velocity', () => {
+  const { s, rh, hh } = frameCase(); const [x, y, z] = ENV.lvlh(s.r, s.v);
+  close(v.dot(x, rh), 1, 1e-12); close(v.dot(z, hh), 1, 1e-12);
+  assert.ok(v.dot(y, s.v) > 0, 'Y toward velocity');
+  rightHanded([x, y, z]);
+});
+
+test('VNC (STK): X = velocity, Y = orbit normal', () => {
+  const { s, hh } = frameCase(); const [x, y, z] = ENV.vnc(s.r, s.v);
+  close(v.dot(x, v.unit(s.v)), 1, 1e-12); close(v.dot(y, hh), 1, 1e-12);
+  rightHanded([x, y, z]);
+});
+
+test('LVLH and VVLH differ by a fixed rotation', () => {
+  // VVLH X = LVLH Y, VVLH Y = −LVLH Z, VVLH Z = −LVLH X
+  const { s } = frameCase(); const L = ENV.lvlh(s.r, s.v), V = ENV.vvlh(s.r, s.v);
+  for (let k = 0; k < 3; k++) { close(V[0][k], L[1][k], 1e-12); close(V[1][k], -L[2][k], 1e-12); close(V[2][k], -L[0][k], 1e-12); }
+  // circular orbit: VVLH X is the velocity direction
+  const c = ENV.propagate(leo, 123, false); close(v.dot(ENV.vvlh(c.r, c.v)[0], v.unit(c.v)), 1, 1e-9);
+});
+
+test('orbitFrame dispatches by id and falls back to VVLH', () => {
+  const { s } = frameCase();
+  for (const id of Object.keys(ENV.ORBIT_FRAMES)) assert.deepEqual(ENV.orbitFrame(id, s.r, s.v), ENV.ORBIT_FRAMES[id].fn(s.r, s.v));
+  assert.deepEqual(ENV.orbitFrame('nope', s.r, s.v), ENV.vvlh(s.r, s.v));
 });
 
 test('Sun direction at the 2026 March equinox is near +X', () => {

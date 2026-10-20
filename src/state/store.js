@@ -23,8 +23,8 @@ export function defaultState() {
     rot: { seq: '321', euler: [30, 20, 10], q: AM.C2q(AM.euler2C('321', [30 * D2R, 20 * D2R, 10 * D2R])), scalarFirst: true, dcmView: 'BR', probe: [1, 1, 0], showProbe: true, showGhosts: true, showTrails: true, showSC: true, nudge: 15 },
     orbit: {
       preset: 'sso1030', epoch: EPOCH0, hp: 550, ha: 550, i: 97.59, raan: 0, argp: 0, nu0: 0, j2: true, t: 0, playing: true, speed: 60,
-      mode: 'lvlh', roll: 0, pitch: 0, yaw: 0, sunAxis: '-Z', sunSec: 'nadir', tgtLat: 52.23, tgtLon: 21.01, tgtComp: '',
-      show: { eci: true, lvlh: true, track: true, sunv: true, bv: true, cones: true, follow: false }, scale: 1.0,
+      mode: 'offsets', refFrame: 'vvlh', roll: 0, pitch: 0, yaw: 0, sunAxis: '-Z', sunSec: 'nadir', tgtLat: 52.23, tgtLon: 21.01, tgtComp: '',
+      show: { eci: true, orbFrame: true, track: true, sunv: true, bv: true, cones: true, follow: false }, scale: 1.0,
     },
     layout: { sel: null, gizmo: 'translate', show: { cones: true, excl: false, labels: true, bus: 0.55, principal: false, com: true } },
     sc: defaultSC(),
@@ -40,7 +40,15 @@ function load() {
   for (const k of ['rot', 'orbit', 'layout']) s[k] = Object.assign({}, d[k], s[k]);
   s.orbit.show = Object.assign({}, d.orbit.show, s.orbit.show);
   s.layout.show = Object.assign({}, d.layout.show, s.layout.show);
+  migrate(s);
   return s;
+}
+
+/** Upgrade saves from older versions in place. */
+function migrate(s) {
+  // v0.2 -> v0.3: the old "LVLH" frame is STK's VVLH; nadir mode became the generic "offsets" mode
+  if (s.orbit.mode === 'lvlh') { s.orbit.mode = 'offsets'; s.orbit.refFrame = 'vvlh'; }
+  if ('lvlh' in s.orbit.show) { s.orbit.show.orbFrame = s.orbit.show.lvlh; delete s.orbit.show.lvlh; }
 }
 
 /** The single app state object. Never reassigned — mutate its properties. */
