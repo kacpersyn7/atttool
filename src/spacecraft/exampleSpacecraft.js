@@ -1,6 +1,7 @@
 /** Example Earth-observation microsatellite used as the default layout. */
 import { D2R } from '../core/linalg.js';
 import { mkComp } from './component.js';
+import { defaultFrame } from './frame.js';
 
 export function defaultSC() {
   const b = 54.7356 * D2R, comps = []; // b: pyramid half-angle for 4 wheels (magic angle)
@@ -27,5 +28,5 @@ export function defaultSC() {
   comps.push(mkComp('thr', 'THR', [-0.4, 0, 0.25], [-1, 0, 0], [0, 0, 1]));
   comps.push(mkComp('sa', 'SA +Y', [0, 0.98, -0.2], [0, 0, -1], [0, 1, 0]));
   comps.push(mkComp('sa', 'SA −Y', [0, -0.98, -0.2], [0, 0, -1], [0, 1, 0]));
-  return { bus: { x: 0.8, y: 0.8, z: 1.0, mass: 75 }, comps };
+  return { bus: { x: 0.8, y: 0.8, z: 1.0, mass: 75 }, frame: defaultFrame(), comps };
 }

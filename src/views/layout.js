@@ -7,17 +7,19 @@ import * as THREE from 'three';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import * as AM from '../core/attitude.js';
 import { S, save, scVersion, scChanged } from '../state/store.js';
-import { $, h, card, tip, slider, numCell, check, seg, liveText, syncAll, confirmButton } from '../ui/dom.js';
+import { $, h, card, tip, slider, numCell, check, seg, liveText, syncAll, onSync, confirmButton } from '../ui/dom.js';
 import { toast, showModal, closeModal, copyText } from '../ui/overlay.js';
 import { deg, rad, fmt, fmtS, matHTML } from '../ui/format.js';
 import { gfx, mkView, addLights, viewPreset, renderFull } from '../gfx/renderer.js';
-import { makeTriad, makeLabel, dashedLine, disposeTree } from '../gfx/primitives.js';
+import { makeTriad, makeLabel, dashedLine, disposeTree, setObjFromCBR } from '../gfx/primitives.js';
 import { buildSC } from '../gfx/spacecraftMesh.js';
 import { TYPES, axisName } from '../spacecraft/componentTypes.js';
 import { newId, mkComp, qFromBoresight, compAxis, envelope, sanitizeSpacecraft } from '../spacecraft/component.js';
 import { defaultSC } from '../spacecraft/exampleSpacecraft.js';
 import { massProps, maxPrincipalTilt } from '../spacecraft/massProperties.js';
 import { exportPython } from '../spacecraft/exportPython.js';
+import { AXIS_SPECS, NOMINAL_AXES, validAxes, frameMatrix, setFrame, busPose, originPresets, specOf, pointG2S, dirG2S } from '../spacecraft/frame.js';
+import { ORBIT_FRAMES } from '../env/orbit.js';
 
 /** 3-2-1 mounting angles (deg) of a component, cached on the component as c.eul. */
 const eulOf = c => AM.C2euler('321', AM.q2C(c.q)).map(deg);
@@ -27,7 +29,9 @@ export function createLayoutView({ renderRail }) {
   const V = mkView({ up: [0, 0, -1], pos: [2.3, -2.5, -1.5], fov: 38, near: 0.01, far: 100 });
   addLights(V.scene, 1.1);
   const grid = new THREE.GridHelper(4, 20, 0x2a3a52, 0x18222f); grid.rotation.x = Math.PI / 2; V.scene.add(grid);
-  V.scene.add(makeTriad(1.0, 0.012, ['X_B', 'Y_B', 'Z_B ⊕ nadir']));
+  V.scene.add(makeTriad(1.0, 0.012, ['X_SCF', 'Y_SCF', 'Z_SCF']));
+  // faint bus-axes triad at the bus centre, shown when the SCF differs from the bus axes / centre
+  const busTriad = makeTriad(0.55, 0.006, ['x_bus', 'y_bus', 'z_bus'], { opacity: .45, labelScale: .75 }); V.scene.add(busTriad);
   let model = null, ver = -1, dragging = false;
   const selBox = new THREE.BoxHelper(undefined, 0xf2a93b); selBox.visible = false; V.scene.add(selBox);
 
@@ -52,7 +56,10 @@ export function createLayoutView({ renderRail }) {
     const sh = S.layout.show;
     model = buildSC(S.sc, { cones: sh.cones, excl: sh.excl, labels: sh.labels, busOpacity: sh.bus, dipoles: true });
     V.scene.add(model); ver = scVersion(); attach(); refreshMass();
-    grid.position.z = S.sc.bus.z / 2 + 0.35;
+    const bp = busPose(S.sc), b = S.sc.bus;
+    grid.position.z = bp.pos[2] + (Math.abs(bp.C[2][0]) * b.x + Math.abs(bp.C[2][1]) * b.y + Math.abs(bp.C[2][2]) * b.z) / 2 + 0.35;
+    busTriad.position.set(...bp.pos); setObjFromCBR(busTriad, AM.m.T(bp.C));
+    busTriad.visible = AM.v.norm(bp.pos) > 1e-9 || Math.abs(bp.C[0][0] + bp.C[1][1] + bp.C[2][2] - 3) > 1e-9;
   }
   function attach() {
     const c = sel(); const g = c && model && model.compGroups[c.id];
@@ -108,18 +115,18 @@ export function createLayoutView({ renderRail }) {
     const axLbl = (name, color, ax) => h('span', null, name + ' · ', h('span', { class: 'ax', style: 'color:var(--ax-' + color + ')' }, ax));
     return card('Selected · ' + T.label, '+Z_C = ' + axName,
       h('div', { class: 'row two' }, h('label', { for: 'cname' }, 'Name'), nameIn),
-      h('div', { class: 'lbl' }, 'Position in body frame (m)'),
+      h('div', { class: 'lbl' }, 'Position in SCF (m)'),
       h('div', { class: 'grid3' }, [0, 1, 2].map(k => numCell('pos' + k, 'xyz'[k], () => c.pos[k], x => setPos(k, x), .01, 3))),
-      h('div', { class: 'lbl' }, 'Mounting · 3-2-1 from body axes'),
+      h('div', { class: 'lbl' }, 'Mounting · 3-2-1 from SCF axes'),
       slider({ id: 'my', label: axLbl('Yaw', 'z', 'Z_B'), min: -180, max: 180, step: .5, get: () => c.eul[0], set: x => setEul(0, x) }),
       slider({ id: 'mp', label: axLbl('Pitch', 'y', 'Y′'), min: -90, max: 90, step: .5, get: () => c.eul[1], set: x => setEul(1, x) }),
       slider({ id: 'mr', label: axLbl('Roll', 'x', 'X″'), min: -180, max: 180, step: .5, get: () => c.eul[2], set: x => setEul(2, x) }),
       h('div', { class: 'lbl' }, 'Point ' + axName + ' along'),
       h('div', { class: 'btns' }, [['+X', [1, 0, 0]], ['−X', [-1, 0, 0]], ['+Y', [0, 1, 0]], ['−Y', [0, -1, 0]], ['+Z', [0, 0, 1]], ['−Z', [0, 0, -1]]].map(([t, d]) => h('button', { class: 'btn mono', onclick: () => point(d) }, t)), h('button', { class: 'btn', onclick: spin }, '↻ 90° about own Z')),
       h('div', { class: 'grid3' }, params),
-      h('div', { class: 'kv' }, h('dt', null, axName + ' in body'), h('dd', null, liveText(() => '[' + compAxis(c).map(x => fmt(x, 4)).join(', ') + ']')),
+      h('div', { class: 'kv' }, h('dt', null, axName + ' in SCF'), h('dd', null, liveText(() => '[' + compAxis(c).map(x => fmt(x, 4)).join(', ') + ']')),
         h('dt', null, 'q_BC [q₀ q₁ q₂ q₃]'), h('dd', null, liveText(() => [c.q.w, c.q.x, c.q.y, c.q.z].map(x => fmt(x, 4)).join(' ')))),
-      h('div', { class: 'lbl' }, 'C_CB (body → component), rows = component axes in body'),
+      h('div', { class: 'lbl' }, 'C_CB (SCF → component), rows = component axes in SCF'),
       h('div', { class: 'mat' }, liveText(() => matHTML(AM.q2C(c.q), 4), 'contents')),
       tip('A sensor measures in its own frame C. To use it, rotate into body: v_B = C_CBᵀ · v_C. A star tracker reports q_CI; the body attitude is C_BI = C_CBᵀ · C_CI.'),
       h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, h('span', { class: 'lbl' }, 'Drag handle'), seg([['translate', 'Move'], ['rotate', 'Rotate'], ['off', 'Off']], () => S.layout.gizmo, v => { S.layout.gizmo = v; save(); attach(); })),
@@ -130,21 +137,50 @@ export function createLayoutView({ renderRail }) {
     );
   }
 
+  /* ---------- spacecraft frame card ---------- */
+  function applyFrame(next, msg) {
+    if (!validAxes(next.xAxis, next.zAxis)) { toast('X and Z must be perpendicular'); syncAll(); return; }
+    setFrame(S.sc, next); scChanged(); refreshMass(); renderRail(); if (msg) toast(msg);
+  }
+  function scfCard() {
+    const f = S.sc.frame, presets = originPresets(S.sc.bus);
+    const presetOf = () => (presets.find(p => AM.v.norm(AM.v.sub(p[2], f.origin)) < 1e-9) || ['custom'])[0];
+    const presetSel = h('select', { id: 'scfOrigin', 'aria-label': 'SCF origin' }, [...presets.map(([k, t]) => h('option', { value: k }, t)), h('option', { value: 'custom' }, 'Custom')]);
+    presetSel.addEventListener('change', () => { const p = presets.find(q => q[0] === presetSel.value); if (p) applyFrame({ ...f, origin: p[2] }, 'Components kept in place, coordinates re-expressed'); });
+    const axisSel = (id, key) => { const sel = h('select', { id, 'aria-label': id }, AXIS_SPECS.map(a => h('option', { value: a }, 'bus ' + a.replace('-', '−'))));
+      sel.addEventListener('change', () => applyFrame({ ...f, [key]: sel.value })); return sel; };
+    const xs = axisSel('scfX', 'xAxis'), zs = axisSel('scfZ', 'zAxis');
+    const setOrigin = (k, x) => { const o = f.origin.slice(); o[k] = x; applyFrame({ ...f, origin: o }); };
+    const nominal = id => { applyFrame({ ...f, ...NOMINAL_AXES[id] }); S.orbit.refFrame = id; save(); toast(`SCF = ${id.toUpperCase()} in nominal flight · orbital frame set to ${id.toUpperCase()}`); };
+    const el = card('Spacecraft frame (SCF)', 'body frame for attitude',
+      h('div', { class: 'row two' }, h('label', { for: 'scfOrigin' }, 'Origin'), presetSel),
+      h('div', { class: 'grid3' }, [0, 1, 2].map(k => numCell('scfO' + k, 'origin ' + 'xyz'[k] + ' (bus)', () => f.origin[k], x => setOrigin(k, x), .01, 3))),
+      h('div', { class: 'grid2' }, h('div', { class: 'cell' }, h('span', null, 'X_SCF along'), xs), h('div', { class: 'cell' }, h('span', null, 'Z_SCF along'), zs)),
+      h('div', { class: 'kv' }, h('dt', null, 'Y_SCF = Z × X along'), h('dd', null, liveText(() => 'bus ' + specOf(frameMatrix(f)[1]).replace('-', '−'))),
+        h('dt', null, 'Bus centre in SCF (m)'), h('dd', null, liveText(() => '[' + busPose(S.sc).pos.map(x => fmt(x, 3)).join(', ') + ']'))),
+      h('div', { class: 'lbl' }, 'Nominal flight (bus +Z nadir, +X along track) — make SCF equal to'),
+      h('div', { class: 'btns' }, Object.keys(NOMINAL_AXES).map(id => h('button', { class: 'btn', title: ORBIT_FRAMES[id].label, onclick: () => nominal(id) }, id.toUpperCase()))),
+      tip('Components keep their physical place when you change the frame; their coordinates are re-expressed. The SCF is the body frame for attitude, so its axes decide how the bus flies: offsets of zero align SCF with the selected orbital frame.'));
+    onSync(() => { if (document.activeElement !== presetSel) presetSel.value = presetOf(); xs.value = f.xAxis; zs.value = f.zAxis; });
+    return el;
+  }
+
   /* ---------- control rail ---------- */
   function panel() {
     const out = [], b = S.sc.bus, sh = S.layout.show;
     const c = sel(); if (c) out.push(compEditor(c));
     const typeSel = h('select', { id: 'addType', 'aria-label': 'Component type' }, Object.entries(TYPES).map(([k, t]) => h('option', { value: k }, t.label)));
     const list = h('div', { class: 'complist' }, S.sc.comps.map(cc => h('button', { class: 'comp' + (cc.id === S.layout.sel ? ' sel' : ''), onclick: () => select(cc.id) }, h('i', { style: 'background:' + TYPES[cc.type].color }), h('span', null, cc.name), h('small', null, compAxis(cc).map(x => (x >= 0 ? '+' : '−') + Math.abs(x).toFixed(2)).join(' ')))));
-    const addComp = () => { const t = typeSel.value; const n = S.sc.comps.filter(x => x.type === t).length + 1; const cc = mkComp(t, t.toUpperCase() + '-' + n, [0, 0, -b.z / 2 - 0.05], [0, 0, -1], [1, 0, 0]); S.sc.comps.push(cc); S.layout.sel = cc.id; scChanged(); renderRail(); };
+    const addComp = () => { const t = typeSel.value; const n = S.sc.comps.filter(x => x.type === t).length + 1; const cc = mkComp(t, t.toUpperCase() + '-' + n, pointG2S(S.sc.frame, [0, 0, -b.z / 2 - 0.05]), dirG2S(S.sc.frame, [0, 0, -1]), dirG2S(S.sc.frame, [1, 0, 0])); S.sc.comps.push(cc); S.layout.sel = cc.id; scChanged(); renderRail(); };
     out.push(card('Components', S.sc.comps.length + ' items',
       h('div', { style: 'display:grid;grid-template-columns:1fr auto;gap:6px' }, typeSel, h('button', { class: 'btn primary', onclick: addComp }, '+ Add')),
-      list, tip('Click a part in the 3D view or the list. Drag the handles to move or rotate it. Right column: unit vector of its +Z axis in body.')));
-    out.push(card('Bus structure', 'body frame origin = bus centre',
+      list, tip('Click a part in the 3D view or the list. Drag the handles to move or rotate it. Right column: unit vector of its +Z axis in SCF.')));
+    out.push(scfCard());
+    out.push(card('Bus structure', 'box size along bus axes',
       h('div', { class: 'grid4' }, numCell('bx', 'X m', () => b.x, x => { b.x = Math.max(.05, x); scChanged(); }, .05, 2), numCell('by', 'Y m', () => b.y, x => { b.y = Math.max(.05, x); scChanged(); }, .05, 2), numCell('bz', 'Z m', () => b.z, x => { b.z = Math.max(.05, x); scChanged(); }, .05, 2), numCell('bm', 'Mass kg', () => b.mass, x => { b.mass = Math.max(0, x); scChanged(); }, 1, 1)),
       slider({ id: 'busop', label: 'Bus opacity', min: .1, max: 1, step: .05, dec: 2, get: () => sh.bus, set: x => { sh.bus = x; scChanged(); } })));
-    out.push(card('Mass properties', 'about CoM, body axes',
-      h('div', { class: 'kv' }, h('dt', null, 'Total mass'), h('dd', null, liveText(() => MP.M.toFixed(2) + ' kg')), h('dt', null, 'CoM (m)'), h('dd', null, liveText(() => '[' + MP.com.map(x => fmt(x, 4)).join(', ') + ']'))),
+    out.push(card('Mass properties', 'about CoM, SCF axes',
+      h('div', { class: 'kv' }, h('dt', null, 'Total mass'), h('dd', null, liveText(() => MP.M.toFixed(2) + ' kg')), h('dt', null, 'CoM in SCF (m)'), h('dd', null, liveText(() => '[' + MP.com.map(x => fmt(x, 4)).join(', ') + ']'))),
       h('div', { class: 'lbl' }, 'Inertia tensor J (kg·m²)'), h('div', { class: 'mat' }, liveText(() => matHTML(MP.I, 3), 'contents')),
       h('div', { class: 'kv' }, h('dt', null, 'Principal moments'), h('dd', null, liveText(() => MP.E.vals.map(x => x.toFixed(2)).join(' · '))),
         h('dt', null, 'Max principal-axis tilt'), h('dd', null, liveText(() => maxPrincipalTilt(MP.E).toFixed(2) + '°'))),
@@ -182,11 +218,14 @@ export function createLayoutView({ renderRail }) {
 
   /* ---------- viewport overlays ---------- */
   function hud() {
-    $('#hudTL').append(h('div', { class: 'hud' }, h('h4', null, 'Body frame B (example EO convention)'),
-      h('p', { class: 'tip', html: '<b style="color:var(--ax-z)">+Z</b> nadir (payload face, dark) · −Z zenith (up on screen)<br><b style="color:var(--ax-x)">+X</b> flight direction in nadir pointing · <b style="color:var(--ax-y)">+Y</b> completes the right-handed set' }),
+    $('#hudTL').append(h('div', { class: 'hud' }, h('h4', null, 'Spacecraft frame SCF = body frame B'),
+      liveText(() => { const f = S.sc.frame, C = frameMatrix(f), ax = k => specOf(C[k]).replace('-', '−'); const dflt = f.xAxis === '+X' && f.zAxis === '+Z';
+        return `<p class="tip">Origin ${AM.v.norm(f.origin) < 1e-9 ? 'at the bus centre' : '[' + f.origin.map(x => fmt(x, 3)).join(', ') + '] m from the bus centre'}<br>`
+          + `<b style="color:var(--ax-x)">X</b> = bus ${ax(0)} · <b style="color:var(--ax-y)">Y</b> = bus ${ax(1)} · <b style="color:var(--ax-z)">Z</b> = bus ${ax(2)}`
+          + (dflt ? '<br>Bus +Z = payload face (dark), nadir in nominal flight; bus +X = flight direction' : '') + '</p>'; }),
       liveText(() => { const c = sel(); return c ? `<p class="tip" style="margin-top:6px">Selected <b>${c.name}</b> at [${c.pos.map(x => fmt(x, 2)).join(', ')}] m</p>` : '<p class="tip" style="margin-top:6px">Click a component to select it.</p>'; })));
     const vb = (t, d) => h('button', { class: 'vbtn', onclick: () => viewPreset(V, d, 3.6) }, t);
-    $('#hudTR').append(vb('Iso', [1, -1.1, -.7]), vb('+X', [1, 0, -0.0001]), vb('−X', [-1, 0, -0.0001]), vb('+Y', [0, 1, -0.0001]), vb('−Y', [0, -1, -0.0001]), vb('+Z nadir', [0.0001, 0, 1]), vb('−Z zenith', [0.0001, 0, -1]));
+    $('#hudTR').append(vb('Iso', [1, -1.1, -.7]), vb('+X', [1, 0, -0.0001]), vb('−X', [-1, 0, -0.0001]), vb('+Y', [0, 1, -0.0001]), vb('−Y', [0, -1, -0.0001]), vb('+Z', [0.0001, 0, 1]), vb('−Z', [0.0001, 0, -1]));
   }
 
   function enter() { if (ver !== scVersion()) rebuild(); attach(); }

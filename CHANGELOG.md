@@ -3,7 +3,12 @@
 All notable changes to AttTool. Format based on [Keep a Changelog](https://keepachangelog.com/); versions follow [Semantic Versioning](https://semver.org/).
 Every tagged version is downloadable as a single `AttTool.html` from [Releases](https://github.com/kacpersyn7/atttool/releases).
 
-## [0.3.0] - unreleased
+## [Unreleased]
+
+### Added
+- Spacecraft frame (SCF) in the Layout tab: origin at the bus centre, a face centre or any point; axes along any (permuted) bus axes; one-click "SCF = VVLH / LVLH / VNC in nominal flight". Components stay physically in place when the frame changes; mass properties and the Python export are in SCF; JSON export/import includes the frame. Old layouts load unchanged. (#5)
+
+## [0.3.0] - 2026-10-20
 
 ### Changed
 - Orbital frames follow STK: the frame previously called "LVLH" is **VVLH**; added STK **LVLH** and **VNC**. The reference frame for attitude offsets, the drawn triad and the HUD angles is selectable; the default (VVLH) keeps nadir pointing unchanged. Old saves are migrated. (#4)
@@ -21,5 +26,6 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 ### Added
 - 40 unit tests (`npm test`), zero-dependency dev server and single-file build, architecture and conventions docs. Original kept in `legacy/`.
 
-[0.3.0]: https://github.com/kacpersyn7/atttool/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/kacpersyn7/atttool/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/kacpersyn7/atttool/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kacpersyn7/atttool/releases/tag/v0.2.0

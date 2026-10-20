@@ -12,7 +12,8 @@ Every number in AttTool follows one consistent set of rules. Most bugs in attitu
 | **VVLH** | Z = −r̂ (nadir), Y = −ĥ (negative orbit normal), X = Y × Z (toward velocity; equals v̂ on a circular orbit). Default reference for nadir pointing. |
 | **LVLH** | X = r̂ (radial out), Z = ĥ (orbit normal), Y = Z × X (toward velocity). |
 | **VNC** | X = v̂ (velocity), Y = ĥ (orbit normal), Z = X × Y. |
-| **B** | Body frame, origin at the bus centre. Example EO layout: +Z nadir/payload, +X flight direction when nadir pointing. |
+| **B = SCF** | Spacecraft frame, the body frame for attitude. All component positions and orientations are given in it. Origin: any point (default: bus centre; e.g. the launcher-interface face centre). Axes: bus axes, possibly permuted or flipped (`sc.frame.xAxis`, `zAxis`; Y = Z × X). |
+| **G** | Bus geometry frame: origin at the bus centre, axes along the box edges. Only the bus box is defined in G. `v_S = C_SG · v_G`, `p_S = C_SG · (p_G − origin)`. Example EO bus: +Z payload face (nadir in nominal flight), +X flight direction. |
 | **C** | A component's own frame. +Z_C is its boresight, spin axis, dipole axis or panel normal. |
 
 Orbital frames (VVLH, LVLH, VNC) follow the [STK definitions](https://help.agi.com/stk/Content/gator/eq-coordsys.htm), with ĥ = (r × v)/|r × v|. Before v0.3 the tool called VVLH "LVLH"; old saves are migrated automatically.

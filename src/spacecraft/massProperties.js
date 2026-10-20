@@ -1,14 +1,17 @@
 /**
- * Mass properties about the centre of mass, in body axes.
+ * Mass properties about the centre of mass, in spacecraft-frame (SCF) axes; CoM given in SCF.
  * Model: bus = uniform box, components = point masses, solar arrays = thin plates.
  */
 import * as AM from '../core/attitude.js';
 import { compCBC } from './component.js';
+import { busPose } from './frame.js';
 
 /** @returns {{M:number, com:number[], I:number[][], E:{vals:number[], vecs:number[][]}}} */
 export function massProps(sc) {
   const { x, y, z, mass: Mb } = sc.bus;
-  const parts = [{ m: Mb, p: [0, 0, 0], I: [[Mb / 12 * (y * y + z * z), 0, 0], [0, Mb / 12 * (x * x + z * z), 0], [0, 0, Mb / 12 * (x * x + y * y)]] }];
+  const IbG = [[Mb / 12 * (y * y + z * z), 0, 0], [0, Mb / 12 * (x * x + z * z), 0], [0, 0, Mb / 12 * (x * x + y * y)]];
+  const bp = busPose(sc); // bus box: centre and axes in SCF
+  const parts = [{ m: Mb, p: bp.pos, I: AM.m.mul(bp.C, AM.m.mul(IbG, AM.m.T(bp.C))) }];
   for (const c of sc.comps) {
     let Ic = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
     if (c.type === 'sa') { const w = c.w || 1, hh = c.h || .7, m = c.mass; const Il = [[m * hh * hh / 12, 0, 0], [0, m * w * w / 12, 0], [0, 0, m * (w * w + hh * hh) / 12]]; const C = compCBC(c); Ic = AM.m.mul(C, AM.m.mul(Il, AM.m.T(C))); }
