@@ -1,5 +1,6 @@
 # Publishes a GitHub Release with the single-file AttTool.html for every v* tag.
-# Works whether the tag is pushed from git or created in GitHub's "Draft a new release" page.
+# Works whether the tag is pushed from git, created in GitHub's "Draft a new release" page,
+# or typed into "Run workflow" (a missing tag is then created on the latest main).
 name: Release
 on:
   push:
@@ -8,7 +9,7 @@ on:
     types: [published]
   workflow_dispatch:
     inputs:
-      tag: { description: 'Existing tag to (re)attach AttTool.html to, e.g. v0.2.0', required: true }
+      tag: { description: 'Version tag, e.g. v0.3.0. Created on the latest main if it does not exist yet.', required: true }
 permissions:
   contents: write
   actions: write   # to trigger the Pages redeploy
@@ -21,9 +22,20 @@ jobs:
       TAG: ${{ github.event.inputs.tag || github.event.release.tag_name || github.ref_name }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Create the tag on main if it does not exist
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          case "$TAG" in v[0-9]*) ;; *) echo "::error::Tag must look like v1.2.3, got '$TAG'"; exit 1;; esac
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG exists"
+          else
+            SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$SHA" >/dev/null
+            echo "Created tag $TAG at main ($SHA)"
+          fi
+      - uses: actions/checkout@v5
         with: { ref: '${{ env.TAG }}' }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with: { node-version: 22 }
       - name: Tag must match package.json version
         run: |

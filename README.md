@@ -68,7 +68,10 @@ Every released version stays available, both as a downloadable `AttTool.html` on
 
 To release:
 1. Make sure `version` in `package.json`, `src/version.js` and the top entry of `CHANGELOG.md` agree (a test checks), and merge to `main`.
-2. Tag it: either `git tag v0.3.0 && git push origin v0.3.0`, or on GitHub use Releases → Draft a new release → new tag `v0.3.0`.
+2. Tag it, in any of three ways:
+   - **Actions → Release → Run workflow → `v0.3.0`.** This is the simplest, and it creates the tag on `main`.
+   - Releases → Draft a new release → new tag `v0.3.0`.
+   - `git tag v0.3.0 && git push origin v0.3.0`.
 3. The Release workflow builds and tests the code, attaches `AttTool.html` and redeploys the live site.
 
 Workflows (`.github/workflows/`): **CI** tests and builds every pull request, **Release** handles tags, and **Pages** deploys the live site.

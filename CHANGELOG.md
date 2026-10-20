@@ -11,6 +11,7 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 ### Added
 - Version number in the app header, this changelog.
 - GitHub Actions: tests and build on every pull request; automatic releases with `AttTool.html` attached; GitHub Pages deployment with every released version kept side by side. (#2, #3)
+- Running the Release workflow manually with a new tag creates that tag on `main` first.
 
 ## [0.2.0] - 2026-10-17
 
