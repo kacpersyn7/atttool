@@ -1,0 +1,54 @@
+# Live app on GitHub Pages:  /  = latest main,  /vX.Y.Z/ = every released version.
+# One-time setup: Settings -> Pages -> Source: "GitHub Actions".
+name: Pages
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm test
+      - run: npm run build
+      - name: Assemble site
+        run: |
+          mkdir -p site
+          cp dist/AttTool.html site/index.html
+          items=""
+          for tag in $(gh release list --limit 100 --json tagName --jq '.[].tagName'); do
+            if gh release download "$tag" --pattern AttTool.html --dir "site/$tag" 2>/dev/null; then
+              mv "site/$tag/AttTool.html" "site/$tag/index.html"
+              items="$items<li><a href=\"$tag/\">$tag</a></li>"
+            fi
+          done
+          cat > site/versions.html <<HTML
+          <!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+          <title>AttTool versions</title>
+          <style>body{font:16px system-ui,sans-serif;background:#0a1018;color:#d9e2ee;max-width:640px;margin:40px auto;padding:0 16px}a{color:#f2a93b}</style>
+          <h1>AttTool versions</h1><p><a href="./">Latest (main)</a></p><ul>$items</ul>
+          <p><a href="https://github.com/kacpersyn7/atttool/blob/main/CHANGELOG.md">Changelog</a></p>
+          HTML
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: site }
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

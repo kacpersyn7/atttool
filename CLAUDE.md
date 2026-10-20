@@ -48,5 +48,6 @@ Read `docs/CONVENTIONS.md` before touching the math. Key points:
 - Put each feature on its own branch (`feat/…`, `fix/…`, `docs/…`) and open a PR to `main`. Don't push to `main` directly.
 - New pure logic gets unit tests. Check physics against a known value, such as a textbook result or a reference orbit.
 - The PR description says what changed, what was tested, and what still needs a visual check in the browser. Headless runs can't verify 3D rendering.
+- Add a line to the top (unreleased) section of `CHANGELOG.md` in every feature or fix PR, with the issue number.
 - Don't edit `legacy/`; it's a reference copy of the original single-file version. Don't commit `dist/`.
 - Keep the UI text in English. Keep the existing visual style: `src/styles.css` and the `COL` colours in `gfx/primitives.js`.

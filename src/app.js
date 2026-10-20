@@ -6,6 +6,7 @@ import { S, save } from './state/store.js';
 import { $, resetBindings, syncAll, tickLive } from './ui/dom.js';
 import { closeModal } from './ui/overlay.js';
 import { showConventions } from './ui/conventions.js';
+import { VERSION } from './version.js';
 import { gfx, initRenderer, sizeOf } from './gfx/renderer.js';
 import { createRotationLab } from './views/rotationLab.js';
 import { createOrbitView } from './views/orbit/orbitView.js';
@@ -50,6 +51,7 @@ export function startApp() {
     else if (e.key === 'Escape') closeModal();
   });
   $('#btnConv').addEventListener('click', showConventions);
+  $('#ver').textContent = 'v' + VERSION;
 
   // main loop: 3D every frame, rail readouts ~10 Hz
   let last = performance.now(), acc = 0;

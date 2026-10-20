@@ -1,0 +1,39 @@
+# Publishes a GitHub Release with the single-file AttTool.html for every v* tag.
+# Works whether the tag is pushed from git or created in GitHub's "Draft a new release" page.
+name: Release
+on:
+  push:
+    tags: ['v*']
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag: { description: 'Existing tag to (re)attach AttTool.html to, e.g. v0.2.0', required: true }
+permissions:
+  contents: write
+  actions: write   # to trigger the Pages redeploy
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.event.release.tag_name || github.ref_name }}
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.event.release.tag_name || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ env.TAG }}' }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Tag must match package.json version
+        run: |
+          V=$(node -p "require('./package.json').version")
+          if [ "v$V" != "$TAG" ]; then echo "::warning::tag $TAG but package.json says $V"; fi
+      - run: npm test
+      - run: npm run build
+      - name: Create or update the release
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "$TAG" --generate-notes
+          gh release upload "$TAG" dist/AttTool.html --clobber
+      - name: Redeploy the live site with the new version
+        run: gh workflow run pages.yml --ref main || true
