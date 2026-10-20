@@ -9,6 +9,8 @@ An educational 3D tool for spacecraft attitude and LEO orbit geometry. It runs i
 | `2` | **Orbit & Frames** | Keplerian + J2 orbit, ECI / ECEF / LVLH / body frames, Sun, eclipse, dipole B-field, guidance modes (nadir, target tracking, Sun pointing, inertial), sensor availability timeline |
 | `3` | **Spacecraft Layout** | Place sensors and actuators on the bus, mounting matrices, mass properties, actuator authority, JSON / NumPy export |
 
+**Live:** https://kacpersyn7.github.io/atttool/ (latest) · [all versions](https://kacpersyn7.github.io/atttool/versions.html) · [download a single-file release](https://github.com/kacpersyn7/atttool/releases)
+
 ## Quick start
 
 You need [Node.js](https://nodejs.org) 18 or newer. There are **no npm dependencies**, so you don't need `npm install`.
@@ -59,6 +61,17 @@ The rule that keeps this maintainable is that **physics never imports graphics**
 - **Adding a workspace**: copy the shape of `views/rotationLab.js`, register it in `app.js` `VIEWS`, and add a tab button in `index.html`.
 
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) covers the data flow and the view interface. [docs/CONVENTIONS.md](docs/CONVENTIONS.md) defines every frame, DCM and quaternion convention, so read it before touching the math.
+
+## Versions and releases
+
+Every released version stays available, both as a downloadable `AttTool.html` on the Releases page and live at `https://kacpersyn7.github.io/atttool/vX.Y.Z/`.
+
+To release:
+1. Make sure `version` in `package.json`, `src/version.js` and the top entry of `CHANGELOG.md` agree (a test checks), and merge to `main`.
+2. Tag it: either `git tag v0.3.0 && git push origin v0.3.0`, or on GitHub use Releases → Draft a new release → new tag `v0.3.0`.
+3. The Release workflow builds and tests the code, attaches `AttTool.html` and redeploys the live site.
+
+Workflows (`.github/workflows/`): **CI** tests and builds every pull request, **Release** handles tags, and **Pages** deploys the live site.
 
 ## Version control
 
