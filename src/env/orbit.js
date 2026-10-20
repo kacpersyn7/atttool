@@ -42,13 +42,45 @@ export function propagate(el, t, j2) {
 /** Orbital period (s) for semi-major axis a (km). */
 export function period(a) { return 2 * Math.PI * Math.sqrt(a * a * a / MU); }
 
-/** LVLH frame: returns C_LI (rows = LVLH axes in ECI). z = nadir, y = -orbit normal, x completes. */
-export function lvlh(r, vel) {
+/*
+ * Orbital reference frames, named and defined as in STK
+ * (https://help.agi.com/stk/Content/gator/eq-coordsys.htm). Each returns C_FI:
+ * rows = the frame's axes expressed in ECI, so v_F = C_FI · v_ECI.
+ */
+
+/** VVLH (vehicle velocity, local horizontal): Z = −r̂ (nadir), Y = −ĥ, X = Y × Z (toward velocity). */
+export function vvlh(r, vel) {
   const z = v.unit(v.scale(r, -1));
   const y = v.unit(v.scale(v.cross(r, vel), -1));
   const x = v.cross(y, z);
   return m.fromRows(x, y, z);
 }
+
+/** LVLH (local vertical, local horizontal): X = r̂ (radial out), Z = ĥ (orbit normal), Y = Z × X (toward velocity). */
+export function lvlh(r, vel) {
+  const x = v.unit(r);
+  const z = v.unit(v.cross(r, vel));
+  const y = v.cross(z, x);
+  return m.fromRows(x, y, z);
+}
+
+/** VNC (velocity, normal, co-normal): X = v̂, Y = ĥ, Z = X × Y. */
+export function vnc(r, vel) {
+  const x = v.unit(vel);
+  const y = v.unit(v.cross(r, vel));
+  const z = v.cross(x, y);
+  return m.fromRows(x, y, z);
+}
+
+/** Selectable orbital frames: id -> { label, axes (short axis labels), fn }. */
+export const ORBIT_FRAMES = {
+  vvlh: { label: 'VVLH (Z nadir)', axes: ['X_V', 'Y_V', 'Z_V ⊕'], fn: vvlh },
+  lvlh: { label: 'LVLH (X radial, Z orbit normal)', axes: ['X_L r̂', 'Y_L', 'Z_L ĥ'], fn: lvlh },
+  vnc: { label: 'VNC (X velocity)', axes: ['V', 'N', 'C'], fn: vnc },
+};
+
+/** C_FI for frame id `name` ('vvlh' | 'lvlh' | 'vnc'); unknown ids fall back to VVLH. */
+export function orbitFrame(name, r, vel) { return (ORBIT_FRAMES[name] || ORBIT_FRAMES.vvlh).fn(r, vel); }
 
 /** Inclination (rad) that makes the J2 RAAN drift match the mean Sun (sun-synchronous orbit). */
 export function ssoInc(a, e = 0) {

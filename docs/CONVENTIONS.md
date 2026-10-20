@@ -9,9 +9,13 @@ Every number in AttTool follows one consistent set of rules. Most bugs in attitu
 | **R** | Generic reference frame in the Rotation Lab. In *Inertial* guidance it is ECI. |
 | **ECI** | X to the vernal equinox ♈, Z to the celestial north pole (J2000-like; precession ignored). |
 | **ECEF** | Earth-fixed, rotates about Z by GMST. The ground track and targets live here. |
-| **LVLH** | z_L = −r̂ (nadir), y_L = −ĥ (negative orbit normal), x_L = y_L × z_L (≈ velocity on a circular orbit). |
+| **VVLH** | Z = −r̂ (nadir), Y = −ĥ (negative orbit normal), X = Y × Z (toward velocity; equals v̂ on a circular orbit). Default reference for nadir pointing. |
+| **LVLH** | X = r̂ (radial out), Z = ĥ (orbit normal), Y = Z × X (toward velocity). |
+| **VNC** | X = v̂ (velocity), Y = ĥ (orbit normal), Z = X × Y. |
 | **B** | Body frame, origin at the bus centre. Example EO layout: +Z nadir/payload, +X flight direction when nadir pointing. |
 | **C** | A component's own frame. +Z_C is its boresight, spin axis, dipole axis or panel normal. |
+
+Orbital frames (VVLH, LVLH, VNC) follow the [STK definitions](https://help.agi.com/stk/Content/gator/eq-coordsys.htm), with ĥ = (r × v)/|r × v|. Before v0.3 the tool called VVLH "LVLH"; old saves are migrated automatically.
 
 ## Direction cosine matrices
 

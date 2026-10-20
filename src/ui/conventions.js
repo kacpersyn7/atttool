@@ -10,7 +10,9 @@ const HTML = `
 <li><b>R</b> — generic reference frame in the Rotation Lab. In <i>Inertial</i> guidance it is ECI.</li>
 <li><b>ECI</b> — X to the vernal equinox ♈, Z to the celestial north pole (J2000-like; precession ignored).</li>
 <li><b>ECEF</b> — Earth-fixed, rotates about Z by GMST. Ground track and targets live here.</li>
-<li><b>LVLH</b> — z<sub>L</sub> = −r̂ (nadir), y<sub>L</sub> = −ĥ (negative orbit normal), x<sub>L</sub> = y<sub>L</sub>×z<sub>L</sub> (≈ velocity on a circular orbit).</li>
+<li><b>VVLH</b> — Z = −r̂ (nadir), Y = −ĥ (negative orbit normal), X = Y×Z (toward velocity). Zero offsets in VVLH = nadir pointing.</li>
+<li><b>LVLH</b> — X = r̂ (radial out), Z = ĥ (orbit normal), Y = Z×X (toward velocity).</li>
+<li><b>VNC</b> — X = v̂, Y = ĥ, Z = X×Y. Orbital frames follow the STK definitions (ĥ = r×v / |r×v|).</li>
 <li><b>B</b> — body frame, origin at the bus centre. Example EO layout: +Z nadir/payload, +X flight direction when nadir pointing.</li>
 <li><b>C</b> — a component's own frame. +Z<sub>C</sub> is its boresight / spin axis / dipole axis / panel normal.</li>
 </ul>

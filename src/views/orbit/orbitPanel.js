@@ -49,11 +49,12 @@ export function orbitPanel(ctx) {
 
   const modeCtl = [];
   const axLbl = (name, color, ax) => h('span', null, name + ' · ', h('span', { class: 'ax', style: 'color:var(--ax-' + color + ')' }, ax));
-  if (o.mode === 'lvlh') modeCtl.push(
+  const fz = { vvlh: 'Z_V', lvlh: 'Z_L', vnc: 'C' }[o.refFrame] || 'Z';
+  if (o.mode === 'offsets') modeCtl.push(
     slider({ id: 'roll', label: axLbl('Roll φ', 'x', 'X″'), min: -60, max: 60, step: .5, get: () => o.roll, set: x => { o.roll = x; save(); } }),
     slider({ id: 'pitch', label: axLbl('Pitch θ', 'y', 'Y′'), min: -60, max: 60, step: .5, get: () => o.pitch, set: x => { o.pitch = x; save(); } }),
-    slider({ id: 'yaw', label: axLbl('Yaw ψ', 'z', 'Z_L'), min: -180, max: 180, step: .5, get: () => o.yaw, set: x => { o.yaw = x; save(); } }),
-    tip('Body = LVLH rotated by a 3-2-1 sequence. <b>Roll</b> tilts the payload cross-track (side-looking imaging), <b>pitch</b> along-track (forward/backward stereo).'),
+    slider({ id: 'yaw', label: axLbl('Yaw ψ', 'z', fz), min: -180, max: 180, step: .5, get: () => o.yaw, set: x => { o.yaw = x; save(); } }),
+    tip('Body = the orbital frame rotated by a 3-2-1 sequence (yaw, pitch, roll). With <b>VVLH</b> and zero offsets the body +Z points at nadir: <b>roll</b> tilts the payload cross-track (side-looking imaging), <b>pitch</b> along-track (stereo). With <b>LVLH</b> the body axes start radial / along-track / orbit-normal.'),
     h('div', { class: 'btns' },
       h('button', { class: 'btn', onclick: () => { o.roll = o.pitch = o.yaw = 0; save(); syncAll(); } }, 'Zero offsets'),
       h('button', { class: 'btn', onclick: () => { o.roll = 25; o.pitch = 0; o.yaw = 0; save(); syncAll(); } }, 'Side-look 25°'),
@@ -70,7 +71,8 @@ export function orbitPanel(ctx) {
     tip('Boresight → line of sight to the ground point, body +X kept toward velocity. Watch the body rate rise near closest approach.'));
   if (o.mode === 'inertial') modeCtl.push(tip('Body frame fixed in ECI using the attitude from <b>Rotation Lab</b> (reference R = ECI). Watch the Sun and Earth sweep around the spacecraft once per orbit.'));
   out.push(card('Attitude guidance', null,
-    selectRow({ id: 'mode', label: 'Mode', options: [['lvlh', 'Nadir (LVLH) + offsets'], ['target', 'Ground target tracking'], ['sun', 'Sun pointing'], ['inertial', 'Inertial (from Rotation Lab)']], get: () => o.mode, set: v => { o.mode = v; save(); ctx.renderRail(); } }),
+    selectRow({ id: 'mode', label: 'Mode', options: [['offsets', 'Orbital frame + offsets'], ['target', 'Ground target tracking'], ['sun', 'Sun pointing'], ['inertial', 'Inertial (from Rotation Lab)']], get: () => o.mode, set: v => { o.mode = v; save(); ctx.renderRail(); } }),
+    selectRow({ id: 'refFrame', label: 'Orbital frame', options: Object.entries(ENV.ORBIT_FRAMES).map(([k, f]) => [k, f.label]), get: () => o.refFrame, set: v => { o.refFrame = v; save(); ctx.renderRail(); } }),
     ...modeCtl));
 
   out.push(card('Sensors now', 'live',
@@ -89,7 +91,7 @@ export function orbitPanel(ctx) {
 
   out.push(card('Display', null,
     h('div', { class: 'checks' },
-      check('s-eci', 'ECI frame', () => o.show.eci, v => { o.show.eci = v; save(); }), check('s-lvlh', 'LVLH frame + v', () => o.show.lvlh, v => { o.show.lvlh = v; save(); }),
+      check('s-eci', 'ECI frame', () => o.show.eci, v => { o.show.eci = v; save(); }), check('s-orb', 'Orbital frame + v', () => o.show.orbFrame, v => { o.show.orbFrame = v; save(); }),
       check('s-track', 'Ground track', () => o.show.track, v => { o.show.track = v; save(); }), check('s-sun', 'Sun vector', () => o.show.sunv, v => { o.show.sunv = v; save(); }),
       check('s-b', 'Magnetic field B', () => o.show.bv, v => { o.show.bv = v; save(); }), check('s-cones', 'Sensor FOV cones', () => o.show.cones, v => { o.show.cones = v; save(); }),
       check('s-follow', 'Camera follows S/C', () => o.show.follow, v => { o.show.follow = v; if (v) ctx.zoomSC(); save(); }),

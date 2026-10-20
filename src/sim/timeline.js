@@ -20,7 +20,7 @@ export function timelineRows(state) {
 /** Cache key: everything the timeline depends on. */
 export function timelineKey(state, scVersion, W0) {
   const o = state.orbit;
-  return JSON.stringify([orbitElements(o), o.mode, o.roll, o.pitch, o.yaw, o.sunAxis, o.sunSecAxis, o.sunSec, o.tgtLat, o.tgtLon, o.tgtComp, o.epoch, o.j2, scVersion, W0, o.mode === 'inertial' ? state.rot.q : 0]);
+  return JSON.stringify([orbitElements(o), o.mode, o.refFrame, o.roll, o.pitch, o.yaw, o.sunAxis, o.sunSecAxis, o.sunSec, o.tgtLat, o.tgtLon, o.tgtComp, o.epoch, o.j2, scVersion, W0, o.mode === 'inertial' ? state.rot.q : 0]);
 }
 
 /**
