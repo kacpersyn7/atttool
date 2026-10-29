@@ -32,7 +32,8 @@ const BUS_COLOR = '#c99a3e';
 
 export function createLayoutView({ renderRail }) {
   const renderer = gfx.renderer;
-  const V = mkView({ up: [0, 0, -1], pos: [2.3, -2.5, -1.5], fov: 38, near: 0.01, far: 100 });
+  // CAD convention: +Z up on screen, grid = SCF XY plane through the origin
+  const V = mkView({ up: [0, 0, 1], pos: [2.4, -2.6, 1.7], fov: 38, near: 0.01, far: 100 });
   addLights(V.scene, 1.1);
   const grid = new THREE.GridHelper(4, 20, 0x2a3a52, 0x18222f); grid.rotation.x = Math.PI / 2; V.scene.add(grid);
   V.scene.add(makeTriad(1.0, 0.012, ['X_SCF', 'Y_SCF', 'Z_SCF']));
@@ -72,8 +73,7 @@ export function createLayoutView({ renderRail }) {
     const sh = S.layout.show;
     model = buildSC(S.sc, { cones: sh.cones, excl: sh.excl, labels: sh.labels, busOpacity: sh.bus, dipoles: true });
     V.scene.add(model); ver = scVersion(); attach(); refreshMass();
-    const bp = busPose(S.sc), b = S.sc.bus;
-    grid.position.z = bp.pos[2] + (Math.abs(bp.C[2][0]) * b.x + Math.abs(bp.C[2][1]) * b.y + Math.abs(bp.C[2][2]) * b.z) / 2 + 0.35;
+    const bp = busPose(S.sc);
     busTriad.position.set(...bp.pos); setObjFromCBR(busTriad, AM.m.T(bp.C));
     busTriad.visible = AM.v.norm(bp.pos) > 1e-9 || Math.abs(bp.C[0][0] + bp.C[1][1] + bp.C[2][2] - 3) > 1e-9;
     updateDirs();
@@ -281,7 +281,7 @@ export function createLayoutView({ renderRail }) {
         return `<p class="tip">Build in SCF like a CAD model.<br>Nominal flight (${S.sc.align.ref.toUpperCase()}): Earth → <b>${dirText(d.nadir)}</b> · along-track → <b>${dirText(d.alongTrack)}</b></p>`; }),
       liveText(() => { const c = sel(); return c ? `<p class="tip" style="margin-top:6px">Selected <b>${S.layout.sel === 'bus' ? 'Bus' : c.name}</b> at [${c.pos.map(x => fmt(x, 2)).join(', ')}] m</p>` : '<p class="tip" style="margin-top:6px">Click a part to select it.</p>'; })));
     const vb = (t, d) => h('button', { class: 'vbtn', onclick: () => viewPreset(V, d, 3.6) }, t);
-    $('#hudTR').append(vb('Iso', [1, -1.1, -.7]), vb('+X', [1, 0, -0.0001]), vb('−X', [-1, 0, -0.0001]), vb('+Y', [0, 1, -0.0001]), vb('−Y', [0, -1, -0.0001]), vb('+Z', [0.0001, 0, 1]), vb('−Z', [0.0001, 0, -1]));
+    $('#hudTR').append(vb('Iso', [1, -1.1, .75]), vb('+X', [1, 0, 0.0001]), vb('−X', [-1, 0, 0.0001]), vb('+Y', [0, 1, 0.0001]), vb('−Y', [0, -1, 0.0001]), vb('+Z', [0, -0.0001, 1]), vb('−Z', [0, -0.0001, -1]));
   }
 
   function enter() { if (ver !== scVersion()) rebuild(); attach(); axisW.show(true); }
