@@ -40,7 +40,7 @@ test('4-wheel pyramid: equal momentum envelope on all axes', () => {
 });
 
 test('import sanitising rejects unknown types and normalises q', () => {
-  assert.throws(() => sanitizeSpacecraft({ bus: {}, comps: [{ type: 'warpdrive', q: { w: 1, x: 0, y: 0, z: 0 } }] }), /Unknown component type/);
+  assert.throws(() => sanitizeSpacecraft({ bus: { x: 1, y: 1, z: 1, mass: 1 }, comps: [{ type: 'warpdrive', q: { w: 1, x: 0, y: 0, z: 0 } }] }), /Unknown component type/);
   assert.throws(() => sanitizeSpacecraft({ foo: 1 }), /bus/);
   const sc = sanitizeSpacecraft({ sc: { bus: { x: 1, y: 1, z: 1, mass: 1 }, comps: [{ type: 'str', name: 'S', pos: [0, 0, 0], q: { w: 2, x: 0, y: 0, z: 0 } }] } });
   close(sc.comps[0].q.w, 1); assert.ok(sc.comps[0].id);
@@ -52,59 +52,82 @@ test('Python export mentions every component and the inertia', () => {
   assert.match(out, /^J = np\.array/m); assert.match(out, /A_rw = /);
 });
 
-/* ---------------- spacecraft frame (SCF) ---------------- */
-import { frameMatrix, setFrame, busPose, originPresets, NOMINAL_AXES, AXIS_SPECS, validAxes, checkFrame, pointG2S } from '../src/spacecraft/frame.js';
+/* ---------------- bus as a part, nominal alignment ---------------- */
+import { busPose, normalizeBus, convertLegacyFrame, busPointToSCF } from '../src/spacecraft/bus.js';
+import { alignMatrix, axesOf, nominalDirections, defaultAlign, checkAlign, AXIS_SPECS, validPair } from '../src/spacecraft/alignment.js';
+import { parseMatrix3, formatMatlab, orthonormalize, checkRotation } from '../src/core/matrixText.js';
 
-const worldOf = (sc, c) => { // component position and axes in the bus geometry frame G
-  const C = frameMatrix(sc.frame);
-  return { p: AM.v.add(AM.m.mulv(AM.m.T(C), c.pos), sc.frame.origin), CCG: AM.m.mul(AM.q2C(c.q), C) };
-};
+test('default spacecraft: bus at the origin, SCF = VVLH in nominal flight', () => {
+  const sc = defaultSC(); closeArr(busPose(sc).pos, [0, 0, 0]); closeArr(busPose(sc).C, AM.m.I());
+  closeArr(alignMatrix(sc.align), AM.m.I());
+});
 
-test('frameMatrix is a proper rotation for all 24 valid axis pairs', () => {
+test('moving the bus shifts the CoM; turning a square bus 90° about Z keeps the inertia', () => {
+  const sc = defaultSC(); sc.comps = []; sc.bus.x = sc.bus.y = 0.8;
+  const mp0 = massProps(sc);
+  sc.bus.pos = [0, 0, 0.5]; closeArr(massProps(sc).com, [0, 0, 0.5], 1e-12);
+  sc.bus.q = AM.axisAngle2q([0, 0, 1], Math.PI / 2); closeArr(massProps(sc).I, mp0.I, 1e-12);
+  // a rotated non-square bus swaps its moments
+  sc.bus.y = 0.4; const a = massProps(sc).I; sc.bus.q = AM.q.id(); const b = massProps(sc).I;
+  close(a[0][0], b[1][1], 1e-12); close(a[1][1], b[0][0], 1e-12);
+});
+
+test('bus geometry helpers follow the bus pose', () => {
+  const sc = defaultSC(); sc.bus.pos = [1, 2, 3]; sc.bus.q = AM.axisAngle2q([1, 0, 0], Math.PI); // box upside down
+  closeArr(busPointToSCF(sc, [0, 0, 0.5]), [1, 2, 2.5], 1e-12);
+});
+
+test('old saves and the v0.4 preview frame convert without moving anything', () => {
+  const b = normalizeBus({ x: 1, y: 1, z: 1, mass: 1 }); closeArr(b.pos, [0, 0, 0]); assert.deepEqual(b.q, { w: 1, x: 0, y: 0, z: 0 });
+  // preview: origin on the bus −Z face, SCF X = bus −Z, Z = bus −Y
+  const sc = defaultSC(); sc.frame = { origin: [0, 0, -0.5], xAxis: '-Z', zAxis: '-Y' };
+  convertLegacyFrame(sc); assert.equal(sc.frame, undefined);
+  // bus centre was +0.5 along bus +Z from the origin = SCF −X
+  closeArr(busPose(sc).pos, [-0.5, 0, 0], 1e-12);
+  closeArr(busPose(sc).C, [[0, 0, -1], [1, 0, 0], [0, -1, 0]], 1e-12);
+});
+
+test('alignment table: all 24 axis pairs give proper rotations and round-trip', () => {
   let n = 0;
-  for (const x of AXIS_SPECS) for (const z of AXIS_SPECS) if (validAxes(x, z)) {
-    const C = frameMatrix({ origin: [0, 0, 0], xAxis: x, zAxis: z }); n++;
-    close(AM.m.det(C), 1, 1e-15); closeArr(AM.m.mul(C, AM.m.T(C)), AM.m.I(), 1e-15);
+  for (const x of AXIS_SPECS) for (const y of AXIS_SPECS) if (validPair(x, y)) {
+    const C = alignMatrix({ ref: 'lvlh', mode: 'axes', x, y }); n++;
+    assert.ok(checkRotation(C).ok); assert.deepEqual(axesOf(C), { x, y });
   }
   assert.equal(n, 24);
 });
 
-test('default frame keeps the old layout numbers', () => {
-  const sc = defaultSC(); closeArr(busPose(sc).pos, [0, 0, 0]); closeArr(busPose(sc).C, AM.m.I());
+test('nominal directions: "LVLH +X ↔ SCF −Z, +Y ↔ SCF +X" puts Earth on SCF +Z', () => {
+  const d = nominalDirections({ ref: 'lvlh', mode: 'axes', x: '-Z', y: '+X' });
+  closeArr(d.nadir, [0, 0, 1]); closeArr(d.alongTrack, [1, 0, 0]); closeArr(d.normal, [0, -1, 0]);
+  // the default (VVLH identity) says the same
+  const d0 = nominalDirections(defaultAlign()); closeArr(d0.nadir, d.nadir); closeArr(d0.normal, d.normal);
 });
 
-test('changing the SCF keeps components physically in place', () => {
-  const sc = defaultSC(); const before = sc.comps.map(c => worldOf(sc, c));
-  const mp0 = massProps(sc);
-  setFrame(sc, { origin: [0, 0.1, -0.5], xAxis: '-Z', zAxis: '-Y' });
-  sc.comps.forEach((c, i) => { const w = worldOf(sc, c); closeArr(w.p, before[i].p, 1e-5, c.name + ' pos'); closeArr(w.CCG, before[i].CCG, 1e-9, c.name + ' axes'); });
-  // mass properties: same mass, same principal moments, CoM moved by exactly the origin shift
-  const mp1 = massProps(sc);
-  close(mp1.M, mp0.M, 1e-9); closeArr(mp1.E.vals, mp0.E.vals, 1e-6);
-  closeArr(mp1.com, pointG2S(sc.frame, mp0.com), 1e-5);
-  // and back again
-  setFrame(sc, { origin: [0, 0, 0], xAxis: '+X', zAxis: '+Z' });
-  sc.comps.forEach((c, i) => closeArr(c.pos, before[i].p, 1e-5));
+test('alignment validation for JSON import', () => {
+  assert.deepEqual(checkAlign(undefined, 'lvlh'), defaultAlign('lvlh'));
+  assert.throws(() => checkAlign({ ref: 'lvlh', mode: 'axes', x: '+X', y: '-X' }), /align/);
+  assert.throws(() => checkAlign({ ref: 'xyz', mode: 'axes', x: '+X', y: '+Y' }), /align/);
+  assert.throws(() => checkAlign({ ref: 'vvlh', mode: 'dcm', dcm: [[1, 0, 0], [0, 1, 0], [0, 0, -1]] }), /rotation/);
+  const R = AM.q2C(AM.axisAngle2q([1, 1, 0], 0.3));
+  closeArr(checkAlign({ ref: 'vnc', mode: 'dcm', dcm: R }).dcm, R);
+  assert.throws(() => sanitizeSpacecraft({ bus: { x: 0, y: 1, z: 1, mass: 1 }, comps: [] }), /Bus size/);
 });
 
-test('origin at the −Z face: bus centre sits half a bus height along +Z', () => {
-  const sc = defaultSC(); const face = originPresets(sc.bus).find(p => p[0] === 'face-Z')[2];
-  setFrame(sc, { origin: face, xAxis: '+X', zAxis: '+Z' });
-  closeArr(busPose(sc).pos, [0, 0, sc.bus.z / 2]);
+test('matrix text: MATLAB, NumPy and plain rows', () => {
+  closeArr(parseMatrix3('C = [1 0 0; 0 0.6 0.8; 0 -0.8 0.6];'), [[1, 0, 0], [0, .6, .8], [0, -.8, .6]]);
+  closeArr(parseMatrix3('np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]])'), [[1, 2, 3], [4, 5, 6], [7, 8, 9]]);
+  closeArr(parseMatrix3('1\t2\t3\n4 5 6\n7,8,9'), [[1, 2, 3], [4, 5, 6], [7, 8, 9]]);
+  closeArr(parseMatrix3('1 2 3 4 5 6 7 8 9'), [[1, 2, 3], [4, 5, 6], [7, 8, 9]]);
+  assert.throws(() => parseMatrix3('[1 2; 3 4]'), /9 numbers/);
+  assert.throws(() => parseMatrix3('[1 2 x; 1 2 3; 1 2 3]'), /numbers/);
+  const C = AM.q2C(AM.axisAngle2q([0.2, -0.5, 1], 1.1));
+  closeArr(parseMatrix3(formatMatlab(C, 12)), C, 1e-11);
 });
 
-test('JSON frame validation', () => {
-  assert.deepEqual(checkFrame(undefined), { origin: [0, 0, 0], xAxis: '+X', zAxis: '+Z' });
-  assert.throws(() => checkFrame({ origin: [0, 0, 0], xAxis: '+X', zAxis: '-X' }), /frame/);
-  assert.throws(() => sanitizeSpacecraft({ bus: { x: 1, y: 1, z: 1, mass: 1 }, frame: { origin: [0, 0] }, comps: [] }), /frame/);
-});
-
-test('nominal-flight presets: SCF axes match each orbital frame when the bus flies nadir (bus axes = VVLH)', async () => {
-  const ENV = await import('../src/env/index.js');
-  const s = ENV.propagate({ a: 7000, e: 0.001, i: 1.7, raan: 0.3, argp: 0, nu0: 0 }, 900, false);
-  const CVI = ENV.vvlh(s.r, s.v); // C_G,I in nominal nadir flight
-  for (const [id, axes] of Object.entries(NOMINAL_AXES)) {
-    const C_SI = AM.m.mul(frameMatrix({ origin: [0, 0, 0], ...axes }), CVI);
-    closeArr(C_SI, ENV.orbitFrame(id, s.r, s.v), 2e-3, id); // tolerance: VNC X = v̂ vs VVLH X ⊥ r on a near-circular orbit
-  }
+test('orthonormalize repairs a rounded DCM to the nearest rotation', () => {
+  const R = AM.q2C(AM.axisAngle2q([1, 2, 3], 0.7));
+  const noisy = R.map(r => r.map(x => +x.toFixed(3)));
+  assert.equal(checkRotation(noisy).ok, false); assert.ok(checkRotation(noisy).fixable);
+  const F = orthonormalize(noisy); assert.ok(checkRotation(F, 1e-12).ok); closeArr(F, R, 2e-3);
+  assert.equal(checkRotation([[1, 0, 0], [0, 1, 0], [0, 0, -1]]).fixable, false); // reflection
 });

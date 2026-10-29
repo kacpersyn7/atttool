@@ -7,7 +7,7 @@ An educational 3D tool for spacecraft attitude and LEO orbit geometry. It runs i
 |---|---|---|
 | `1` | **Rotation Lab** | Euler angles (all 12 sequences), quaternions, axis-angle and DCMs side by side, with step-by-step animations and gimbal-lock warnings |
 | `2` | **Orbit & Frames** | Keplerian + J2 orbit, ECI / ECEF / VVLH / LVLH / VNC / body frames (STK definitions), Sun, eclipse, dipole B-field, guidance modes (nadir, target tracking, Sun pointing, inertial), sensor availability timeline |
-| `3` | **Spacecraft Layout** | Define the spacecraft frame (origin, axes), place sensors and actuators on the bus, mounting matrices, mass properties, actuator authority, JSON / NumPy export |
+| `3` | **Spacecraft Layout** | Build the satellite in its own frame like a CAD model (bus and parts, orientations as YPR / DCM / quaternion), set its nominal attitude relative to LVLH / VVLH / VNC, mounting matrices, mass properties, actuator authority, JSON / NumPy export |
 
 **Live:** https://kacpersyn7.github.io/atttool/ (latest) · [all versions](https://kacpersyn7.github.io/atttool/versions.html) · [download a single-file release](https://github.com/kacpersyn7/atttool/releases)
 

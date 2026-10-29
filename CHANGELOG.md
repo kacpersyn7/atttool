@@ -6,7 +6,13 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 ## [Unreleased]
 
 ### Added
-- Spacecraft frame (SCF) in the Layout tab: origin at the bus centre, a face centre or any point; axes along any (permuted) bus axes; one-click "SCF = VVLH / LVLH / VNC in nominal flight". Components stay physically in place when the frame changes; mass properties and the Python export are in SCF; JSON export/import includes the frame. Old layouts load unchanged. (#5)
+- Build the satellite in its own frame (SCF) like a CAD model: the bus is now a part with its own position and orientation; "put the origin at a bus face" moves the whole satellite. (#5)
+- **Attitude reference** card: say which SCF axis each VVLH / LVLH / VNC axis points along (or give a DCM). Arrows in the Layout view show where Earth, along-track and the orbit normal will be in nominal flight. The Orbit tab flies this as "Nominal attitude + offsets", with a new "B vs nominal" HUD row. (#5)
+- Orientation of every part as yaw-pitch-roll, **DCM** (paste from MATLAB / NumPy, either direction, validity check, orthonormalise, copy as MATLAB) or quaternion. (#6)
+- Corner axis widget in the Layout and Rotation Lab views; click an axis to look along it. (#5)
+
+### Changed
+- The Orbit tab's "Orbital frame" selector is now "Shown orbital frame" (triad and HUD only); the nominal attitude comes from the spacecraft. Saved layouts and v0.3 settings migrate unchanged.
 
 ## [0.3.0] - 2026-10-20
 

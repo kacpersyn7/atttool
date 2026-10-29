@@ -7,7 +7,8 @@
  */
 import * as AM from '../core/attitude.js';
 import { TYPES, PARAM_KEYS } from './componentTypes.js';
-import { checkFrame } from './frame.js';
+import { normalizeBus, convertLegacyFrame } from './bus.js';
+import { checkAlign } from './alignment.js';
 
 let _id = 1;
 export const newId = () => 'c' + (_id++) + Math.random().toString(36).slice(2, 5);
@@ -46,7 +47,9 @@ export function envelope(comps, type, key) {
 export function sanitizeSpacecraft(json) {
   const sc = json.sc || json;
   if (!sc.bus || !Array.isArray(sc.comps)) throw new Error('Expected an object with "bus" and "comps".');
-  sc.frame = checkFrame(sc.frame);
+  if (!(sc.bus.x > 0 && sc.bus.y > 0 && sc.bus.z > 0)) throw new Error('Bus size x, y, z must be positive numbers.');
+  normalizeBus(sc.bus); convertLegacyFrame(sc);
+  sc.align = checkAlign(sc.align);
   sc.comps.forEach(c => {
     if (!TYPES[c.type]) throw new Error('Unknown component type "' + c.type + '".');
     c.id = c.id || newId(); c.q = AM.q.unit(c.q); delete c.eul;

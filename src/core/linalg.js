@@ -34,6 +34,16 @@ export const m = {
   fromCols: (c0, c1, c2) => [[c0[0], c1[0], c2[0]], [c0[1], c1[1], c2[1]], [c0[2], c1[2], c2[2]]],
   fromRows: (r0, r1, r2) => [r0.slice(), r1.slice(), r2.slice()],
   col: (A, j) => [A[0][j], A[1][j], A[2][j]],
+  /** Inverse of a 3x3 matrix (null if singular). */
+  inv: A => {
+    const d = m.det(A); if (!Number.isFinite(d) || Math.abs(d) < 1e-14) return null;
+    const c = (r0, c0, r1, c1) => A[r0][c0] * A[r1][c1] - A[r0][c1] * A[r1][c0];
+    return [
+      [c(1, 1, 2, 2) / d, -c(0, 1, 2, 2) / d, c(0, 1, 1, 2) / d],
+      [-c(1, 0, 2, 2) / d, c(0, 0, 2, 2) / d, -c(0, 0, 1, 2) / d],
+      [c(1, 0, 2, 1) / d, -c(0, 0, 2, 1) / d, c(0, 0, 1, 1) / d],
+    ];
+  },
 };
 
 /**

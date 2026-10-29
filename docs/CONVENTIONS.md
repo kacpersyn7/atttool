@@ -12,11 +12,22 @@ Every number in AttTool follows one consistent set of rules. Most bugs in attitu
 | **VVLH** | Z = −r̂ (nadir), Y = −ĥ (negative orbit normal), X = Y × Z (toward velocity; equals v̂ on a circular orbit). Default reference for nadir pointing. |
 | **LVLH** | X = r̂ (radial out), Z = ĥ (orbit normal), Y = Z × X (toward velocity). |
 | **VNC** | X = v̂ (velocity), Y = ĥ (orbit normal), Z = X × Y. |
-| **B = SCF** | Spacecraft frame, the body frame for attitude. All component positions and orientations are given in it. Origin: any point (default: bus centre; e.g. the launcher-interface face centre). Axes: bus axes, possibly permuted or flipped (`sc.frame.xAxis`, `zAxis`; Y = Z × X). |
-| **G** | Bus geometry frame: origin at the bus centre, axes along the box edges. Only the bus box is defined in G. `v_S = C_SG · v_G`, `p_S = C_SG · (p_G − origin)`. Example EO bus: +Z payload face (nadir in nominal flight), +X flight direction. |
+| **B = SCF** | Spacecraft frame = body frame for attitude. The satellite is built in it like a CAD model: the bus and every component are parts with a position (m) and orientation in SCF. Put the origin where you like (e.g. the launcher-interface face). |
+| **G** | Bus box frame: its centre and edges. Placed in SCF by `sc.bus.pos` and `sc.bus.q` (`q2C(q) = C_G←SCF`). |
 | **C** | A component's own frame. +Z_C is its boresight, spin axis, dipole axis or panel normal. |
 
 Orbital frames (VVLH, LVLH, VNC) follow the [STK definitions](https://help.agi.com/stk/Content/gator/eq-coordsys.htm), with ĥ = (r × v)/|r × v|. Before v0.3 the tool called VVLH "LVLH"; old saves are migrated automatically.
+
+## Nominal attitude (SCF vs orbital frame)
+
+`sc.align` says how SCF flies relative to a reference frame R ∈ {VVLH, LVLH, VNC}: either an axis table ("R +X along SCF −Z, R +Y along SCF +X", R +Z completes the set) or a DCM. Stored as
+
+```
+C_SR = C_SCF←R          v_SCF = C_SR · v_R        columns = R axes written in SCF
+C_BI = E(ψ, θ, φ) · C_SR · C_RI                    nominal attitude + 3-2-1 offsets (Orbit tab)
+```
+
+The default (VVLH, identity) is the pre-0.4 behaviour: SCF +Z nadir, +X along-track.
 
 ## Direction cosine matrices
 
@@ -27,7 +38,7 @@ v_B = C_BR · v_R          rows of C_BR = B axes written in R
 C_RB = C_BRᵀ              chains read right to left:  C_CI = C_CB · C_BI
 ```
 
-In code, matrices are arrays of rows: `C[row][col]`.
+In code, matrices are arrays of rows: `C[row][col]`. DCM fields accept MATLAB (`[a b c; d e f; g h i]`), NumPy or plain rows; each lets you choose which direction the pasted matrix maps.
 
 ## Euler angles
 

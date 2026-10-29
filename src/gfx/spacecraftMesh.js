@@ -2,8 +2,7 @@
 import * as THREE from 'three';
 import * as AM from '../core/attitude.js';
 import { TYPES } from '../spacecraft/componentTypes.js';
-import { busPose } from '../spacecraft/frame.js';
-import { Arrow, COL, coneGeom, makeLabel, makeTriad, setObjFromCBR } from './primitives.js';
+import { Arrow, COL, coneGeom, makeLabel, makeTriad } from './primitives.js';
 
 export function std(color, o = {}) { return new THREE.MeshStandardMaterial(Object.assign({ color, roughness: 0.55, metalness: 0.25 }, o)); }
 
@@ -38,8 +37,8 @@ export function compMesh(c) {
 }
 
 /**
- * Build the whole spacecraft. Group frame = spacecraft frame SCF = body frame B (see spacecraft/frame.js);
- * the bus box is placed at its centre and rotated into SCF.
+ * Build the whole spacecraft. Group frame = spacecraft frame SCF = body frame B; the bus box is a part
+ * placed at sc.bus.pos with orientation sc.bus.q (see spacecraft/bus.js). Bus meshes are pickable as id 'bus'.
  * @param {object} [opts] cones, excl, labels, dipoles, busOpacity, triad, triadLen, triadR, labelScale
  * @returns THREE.Group with .compGroups[id] and optional .triad
  */
@@ -49,11 +48,12 @@ export function buildSC(sc, opts = {}) {
   const busOp = opts.busOpacity ?? 1;
   const busMat = std('#c99a3e', { metalness: .55, roughness: .45, transparent: busOp < 1, opacity: busOp, depthWrite: busOp >= 1 });
   const busG = new THREE.Group(); root.add(busG); // bus geometry frame G inside SCF
-  const bp = busPose(sc); busG.position.set(...bp.pos); setObjFromCBR(busG, AM.m.T(bp.C));
+  const bq = sc.bus.q || { w: 1, x: 0, y: 0, z: 0 }; busG.position.set(...(sc.bus.pos || [0, 0, 0])); busG.quaternion.set(bq.x, bq.y, bq.z, bq.w);
   const bus = new THREE.Mesh(new THREE.BoxGeometry(x, y, z), busMat); bus.userData.isBus = true; busG.add(bus);
   const edges = new THREE.LineSegments(new THREE.EdgesGeometry(bus.geometry), new THREE.LineBasicMaterial({ color: 0xffe2a8, transparent: true, opacity: 0.55 })); busG.add(edges);
   // nadir face panel (darker) to make the bus +Z face recognisable
   const fp = new THREE.Mesh(new THREE.PlaneGeometry(x * 0.96, y * 0.96), std('#2a2f38', { side: THREE.DoubleSide, transparent: busOp < 1, opacity: Math.min(1, busOp + .2) })); fp.position.z = z / 2 + 0.002; busG.add(fp);
+  busG.traverse(o => { if (o.isMesh) o.userData.compId = 'bus'; }); busG.userData.compId = 'bus';
   root.busGroup = busG;
   root.compGroups = {};
   for (const c of sc.comps) {

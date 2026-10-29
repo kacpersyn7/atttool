@@ -173,6 +173,7 @@ export function createOrbitView({ renderRail }) {
         h('dt', null, 'Lat · lon'), h('dd', null, liveText(() => { if (!cur) return ''; const ll = ENV.ecef2ll(ENV.eci2ecef(cur.st.r, cur.date)); return deg(ll.lat).toFixed(2) + '° · ' + deg(ll.lon).toFixed(2) + '°'; })),
         h('dt', null, 'β angle · light'), h('dd', null, liveText(() => cur ? deg(ENV.betaAngle(cur.st.r, cur.st.v, cur.sun)).toFixed(1) + '° · ' + (cur.ecl ? '<span style="color:#7d93b5">ECLIPSE</span>' : '<span style="color:var(--sun)">SUNLIT</span>') : '')),
         h('dt', null, 'q_BI [q₀ q₁ q₂ q₃]'), h('dd', null, liveText(() => { if (!cur) return ''; const q = AM.C2q(cur.CBI); return [q.w, q.x, q.y, q.z].map(x => fmt(x, 3)).join(' '); })),
+        h('dt', null, 'B vs nominal (φ θ ψ)'), h('dd', null, liveText(() => { if (!cur) return ''; const e = AM.C2euler('321', AM.m.mul(cur.CBI, AM.m.T(cur.CNI))).map(deg); return [e[2], e[1], e[0]].map(x => x.toFixed(1) + '°').join(' '); })),
         h('dt', null, 'B vs ' + S.orbit.refFrame.toUpperCase() + ' (φ θ ψ)'), h('dd', null, liveText(() => { if (!cur) return ''; const e = AM.C2euler('321', AM.m.mul(cur.CBI, AM.m.T(cur.CRI))).map(deg); return [e[2], e[1], e[0]].map(x => x.toFixed(1) + '°').join(' '); })),
         h('dt', null, 'Body rate |ω|'), h('dd', null, liveText(() => cur ? (deg(AM.v.norm(bodyRate(S, cur.t)))).toFixed(3) + ' °/s' : '')),
         h('dt', null, 'Sun in body'), h('dd', null, liveText(() => cur ? '[' + AM.m.mulv(cur.CBI, cur.sun).map(x => fmt(x, 2)).join(' ') + ']' : '')),

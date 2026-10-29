@@ -5,14 +5,15 @@
  *   S.rot     Rotation Lab settings (quaternion, Euler sequence, display toggles)
  *   S.orbit   orbit, time, guidance mode and display toggles
  *   S.layout  Spacecraft Layout UI settings (selection, gizmo, display)
- *   S.sc      the spacecraft: { bus, frame, comps[] } — shared by all workspaces (see spacecraft/frame.js)
+ *   S.sc      the spacecraft: { bus, align, comps[] } — shared by all workspaces (spacecraft/bus.js, alignment.js)
  *
  * Mutate S in place, then call save() (UI settings) or scChanged() (spacecraft geometry —
  * bumps scVersion() so 3D models rebuild). Bump STORAGE_KEY if you make an incompatible change.
  */
 import * as AM from '../core/attitude.js';
 import { defaultSC } from '../spacecraft/exampleSpacecraft.js';
-import { defaultFrame } from '../spacecraft/frame.js';
+import { normalizeBus, convertLegacyFrame } from '../spacecraft/bus.js';
+import { defaultAlign } from '../spacecraft/alignment.js';
 import { EPOCH0 } from '../sim/scenario.js';
 
 export const STORAGE_KEY = 'atttool.v1';
@@ -27,7 +28,7 @@ export function defaultState() {
       mode: 'offsets', refFrame: 'vvlh', roll: 0, pitch: 0, yaw: 0, sunAxis: '-Z', sunSec: 'nadir', tgtLat: 52.23, tgtLon: 21.01, tgtComp: '',
       show: { eci: true, orbFrame: true, track: true, sunv: true, bv: true, cones: true, follow: false }, scale: 1.0,
     },
-    layout: { sel: null, gizmo: 'translate', show: { cones: true, excl: false, labels: true, bus: 0.55, principal: false, com: true } },
+    layout: { sel: null, gizmo: 'translate', oriTab: 'ypr', dcmDir: 0, alignDcmDir: 0, show: { cones: true, excl: false, labels: true, bus: 0.55, principal: false, com: true, orbitDirs: true } },
     sc: defaultSC(),
   };
 }
@@ -49,8 +50,10 @@ function load() {
 function migrate(s) {
   // v0.2 -> v0.3: the old "LVLH" frame is STK's VVLH; nadir mode became the generic "offsets" mode
   if (s.orbit.mode === 'lvlh') { s.orbit.mode = 'offsets'; s.orbit.refFrame = 'vvlh'; }
-  // v0.3 -> v0.4: spacecraft frame; old layouts are in bus-centre axes = the default SCF
-  if (!s.sc.frame) s.sc.frame = defaultFrame();
+  // v0.3 -> v0.4: the bus is a placed part, and the nominal attitude (SCF vs orbital frame) is part of
+  // the spacecraft. The old offsets mode flew SCF = selected orbital frame, so start from that.
+  normalizeBus(s.sc.bus); convertLegacyFrame(s.sc);
+  if (!s.sc.align) s.sc.align = defaultAlign(s.orbit.refFrame || 'vvlh');
   if ('lvlh' in s.orbit.show) { s.orbit.show.orbFrame = s.orbit.show.lvlh; delete s.orbit.show.lvlh; }
 }
 

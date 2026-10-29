@@ -4,7 +4,7 @@
  */
 import * as AM from '../core/attitude.js';
 import { compCBC } from './component.js';
-import { busPose } from './frame.js';
+import { busPose } from './bus.js';
 
 /** @returns {{M:number, com:number[], I:number[][], E:{vals:number[], vecs:number[][]}}} */
 export function massProps(sc) {
