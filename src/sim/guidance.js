@@ -3,8 +3,8 @@
  * Pure function of the app state — used by the 3D view, the HUD and the timeline.
  *
  * Modes (state.orbit.mode):
- *   offsets  — fixed 3-2-1 yaw/pitch/roll offsets from the selected orbital frame (o.refFrame:
- *              'vvlh' | 'lvlh' | 'vnc', STK definitions). Zero offsets in VVLH = nadir pointing, +Z_B nadir.
+ *   offsets  — nominal attitude (state.sc.align: SCF vs VVLH / LVLH / VNC, see spacecraft/alignment.js)
+ *              with 3-2-1 yaw/pitch/roll offsets on top. Zero offsets = nominal attitude.
  *   sun      — two-vector (TRIAD): chosen body axis on the Sun, secondary toward nadir/normal/...
  *   inertial — fixed in ECI using the Rotation Lab attitude (state.rot.q)
  *   target   — payload boresight tracks a ground point, +X kept toward velocity
@@ -14,6 +14,7 @@
 import * as AM from '../core/attitude.js';
 import * as ENV from '../env/index.js';
 import { compAxis } from '../spacecraft/component.js';
+import { alignMatrix, defaultAlign } from '../spacecraft/alignment.js';
 import { epochDate, orbitElements } from './scenario.js';
 
 const D2R = AM.D2R;
@@ -32,8 +33,9 @@ export function payloadComp(state) {
 
 /**
  * Full geometric state at t seconds after epoch.
- * @returns {{t, date, st, sun, CRI, CVI, CBI, ecl, flag}} st = propagated orbit state (ECI km, km/s),
- *   CRI = C_ref←ECI for the selected orbital frame, CVI = C_VVLH←ECI, CBI = C_Body←ECI, ecl = in eclipse, flag = mode-specific info (target elevation).
+ * @returns {{t, date, st, sun, CRI, CVI, CNI, CBI, ecl, flag}} st = propagated orbit state (ECI km, km/s),
+ *   CRI = C_ref←ECI for the displayed orbital frame (o.refFrame), CVI = C_VVLH←ECI,
+ *   CNI = nominal attitude C_SCF←ECI, CBI = C_Body←ECI, ecl = in eclipse, flag = mode-specific info (target elevation).
  */
 export function attitudeAt(state, t, E = orbitElements(state.orbit)) {
   const o = state.orbit;
@@ -42,10 +44,12 @@ export function attitudeAt(state, t, E = orbitElements(state.orbit)) {
   const sun = ENV.sunECI(date);
   const CVI = ENV.vvlh(st.r, st.v);
   const CRI = ENV.orbitFrame(o.refFrame, st.r, st.v);
+  const al = state.sc.align || defaultAlign();
+  const CNI = AM.m.mul(alignMatrix(al), ENV.orbitFrame(al.ref, st.r, st.v));
   let CBI, flag = null;
   const nadirI = AM.v.unit(AM.v.scale(st.r, -1)), hI = AM.v.unit(AM.v.cross(st.r, st.v));
   const refVec = k => k === 'nadir' ? nadirI : k === 'normal' ? hI : k === 'antinormal' ? AM.v.scale(hI, -1) : k === 'velocity' ? AM.v.unit(st.v) : k === 'zenith' ? AM.v.scale(nadirI, -1) : nadirI;
-  if (o.mode === 'offsets') CBI = AM.m.mul(AM.euler2C('321', [o.yaw * D2R, o.pitch * D2R, o.roll * D2R]), CRI);
+  if (o.mode === 'offsets') CBI = AM.m.mul(AM.euler2C('321', [o.yaw * D2R, o.pitch * D2R, o.roll * D2R]), CNI);
   else if (o.mode === 'sun') {
     const b1 = axisSpec(o.sunAxis, state.sc.comps); let b2 = axisSpec(o.sunSecAxis || '+X', state.sc.comps);
     if (AM.v.norm(AM.v.cross(b1, b2)) < 1e-3) b2 = Math.abs(b1[0]) < .9 ? [1, 0, 0] : [0, 1, 0];
@@ -57,10 +61,10 @@ export function attitudeAt(state, t, E = orbitElements(state.orbit)) {
     const elev = Math.PI / 2 - AM.v.angle(tI, AM.v.scale(los, -1));
     const pc = payloadComp(state); const b1 = pc ? compAxis(pc) : [0, 0, 1];
     if (elev > 0) { let b2 = [1, 0, 0]; if (AM.v.norm(AM.v.cross(b1, b2)) < 1e-3) b2 = [0, 1, 0]; CBI = AM.triad(b1, b2, los, st.v); flag = { elev }; }
-    else { CBI = CVI; flag = { elev, below: true }; } // hold nadir
+    else { CBI = CNI; flag = { elev, below: true }; } // hold the nominal attitude
   }
   const ecl = ENV.eclipse(st.r, sun);
-  return { t, date, st, sun, CRI, CVI, CBI, ecl, flag };
+  return { t, date, st, sun, CRI, CVI, CNI, CBI, ecl, flag };
 }
 
 /** Body angular rate (rad/s, body axes) by finite difference over 1 s. */

@@ -70,7 +70,8 @@ One `WebGLRenderer` is shared. Only the active view updates and renders.
 ```
 S.orbit ──orbitElements()──► elements ──propagate()──► r, v
    │                                                 │
-   └── mode, offsets ──► attitudeAt(S, t) ◄──────────┘  + sunECI, orbitFrame, triad
+   └── mode, offsets ──► attitudeAt(S, t) ◄──────────┘  + sunECI, orbitFrame, triad,
+                              ▲                            nominal attitude (S.sc.align)
                               │
                               ├──► orbitView.update(): moves S/C, frames, vectors, footprint
                               ├──► bodyInset.update(): Sun/Earth/B seen from the body frame

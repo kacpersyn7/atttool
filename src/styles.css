@@ -145,3 +145,17 @@ details.more[open] summary{margin-bottom:6px}
   #hudTR{max-width:50%}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+/* corner axis widget */
+.axisw{position:absolute;left:12px;bottom:12px;width:104px;height:104px;border-radius:50%;cursor:pointer;background:rgba(10,16,24,.35);border:1px solid var(--line)}
+.axisw-tag{position:absolute;left:0;top:0;font-family:var(--f-mono);font-size:12px;font-weight:600;pointer-events:none;text-shadow:0 0 3px #0a1018,0 0 3px #0a1018}
+.axisw-tag.neg{font-size:11px;font-weight:500;opacity:.65}
+/* orientation editor, DCM input, alignment table */
+.ori{display:flex;flex-direction:column;gap:8px}
+.ori-pane{display:flex;flex-direction:column;gap:8px}
+.dcm-input{display:flex;flex-direction:column;gap:6px}
+.dcm-input .seg{flex-wrap:wrap}
+textarea.dcm{min-height:64px;font-size:12px;line-height:1.5}
+.dcm-msg.bad{color:var(--bad)} .dcm-msg.warn{color:var(--warn)}
+.altable{display:grid;grid-template-columns:auto 1fr minmax(92px,auto);gap:6px 8px;align-items:center;font-size:13px}
+.altable .ax{font-family:var(--f-mono);font-size:12px}
+.altable .mean{color:var(--muted)}

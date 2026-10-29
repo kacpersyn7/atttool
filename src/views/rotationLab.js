@@ -14,6 +14,7 @@ import { deg, rad, fmt, matHTML } from '../ui/format.js';
 import { mkView, addLights, viewPreset, renderFull } from '../gfx/renderer.js';
 import { COL, V3, Arrow, makeTriad, makeLabel, dashedLine, setObjFromCBR, disposeTree } from '../gfx/primitives.js';
 import { buildSC } from '../gfx/spacecraftMesh.js';
+import { createAxisWidget } from '../gfx/axisWidget.js';
 
 const easeIO = x => x < .5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
 const seqNames = { 1: 'X', 2: 'Y', 3: 'Z' };
@@ -129,7 +130,8 @@ export function createRotationLab({ renderRail }) {
     const ce = $('#caption'); if (cap) { ce.hidden = false; $('#captionText').innerHTML = cap; } else if (!ce.hidden && S.tab === 'rot') ce.hidden = true;
     V.controls.update();
   }
-  function render() { renderFull(V); }
+  const axisW = createAxisWidget(V, ['X_R', 'Y_R', 'Z_R']);
+  function render() { renderFull(V); axisW.render(); }
 
   /* ---------- control rail ---------- */
   function panel() {
@@ -218,5 +220,6 @@ export function createRotationLab({ renderRail }) {
   /** Called once at boot. */
   function init() { if (!S.rot.aaAxis) S.rot.aaAxis = AM.q2axisAngle(S.rot.q).axis; }
 
-  return { V, init, update, render, panel, hud, setQ, animateTo, CBR };
+  const enter = () => axisW.show(true), leave = () => axisW.show(false);
+  return { V, init, update, render, panel, hud, enter, leave, setQ, animateTo, CBR };
 }
