@@ -57,8 +57,9 @@ import { busPose, normalizeBus, convertLegacyFrame, busPointToSCF } from '../src
 import { alignMatrix, axesOf, nominalDirections, defaultAlign, checkAlign, AXIS_SPECS, validPair } from '../src/spacecraft/alignment.js';
 import { parseMatrix3, formatMatlab, orthonormalize, checkRotation } from '../src/core/matrixText.js';
 
-test('default spacecraft: bus at the origin, SCF = VVLH in nominal flight', () => {
-  const sc = defaultSC(); closeArr(busPose(sc).pos, [0, 0, 0]); closeArr(busPose(sc).C, AM.m.I());
+test('default spacecraft stands on the XY plane (bus −Z face at the origin), SCF = VVLH in nominal flight', () => {
+  const sc = defaultSC(); closeArr(busPose(sc).pos, [0, 0, 0.5]); closeArr(busPointToSCF(sc, [0, 0, -0.5]), [0, 0, 0]);
+  closeArr(sc.comps.find(c => c.name === 'PL cam').pos, [0, 0, 0.92]); closeArr(busPose(sc).C, AM.m.I());
   closeArr(alignMatrix(sc.align), AM.m.I());
 });
 

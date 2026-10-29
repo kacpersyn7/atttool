@@ -11,6 +11,7 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 - Orientation of every part as yaw-pitch-roll, **DCM** (paste from MATLAB / NumPy, either direction, validity check, orthonormalise, copy as MATLAB) or quaternion. (#6)
 - Corner axis widget in the Layout and Rotation Lab views; click an axis to look along it. (#5)
 - Layout view follows the CAD convention: +Z up on screen, grid = SCF XY plane through the origin. (#5)
+- The example spacecraft stands on the grid: its bus −Z face is at the SCF origin (affects new layouts and "Reset to example" only). (#5)
 
 ### Changed
 - The Orbit tab's "Orbital frame" selector is now "Shown orbital frame" (triad and HUD only); the nominal attitude comes from the spacecraft. Saved layouts and v0.3 settings migrate unchanged.
