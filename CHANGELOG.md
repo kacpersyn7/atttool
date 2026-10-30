@@ -6,6 +6,8 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 ## [Unreleased]
 
 ### Added
+- **Import orientations** (Layout → Save & share): paste or load DCMs, quaternions and positions per part, matched by name. MATLAB (`STR_1 = [a b c; d e f; g h i];`), NumPy, JSON, a full AttTool configuration, or AttTool's own exports. Choice of matrix direction and quaternion order, preview of what changes (degrees / mm), unmatched names and invalid matrices reported, nothing changes until Apply. (#7)
+- **Copy as MATLAB**: the whole layout as a MATLAB script (C_CB, q_BC, positions, bus, nominal alignment, wheel matrix, mass properties). (#7)
 - Build the satellite in its own frame (SCF) like a CAD model: the bus is now a part with its own position and orientation; "put the origin at a bus face" moves the whole satellite. (#5)
 - **Attitude reference** card: say which SCF axis each VVLH / LVLH / VNC axis points along (or give a DCM). Arrows in the Layout view show where Earth, along-track and the orbit normal will be in nominal flight. The Orbit tab flies this as "Nominal attitude + offsets", with a new "B vs nominal" HUD row. (#5)
 - Orientation of every part as yaw-pitch-roll, **DCM** (paste from MATLAB / NumPy, either direction, validity check, orthonormalise, copy as MATLAB) or quaternion. (#6)
@@ -14,6 +16,8 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 - The example spacecraft stands on the grid: its bus −Z face is at the SCF origin (affects new layouts and "Reset to example" only). (#5)
 
 ### Changed
+- Python export: variable names keep axis signs apart (`CSS-+X` → `CSS_pX`, `CSS--X` → `CSS_mX`; previously both were `CSS_X`), and positions have 6 decimals. Both exports import back unchanged. (#7)
+- Escape closes dialogs even while typing in them.
 - The Orbit tab's "Orbital frame" selector is now "Shown orbital frame" (triad and HUD only); the nominal attitude comes from the spacecraft. Saved layouts and v0.3 settings migrate unchanged.
 
 ## [0.3.0] - 2026-10-20

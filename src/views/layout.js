@@ -23,6 +23,8 @@ import { newId, mkComp, qFromBoresight, compAxis, envelope, sanitizeSpacecraft }
 import { defaultSC } from '../spacecraft/exampleSpacecraft.js';
 import { massProps, maxPrincipalTilt } from '../spacecraft/massProperties.js';
 import { exportPython } from '../spacecraft/exportPython.js';
+import { exportMatlab } from '../spacecraft/exportMatlab.js';
+import { parseOrientations, planImport, applyImport } from '../spacecraft/orientationImport.js';
 import { busPose, busPointToSCF, busDirToSCF } from '../spacecraft/bus.js';
 import { AXIS_SPECS, REF_IDS, REF_AXIS_MEANING, validPair, alignMatrix, axesOf, nominalDirections, specOf, defaultAlign } from '../spacecraft/alignment.js';
 
@@ -258,7 +260,9 @@ export function createLayoutView({ renderRail }) {
       h('div', { class: 'btns' },
         h('button', { class: 'btn', onclick: () => copyText(JSON.stringify({ atttool: 1, sc: S.sc }, null, 1), 'Configuration JSON') }, 'Copy config JSON'),
         h('button', { class: 'btn', onclick: importDlg }, 'Import JSON…'),
-        h('button', { class: 'btn', onclick: () => copyText(exportPython(S.sc, MP), 'Mounting matrices') }, 'Copy mounting matrices (Python)')),
+        h('button', { class: 'btn', onclick: () => copyText(exportPython(S.sc, MP), 'Mounting matrices') }, 'Copy mounting matrices (Python)'),
+        h('button', { class: 'btn', onclick: () => copyText(exportMatlab(S.sc, MP), 'Mounting matrices') }, 'Copy as MATLAB'),
+        h('button', { class: 'btn', onclick: importOrientationsDlg }, 'Import orientations…')),
       h('div', { class: 'btns' }, confirmButton('Reset to example spacecraft', 'Click again to reset', () => { S.sc = defaultSC(); S.layout.sel = null; scChanged(); renderRail(); })),
       tip('Your layout is kept in this browser automatically. Copy the JSON to keep a file or move it to another computer.')));
     return out;
@@ -272,6 +276,47 @@ export function createLayoutView({ renderRail }) {
       catch (e) { err.textContent = 'Could not import: ' + e.message; }
     };
     showModal(h('div', null, h('h2', null, 'Import configuration'), ta, err, h('div', { class: 'btns', style: 'margin-top:8px' }, h('button', { class: 'btn primary', onclick: doImport }, 'Import'))));
+  }
+
+  /* ---------- import orientations by name ---------- */
+  function importOrientationsDlg() {
+    const L = S.layout; const o = L.imp || (L.imp = { dir: 'CS', order: 'first', fix: true });
+    const ta = h('textarea', { style: 'width:100%;min-height:170px', spellcheck: 'false', placeholder: 'STR_1_C_CB = [0.34 0.5 -0.8; …];\nSTR-2 = [w x y z]\n{"MAG": [[1,0,0],[0,1,0],[0,0,1]]}' });
+    const file = h('input', { type: 'file', accept: '.json,.txt,.m,.py,.csv,text/plain,application/json', 'aria-label': 'Load file' });
+    const result = h('div', { class: 'imp-result' }), applyBtn = h('button', { class: 'btn primary', disabled: true }, 'Apply');
+    let rows = [];
+    const toggle = (opts, key) => { const w = h('div', { class: 'seg', role: 'group' }); const bs = opts.map(([v, t]) => { const b = h('button', { type: 'button', onclick: () => { o[key] = v; save(); bs.forEach(x => x.classList.toggle('on', x._v === v)); preview(); } }, t); b._v = v; b.classList.toggle('on', o[key] === v); w.append(b); return b; }); return w; };
+    const fixBox = h('input', { type: 'checkbox', id: 'impfix' }); fixBox.checked = o.fix; fixBox.addEventListener('change', () => { o.fix = fixBox.checked; save(); preview(); });
+    const STATUS = { ok: ['ok', 'update'], fixed: ['warn', 'update · fixed'], same: ['dim', 'no change'], unmatched: ['dim', 'no match'], ambiguous: ['bad', 'ambiguous'], error: ['bad', 'error'] };
+    function preview() {
+      result.innerHTML = ''; rows = [];
+      if (!ta.value.trim()) { applyBtn.disabled = true; applyBtn.textContent = 'Apply'; return; }
+      try { rows = planImport(S.sc, parseOrientations(ta.value), o); } catch (e) { result.append(h('p', { class: 'tip', style: 'color:var(--bad)' }, 'Could not read: ' + e.message)); }
+      if (!rows.length) result.append(h('p', { class: 'tip' }, 'Nothing recognised yet. Use name = [9 numbers] for a DCM, [4] for a quaternion, [3] for a position, or JSON.'));
+      else result.append(h('table', { class: 'imp' },
+        h('thead', null, h('tr', null, ['In file', 'Part', 'Change', 'Status'].map(t => h('th', null, t)))),
+        h('tbody', null, rows.map(r => { const [cls, txt] = STATUS[r.status];
+          const chg = [r.q && r.status !== 'unmatched' ? r.angle.toFixed(r.angle < 1 ? 3 : 1) + '°' : '', r.pos ? (r.dPos * 1000).toFixed(1) + ' mm' : ''].filter(Boolean).join(' · ');
+          return h('tr', null, h('td', { class: 'mono' }, r.name), h('td', null, r.label || '—'), h('td', { class: 'mono' }, chg || '—'),
+            h('td', null, h('span', { class: 'chip ' + cls, title: r.msg }, txt), r.msg ? h('small', null, ' ' + r.msg) : null)); }))));
+      const n = rows.filter(r => r.status === 'ok' || r.status === 'fixed').length;
+      applyBtn.disabled = !n; applyBtn.textContent = n ? `Apply ${n} change${n > 1 ? 's' : ''}` : 'Nothing to apply';
+    }
+    let tmr = 0; ta.addEventListener('input', () => { clearTimeout(tmr); tmr = setTimeout(preview, 250); });
+    file.addEventListener('change', () => { const f = file.files[0]; if (!f) return; f.text().then(t => { ta.value = t; preview(); }); });
+    applyBtn.addEventListener('click', () => { const n = applyImport(S.sc, rows); scChanged(); closeModal(); renderRail(); toast(`Updated ${n} part${n === 1 ? '' : 's'}`); });
+    showModal(h('div', null, h('h2', null, 'Import orientations'),
+      h('p', { class: 'tip' }, 'Paste or load a DCM, quaternion or position per part, matched by name: MATLAB (STR_1 = [a b c; d e f; g h i];), NumPy, JSON, or AttTool\'s own MATLAB / Python export. Nothing changes until you press Apply.'),
+      h('div', { class: 'btns', style: 'align-items:center' }, file),
+      ta,
+      h('div', { class: 'imp-opts' },
+        h('span', { class: 'lbl' }, 'Matrices / quaternions map'), toggle([['CS', 'SCF → part (C_C←SCF)'], ['SC', 'part → SCF (C_SCF←C)']], 'dir'),
+        h('span', { class: 'lbl' }, 'Quaternion arrays'), toggle([['first', 'scalar first'], ['last', 'scalar last']], 'order'),
+        h('label', { class: 'chk', for: 'impfix' }, fixBox, 'Orthonormalise near-rotations')),
+      h('p', { class: 'tip' }, 'Name suffixes fix the meaning and override these options: _C_CB, _C_BC, _q_BC (scalar first), _q, _pos_B. "CSS-+X" is written CSS_pX, "SA −Y" SA_mY.'),
+      result,
+      h('div', { class: 'btns', style: 'margin-top:8px' }, applyBtn)));
+    ta.focus();
   }
 
   /* ---------- viewport overlays ---------- */
