@@ -12,6 +12,8 @@ jobs:
         with: { node-version: 22 }
       - run: npm test
       - run: npm run build
+        env:
+          BUILD_LABEL: ${{ github.event_name == 'pull_request' && format('PR #{0} build', github.event.number) || 'main' }} ${{ github.sha }}
       - uses: actions/upload-artifact@v4
         with:
           name: AttTool-${{ github.sha }}

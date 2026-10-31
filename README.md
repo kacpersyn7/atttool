@@ -67,12 +67,14 @@ The rule that keeps this maintainable is that **physics never imports graphics**
 Every released version stays available, both as a downloadable `AttTool.html` on the Releases page and live at `https://kacpersyn7.github.io/atttool/vX.Y.Z/`.
 
 To release:
-1. Make sure `version` in `package.json`, `src/version.js` and the top entry of `CHANGELOG.md` agree (a test checks), and merge to `main`.
+1. Open a release PR: bump `version` in `package.json` and `src/version.js`, and move the *Unreleased* changelog entries under the new version. A test checks the version numbers agree. Merge it.
 2. Tag it, in any of three ways:
    - **Actions → Release → Run workflow → `v0.3.0`.** This is the simplest, and it creates the tag on `main`.
    - Releases → Draft a new release → new tag `v0.3.0`.
    - `git tag v0.3.0 && git push origin v0.3.0`.
 3. The Release workflow builds and tests the code, attaches `AttTool.html` and redeploys the live site.
+
+The header shows which build you're running: a release shows just `v0.4.0`. The live site and PR test builds add a label such as `v0.4.0 · main 0f7fc8c`, meaning newer than that release.
 
 Workflows (`.github/workflows/`): **CI** tests and builds every pull request, **Release** handles tags, and **Pages** deploys the live site.
 
