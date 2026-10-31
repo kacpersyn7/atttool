@@ -5,6 +5,9 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 
 ## [Unreleased]
 
+### Fixed
+- CI workflow failed to load since v0.4.0 (an unquoted `#` in the build-label expression); a test now guards against it.
+
 ### Added
 - **Table view** in the Layout tab ("3D | Table" switch): every part in one sortable, filterable table with position, +Z axis, yaw-pitch-roll, mass, parameters and the axis angles to Earth / along-track / orbit normal in nominal flight. Expand a row for the DCM, quaternion and MATLAB lines; copy the table for Excel; warnings for duplicate names, clashing export names, parts at the same spot and parts without mass; "Edit" opens the part in the 3D editor. (#22)
 - **Edit the table in Excel and import it back**: "Import edits…" (or Layout → Save & share → "Import part data…") reads the copied table, with positions, masses and orientations. For orientation it uses whichever of yaw-pitch-roll / quaternion / DCM you edited (two edited differently is reported); only edited fields are written back; decimal commas work, and "Copy table" uses them automatically in comma locales. Edits to display-only columns (type, axis, parameters, angles) are reported as ignored; cells Excel turned into dates or text are reported with a hint. (#22)
