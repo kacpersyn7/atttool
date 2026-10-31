@@ -132,3 +132,37 @@ test('orthonormalize repairs a rounded DCM to the nearest rotation', () => {
   const F = orthonormalize(noisy); assert.ok(checkRotation(F, 1e-12).ok); closeArr(F, R, 2e-3);
   assert.equal(checkRotation([[1, 0, 0], [0, 1, 0], [0, 0, -1]]).fixable, false); // reflection
 });
+
+/* ---------------- parts table ---------------- */
+import { partRows, layoutWarnings, rowsToTSV, paramText } from '../src/spacecraft/partsTable.js';
+
+test('parts table: bus first, one row per component, nominal angles', () => {
+  const sc = defaultSC(); const rows = partRows(sc);
+  assert.equal(rows.length, sc.comps.length + 1); assert.equal(rows[0].id, 'bus');
+  const pl = rows.find(r => r.name === 'PL cam');
+  close(pl.toEarth, 0, 1e-9); close(pl.toAlong, 90, 1e-9); close(pl.toNormal, 90, 1e-9); // payload looks at nadir
+  const sa = rows.find(r => r.name === 'SA +Y'); close(sa.toEarth, 180, 1e-9);               // arrays face zenith
+  const css = rows.find(r => r.name === 'CSS-+X'); close(css.toAlong, 0, 1e-9);
+  closeArr(rows.find(r => r.name === 'MTQ-X').ypr.map(Math.round), AM.C2euler('321', AM.q2C(sc.comps.find(c => c.name === 'MTQ-X').q)).map(x => Math.round(x * AM.R2D)));
+  assert.equal(paramText(sc.comps.find(c => c.type === 'str')), 'FOV 20° · Sun excl. 30° · Earth excl. 20°');
+  // a different nominal alignment changes the angles
+  sc.align = { ref: 'lvlh', mode: 'axes', x: '+Z', y: '+X' }; // radial out = SCF +Z → payload looks away from Earth
+  close(partRows(sc).find(r => r.name === 'PL cam').toEarth, 180, 1e-9);
+});
+
+test('layout warnings: duplicates, export-name clashes, same position, no mass', () => {
+  const sc = defaultSC(); assert.deepEqual(layoutWarnings(sc), []);
+  const a = sc.comps[0];
+  sc.comps.push({ ...a, id: 'd1' });                              // duplicate name + same position
+  sc.comps.push({ ...a, id: 'd2', name: 'PL_cam', pos: [9, 9, 9] }); // same export name, different name
+  sc.comps.push({ ...sc.comps[3], id: 'd3', name: 'Dummy', pos: [5, 5, 5], mass: 0 });
+  const w = layoutWarnings(sc).map(x => x.text).join('\n');
+  assert.match(w, /Duplicate name "PL cam"/); assert.match(w, /same export name PL_cam/);
+  assert.match(w, /same position/); assert.match(w, /Dummy has no mass/);
+});
+
+test('parts table TSV has a header and one line per row', () => {
+  const sc = defaultSC(); const t = rowsToTSV(partRows(sc)).split('\n');
+  assert.equal(t.length, sc.comps.length + 2); assert.equal(t[0].split('\t').length, t[1].split('\t').length);
+  assert.match(t[2], /^PL cam\tPayload camera\t0\.000000\t0\.000000\t0\.920000/);
+});

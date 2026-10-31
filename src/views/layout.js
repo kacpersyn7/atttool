@@ -17,6 +17,7 @@ import { fmt, fmtS, matHTML } from '../ui/format.js';
 import { gfx, mkView, addLights, viewPreset, renderFull } from '../gfx/renderer.js';
 import { COL, Arrow, makeTriad, makeLabel, dashedLine, disposeTree, setObjFromCBR } from '../gfx/primitives.js';
 import { createAxisWidget } from '../gfx/axisWidget.js';
+import { createPartsTable } from './layout/partsTable.js';
 import { buildSC } from '../gfx/spacecraftMesh.js';
 import { TYPES, axisName } from '../spacecraft/componentTypes.js';
 import { newId, mkComp, qFromBoresight, compAxis, envelope, sanitizeSpacecraft } from '../spacecraft/component.js';
@@ -50,6 +51,19 @@ export function createLayoutView({ renderRail }) {
   Object.values(dirArrows).forEach(a => V.scene.add(a));
   function updateDirs() { const d = nominalDirections(S.sc.align); for (const [k, a] of Object.entries(dirArrows)) { a.setDir(d[k]); a.visible = !!S.layout.show.orbitDirs; } }
   const axisW = createAxisWidget(V, ['X', 'Y', 'Z']);
+
+  /* ---------- "3D | Table" view switch ---------- */
+  const tableEl = h('div', { id: 'partsTable', class: 'ptable', hidden: true }); gfx.vp.append(tableEl);
+  let tableVer = -1;
+  const viewToggle = () => h('div', { class: 'seg viewsw', role: 'group', 'aria-label': 'Layout view' },
+    [['3d', '3D'], ['table', 'Table']].map(([v, t]) => h('button', { type: 'button', class: S.layout.view === v ? 'on' : '', onclick: () => setView(v) }, t)));
+  const table = createPartsTable(tableEl, { onEdit: id => { setView('3d'); select(id); }, viewToggle, onImport: () => importOrientationsDlg() });
+  function applyView() {
+    const active = S.tab === 'layout', t = S.layout.view === 'table';
+    tableEl.hidden = !(active && t); axisW.show(active && !t);
+    if (active && t) { table.render(); tableVer = scVersion(); }
+  }
+  function setView(v) { S.layout.view = v; save(); applyView(); renderRail(); }
   let model = null, ver = -1, dragging = false;
   const selBox = new THREE.BoxHelper(undefined, 0xf2a93b); selBox.visible = false; V.scene.add(selBox);
 
@@ -96,11 +110,12 @@ export function createLayoutView({ renderRail }) {
   }
 
   function update() {
+    if (S.layout.view === 'table') { if (tableVer !== scVersion()) { table.render(); tableVer = scVersion(); } return; }
     if (ver !== scVersion() && !dragging) rebuild();
     if (selBox.visible && tc.object) selBox.update();
     V.controls.update();
   }
-  function render() { renderFull(V); axisW.render(); }
+  function render() { if (S.layout.view === 'table') return; renderFull(V); axisW.render(); }
 
   /* ---------- picking ---------- */
   const raycaster = new THREE.Raycaster(); let down = null;
@@ -111,7 +126,7 @@ export function createLayoutView({ renderRail }) {
     const hits = raycaster.intersectObject(model, true).filter(h_ => h_.object.isMesh && !h_.object.userData.noPick && h_.object.userData.compId);
     select(hits.length ? hits[0].object.userData.compId : null);
   });
-  function select(id) { S.layout.sel = id; save(); attach(); renderRail(); }
+  function select(id) { S.layout.sel = id; save(); attach(); renderRail(); if (S.layout.view === 'table') table.render(); }
 
   /* ---------- component editor ---------- */
   function compEditor(c) {
@@ -262,7 +277,7 @@ export function createLayoutView({ renderRail }) {
         h('button', { class: 'btn', onclick: importDlg }, 'Import JSON…'),
         h('button', { class: 'btn', onclick: () => copyText(exportPython(S.sc, MP), 'Mounting matrices') }, 'Copy mounting matrices (Python)'),
         h('button', { class: 'btn', onclick: () => copyText(exportMatlab(S.sc, MP), 'Mounting matrices') }, 'Copy as MATLAB'),
-        h('button', { class: 'btn', onclick: importOrientationsDlg }, 'Import orientations & positions…')),
+        h('button', { class: 'btn', onclick: importOrientationsDlg }, 'Import part data…')),
       h('div', { class: 'btns' }, confirmButton('Reset to example spacecraft', 'Click again to reset', () => { S.sc = defaultSC(); S.layout.sel = null; scChanged(); renderRail(); })),
       tip('Your layout is kept in this browser automatically. Copy the JSON to keep a file or move it to another computer.')));
     return out;
@@ -287,16 +302,16 @@ export function createLayoutView({ renderRail }) {
     let rows = [];
     const toggle = (opts, key) => { const w = h('div', { class: 'seg', role: 'group' }); const bs = opts.map(([v, t]) => { const b = h('button', { type: 'button', onclick: () => { o[key] = v; save(); bs.forEach(x => x.classList.toggle('on', x._v === v)); preview(); } }, t); b._v = v; b.classList.toggle('on', o[key] === v); w.append(b); return b; }); return w; };
     const fixBox = h('input', { type: 'checkbox', id: 'impfix' }); fixBox.checked = o.fix; fixBox.addEventListener('change', () => { o.fix = fixBox.checked; save(); preview(); });
-    const STATUS = { ok: ['ok', 'update'], fixed: ['warn', 'update · fixed'], same: ['dim', 'no change'], unmatched: ['dim', 'no match'], ambiguous: ['bad', 'ambiguous'], error: ['bad', 'error'] };
+    const STATUS = { ignored: ['warn', 'ignored'], ok: ['ok', 'update'], fixed: ['warn', 'update · fixed'], same: ['dim', 'no change'], unmatched: ['dim', 'no match'], ambiguous: ['bad', 'ambiguous'], error: ['bad', 'error'] };
     function preview() {
       result.innerHTML = ''; rows = [];
       if (!ta.value.trim()) { applyBtn.disabled = true; applyBtn.textContent = 'Apply'; return; }
       try { rows = planImport(S.sc, parseOrientations(ta.value), o); } catch (e) { result.append(h('p', { class: 'tip', style: 'color:var(--bad)' }, 'Could not read: ' + e.message)); }
       if (!rows.length) result.append(h('p', { class: 'tip' }, 'Nothing recognised yet. Use name = [9 numbers] for a DCM, [4] for a quaternion, [3] for a position, or JSON.'));
       else result.append(h('table', { class: 'imp' },
-        h('thead', null, h('tr', null, ['In file', 'Part', 'Change (turn · move)', 'Status'].map(t => h('th', null, t)))),
+        h('thead', null, h('tr', null, ['In file', 'Part', 'Change (turn · move · mass)', 'Status'].map(t => h('th', null, t)))),
         h('tbody', null, rows.map(r => { const [cls, txt] = STATUS[r.status];
-          const chg = [r.q && r.status !== 'unmatched' ? r.angle.toFixed(r.angle < 1 ? 3 : 1) + '°' : '', r.pos ? (r.dPos * 1000).toFixed(1) + ' mm' : ''].filter(Boolean).join(' · ');
+          const chg = [r.q && r.status !== 'unmatched' ? r.angle.toFixed(r.angle < 1 ? 3 : 1) + '°' : '', r.pos ? (r.dPos * 1000).toFixed(1) + ' mm' : '', r.mass !== undefined ? (r.dMass >= 0 ? '+' : '−') + Math.abs(r.dMass).toFixed(3) + ' kg' : ''].filter(Boolean).join(' · ');
           return h('tr', null, h('td', { class: 'mono' }, r.name), h('td', null, r.label || '—'), h('td', { class: 'mono' }, chg || '—'),
             h('td', null, h('span', { class: 'chip ' + cls, title: r.msg }, txt), r.msg ? h('small', null, ' ' + r.msg) : null)); }))));
       const n = rows.filter(r => r.status === 'ok' || r.status === 'fixed').length;
@@ -307,8 +322,9 @@ export function createLayoutView({ renderRail }) {
     applyBtn.addEventListener('click', () => { const n = applyImport(S.sc, rows); scChanged(); closeModal(); renderRail(); toast(`Updated ${n} part${n === 1 ? '' : 's'}`); });
     const ex = (title, code) => h('div', { class: 'imp-ex' }, h('div', { class: 'lbl' }, title), h('pre', null, code),
       h('button', { class: 'btn', onclick: () => { ta.value = code; preview(); } }, 'Try this'));
-    showModal(h('div', null, h('h2', null, 'Import orientations & positions'),
-      tip('Paste or load a file with one entry per part, matched by name. The number of values decides what an entry sets: <b>9 = orientation (DCM)</b>, <b>4 = orientation (quaternion)</b>, <b>3 = position</b> (m). Give a part both with two lines, or "dcm" / "q" and "pos" in JSON. Nothing changes until you press Apply.'),
+    showModal(h('div', null, h('h2', null, 'Import part data'),
+      tip('Paste or load a file with one entry per part, matched by name. The number of values decides what an entry sets: <b>9 = orientation (DCM)</b>, <b>4 = orientation (quaternion)</b>, <b>3 = position</b> (m); <b>NAME_mass = 0.4</b> sets a mass (kg). Give a part several with several lines, or "dcm" / "q", "pos" and "mass" in JSON. Nothing changes until you press Apply.'),
+      tip('<b>From the Layout table:</b> Table view → Copy table → edit in Excel → select all cells, copy, paste here. Edit any of position, mass, yaw-pitch-roll, the quaternion or the DCM; for each part the edited orientation columns are used (edit only one of them). Decimal commas are fine.'),
       h('details', { class: 'more' }, h('summary', null, 'How to import positions — examples'),
         h('p', { class: 'tip' }, 'Positions are in metres, in the spacecraft frame (SCF): measured from the SCF origin along the SCF axes, the same numbers as "Position in SCF" in the part editor. A position is the part\'s mounting point, where its axes start. Position-only files are fine; orientations are left as they are.'),
         ex('MATLAB: positions only (the _pos suffix makes 3 numbers a position)', 'STR_1_pos = [0.25 0.24 -0.05];\nSTR_2_pos = [0.25 -0.24 -0.05];\nGNSS_pos  = [-0.3 -0.3 0];'),
@@ -321,7 +337,7 @@ export function createLayoutView({ renderRail }) {
         h('span', { class: 'lbl' }, 'Matrices / quaternions map'), toggle([['CS', 'SCF → part (C_C←SCF)'], ['SC', 'part → SCF (C_SCF←C)']], 'dir'),
         h('span', { class: 'lbl' }, 'Quaternion arrays'), toggle([['first', 'scalar first'], ['last', 'scalar last']], 'order'),
         h('label', { class: 'chk', for: 'impfix' }, fixBox, 'Orthonormalise near-rotations')),
-      h('p', { class: 'tip' }, 'These options apply to orientations only; positions are always SCF metres. Name suffixes override them: _C_CB, _C_BC, _q_BC (scalar first). "CSS-+X" is written CSS_pX, "SA −Y" SA_mY.'),
+      h('p', { class: 'tip' }, 'These options apply to orientations in MATLAB / NumPy / JSON input only (not to the Layout table); positions are always SCF metres. Name suffixes override them: _C_CB, _C_BC, _q_BC (scalar first). "CSS-+X" is written CSS_pX, "SA −Y" SA_mY.'),
       result,
       h('div', { class: 'btns', style: 'margin-top:8px' }, applyBtn)));
     ta.focus();
@@ -334,10 +350,10 @@ export function createLayoutView({ renderRail }) {
         return `<p class="tip">Build in SCF like a CAD model.<br>Nominal flight (${S.sc.align.ref.toUpperCase()}): Earth → <b>${dirText(d.nadir)}</b> · along-track → <b>${dirText(d.alongTrack)}</b></p>`; }),
       liveText(() => { const c = sel(); return c ? `<p class="tip" style="margin-top:6px">Selected <b>${S.layout.sel === 'bus' ? 'Bus' : c.name}</b> at [${c.pos.map(x => fmt(x, 2)).join(', ')}] m</p>` : '<p class="tip" style="margin-top:6px">Click a part to select it.</p>'; })));
     const vb = (t, d) => h('button', { class: 'vbtn', onclick: () => viewPreset(V, d, 3.6) }, t);
-    $('#hudTR').append(vb('Iso', [1, -1.1, .75]), vb('+X', [1, 0, 0.0001]), vb('−X', [-1, 0, 0.0001]), vb('+Y', [0, 1, 0.0001]), vb('−Y', [0, -1, 0.0001]), vb('+Z', [0, -0.0001, 1]), vb('−Z', [0, -0.0001, -1]));
+    $('#hudTR').append(viewToggle(), vb('Iso', [1, -1.1, .75]), vb('+X', [1, 0, 0.0001]), vb('−X', [-1, 0, 0.0001]), vb('+Y', [0, 1, 0.0001]), vb('−Y', [0, -1, 0.0001]), vb('+Z', [0, -0.0001, 1]), vb('−Z', [0, -0.0001, -1]));
   }
 
-  function enter() { if (ver !== scVersion()) rebuild(); attach(); axisW.show(true); }
-  function leave() { tc.detach(); tc.enabled = false; axisW.show(false); }
+  function enter() { if (ver !== scVersion()) rebuild(); attach(); applyView(); }
+  function leave() { tc.detach(); tc.enabled = false; axisW.show(false); tableEl.hidden = true; }
   return { V, update, render, panel, hud, enter, leave };
 }

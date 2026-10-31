@@ -102,3 +102,79 @@ test('ambiguous names are not guessed', () => {
   assert.equal(plan(sc, 'PL_cam = [1 0 0 0]')[0].status, 'ambiguous');
   assert.equal(plan(sc, 'pl-cam = [1 0 0 0]')[0].label, 'pl-cam'); // an exact (case-insensitive) match wins
 });
+
+/* ---------------- Layout table → spreadsheet → import ---------------- */
+import { partRows, rowsToTSV } from '../src/spacecraft/partsTable.js';
+
+const tsvOf = (sc, opts) => rowsToTSV(partRows(sc), opts);
+/** Edit one cell of the TSV: row by part name, column by header prefix. */
+function editCell(tsv, part, colPrefix, value) {
+  const L = tsv.split('\n').map(l => l.split('\t')); const c = L[0].findIndex(h => h.startsWith(colPrefix));
+  L.find(r => r[0] === part)[c] = String(value); return L.map(r => r.join('\t')).join('\n');
+}
+
+test('table round trip: unchanged table imports as no change (dot and comma decimals)', () => {
+  const sc = defaultSC();
+  for (const comma of [false, true]) {
+    const rows = plan(sc, tsvOf(sc, { comma }));
+    assert.equal(rows.length, sc.comps.length + 1); assert.deepEqual(counts(rows), { same: rows.length }, 'comma=' + comma);
+  }
+});
+
+test('table: edited yaw is used even though the quaternion and DCM columns are stale', () => {
+  const sc = defaultSC(); let t = tsvOf(sc);
+  const r0 = partRows(sc).find(r => r.name === 'MTQ-Z');
+  t = editCell(t, 'MTQ-Z', 'Yaw', (r0.ypr[0] + 30).toFixed(2));
+  const row = byName(plan(sc, t), 'MTQ-Z');
+  assert.equal(row.status, 'ok'); assert.match(row.msg, /yaw-pitch-roll/); close(row.angle, 30, 0.02);
+});
+
+test('table: edited quaternion is used; two orientation columns edited differently is an error', () => {
+  const sc = defaultSC(); const q = AM.axisAngle2q([0, 1, 0], 0.5);
+  let t = tsvOf(sc);
+  ['q0', 'q1', 'q2', 'q3'].forEach((c, i) => { t = editCell(t, 'MAG', c, [q.w, q.x, q.y, q.z][i].toFixed(6)); });
+  const row = byName(plan(sc, t), 'MAG'); assert.match(row.msg, /quaternion/); closeArr(AM.q2C(row.q), AM.q2C(q), 1e-5);
+  const bad = editCell(t, 'MAG', 'Yaw', '45.00');
+  const b = byName(plan(sc, bad), 'MAG'); assert.equal(b.status, 'error'); assert.match(b.msg, /edited differently/);
+});
+
+test('table: position and mass edits, decimal commas, and apply', () => {
+  const sc = defaultSC(); let t = tsvOf(sc, { comma: true });
+  t = editCell(t, 'GNSS', 'x', '-0,300'); t = editCell(t, 'GNSS', 'Mass', '0,250');
+  t = editCell(t, 'Bus', 'Mass', '80');
+  const rows = plan(sc, t);
+  const g = byName(rows, 'GNSS'); close(g.dPos, 0.05, 1e-9); close(g.dMass, 0.1, 1e-9); close(g.angle, 0, 1e-3);
+  assert.equal(byName(rows, 'Bus').status, 'ok'); close(byName(rows, 'Bus').dMass, 5, 1e-9);
+  assert.equal(applyImport(sc, rows), 2);
+  closeArr(sc.comps.find(c => c.name === 'GNSS').pos, [-0.3, -0.25, 0], 1e-12); close(sc.bus.mass, 80, 0);
+  assert.equal(plan(sc, editCell(tsvOf(sc), 'IMU', 'Mass', '-1'))
+    .find(r => r.label === 'IMU').status, 'error');
+});
+
+test('mass in text and JSON forms', () => {
+  const sc = defaultSC();
+  const r = plan(sc, 'MAG_mass = 0.2;\nIMU_mass = [0.9]\nSTR_1_mass = 1e-1');
+  close(byName(r, 'MAG').mass, 0.2, 0); close(byName(r, 'IMU').mass, 0.9, 0); close(byName(r, 'STR-1').mass, 0.1, 0);
+  const j = plan(sc, JSON.stringify({ MAG: { mass: 0.3 }, IMU_mass: 1.2 }));
+  close(byName(j, 'MAG').mass, 0.3, 0); close(byName(j, 'IMU').mass, 1.2, 0);
+});
+
+test('table: edits in display-only columns are reported, not silently dropped', () => {
+  const sc = defaultSC(); let t = tsvOf(sc, { comma: true });
+  t = editCell(t, 'STR-1', 'Parameters', 'FOV 25° · Sun excl. 30° · Earth excl. 20°');
+  t = editCell(t, 'MAG', 'Axis x', '1,0000');
+  t = editCell(t, 'GNSS', 'Mass', '0,2500'); t = editCell(t, 'GNSS', 'Angle to Earth', '12,0');
+  const rows = plan(sc, t);
+  const s1 = byName(rows, 'STR-1'); assert.equal(s1.status, 'ignored'); assert.match(s1.msg, /Parameters column is display-only/);
+  assert.match(byName(rows, 'MAG').msg, /Axis/);
+  const g = byName(rows, 'GNSS'); assert.equal(g.status, 'ok'); assert.match(g.msg, /Angle column/); close(g.dMass, 0.1, 1e-9);
+  assert.equal(rows.filter(r => r.status === 'ignored' || r.msg).length, 3, 'nothing else flagged');
+  assert.equal(applyImport(sc, rows), 1); // only the GNSS mass
+});
+
+test('table: cells Excel turned into dates are an error with a hint; header-less rows get a hint', () => {
+  const sc = defaultSC(); const t = editCell(tsvOf(sc), 'IMU', 'z', '01.paź');
+  const r = byName(plan(sc, t), 'IMU'); assert.equal(r.status, 'error'); assert.match(r.msg, /can't read z/); assert.match(r.msg, /Decimal comma/);
+  const rowsOnly = tsvOf(sc).split('\n').slice(1, 4).join('\n');
+  const h = plan(sc, rowsOnly); assert.equal(h.length, 1); assert.match(h[0].msg, /header row/);
+});
