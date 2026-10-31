@@ -40,7 +40,7 @@ export function createPlotView(host) {
     winSel.value = P().win; winSel.addEventListener('change', () => set(p => p.win = winSel.value));
     const comma = h('input', { type: 'checkbox' }); comma.checked = P().comma ?? localeComma;
     comma.addEventListener('change', () => { P().comma = comma.checked; save(); });
-    bar.replaceChildren(
+    bar.replaceChildren(...[ // (replaceChildren would print null as text)
       h('span', { class: 'lbl' }, 'Plots'),
       ...active.map(s => h('span', { class: 'pchip', title: s.label }, s.label,
         h('button', { title: 'Remove', 'aria-label': 'Remove ' + s.label, onclick: () => set(p => p.sigs = p.sigs.filter(id => id !== s.id)) }, '×'))),
@@ -48,7 +48,7 @@ export function createPlotView(host) {
       active.length ? h('span', { class: 'sp' }) : null,
       active.length ? winSel : null,
       active.length ? h('label', { class: 'chk', title: 'Decimal commas and ; separators (Polish / German Excel)' }, comma, 'dec ,') : null,
-      active.length ? h('button', { class: 'vbtn', title: 'Download the plotted signals over this window at a 1 s step (UTC time stamps)', onclick: exportCSV }, 'CSV') : null);
+      active.length ? h('button', { class: 'vbtn', title: 'Download the plotted signals over this window at a 1 s step (UTC time stamps)', onclick: exportCSV }, 'CSV') : null].filter(Boolean));
     cv.hidden = !active.length;
   }
 

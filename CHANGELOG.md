@@ -8,7 +8,7 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 ### Added
 - **Orbit from a state vector or a TLE** (Orbit tab → Orbit → *Defined by: Elements | r, v (J2000) | TLE*). r, v at the epoch are converted exactly to elements (circular / equatorial cases handled; open or sub-surface orbits reported); a pasted TLE is checked (checksums) and sets the epoch. Switching definitions keeps the orbit. *State now* shows r, v at the current time, with *Make this the initial state* and *Copy r, v (MATLAB)*. TLEs are flown with Keplerian + J2, not SGP4 (stated in the UI). (#8)
 - The epoch can have seconds.
-- **Signal plots** above the Orbit timeline: up to four strip charts of q_BI, q vs the orbital frame or nominal, Euler angles, body rate, Sun / nadir / B-field in body, β angle, altitude, and per-part Sun and Earth-limb angles. Quaternions stay sign-continuous; eclipse is shaded. Window: one orbit (lined up with the timeline) or the last 5–90 min. Hover to read values, click to jump; **CSV** downloads the window at a 1 s step (decimal-comma option). (#9)
+- **Signal plots** above the Orbit timeline: up to four strip charts of q_BI, q vs the orbital frame or nominal, Euler angles, body rate, Sun / nadir / B-field in body, β angle, altitude, and per-part Sun and Earth-limb angles. Quaternions stay sign-continuous; eclipse is shaded. Off by default. Window: one orbit (lined up with the timeline) or the last 5–90 min. Hover to read values, click to jump; **CSV** downloads the window at a 1 s step (decimal-comma option). (#9)
 
 ### Fixed
 - Body frame view: the spacecraft no longer intersects the Earth; the Earth keeps its true apparent size but sits beyond the camera's reach. (#27)
