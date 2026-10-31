@@ -6,6 +6,7 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 ## [Unreleased]
 
 ### Added
+- **Table view** in the Layout tab ("3D | Table" switch): every part in one sortable, filterable table with position, +Z axis, yaw-pitch-roll, mass, parameters and the axis angles to Earth / along-track / orbit normal in nominal flight. Expand a row for the DCM, quaternion and MATLAB lines; copy the table for Excel; warnings for duplicate names, clashing export names, parts at the same spot and parts without mass; "Edit" opens the part in the 3D editor. (#22)
 - Header shows which build you are running between releases (e.g. `v0.4.0 · main 0f7fc8c`); release downloads show just the version.
 
 ## [0.4.0] - 2026-10-31

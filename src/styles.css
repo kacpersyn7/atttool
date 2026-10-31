@@ -171,3 +171,37 @@ table.imp small{color:var(--muted)}
 .imp-ex{display:grid;grid-template-columns:1fr auto;gap:4px 8px;align-items:end;margin:8px 0}
 .imp-ex .lbl{grid-column:1/-1}
 .imp-ex pre{margin:0;font-family:var(--f-mono);font-size:12px;background:var(--ink0);border-radius:5px;padding:6px 8px;overflow-x:auto;white-space:pre}
+/* Layout "Table" view */
+.ptable{position:absolute;inset:0;z-index:4;background:var(--ink0);display:flex;flex-direction:column;min-height:0}
+.ptable-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--ink1)}
+.ptable-bar select,.ptable-bar input{width:auto;min-width:140px}
+.ptable-bar .hspace{flex:1}
+.ptable-scroll{flex:1;overflow:auto;min-height:0}
+table.parts{border-collapse:collapse;width:100%;font-size:12.5px;font-variant-numeric:tabular-nums}
+table.parts th{position:sticky;top:0;background:var(--ink1);text-align:left;font-weight:600;color:var(--muted);border-bottom:1px solid var(--line);padding:0;white-space:nowrap;z-index:1}
+table.parts tr.groups th{top:0;padding:5px 8px 2px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);border-bottom:0}
+table.parts tr.groups th.grp{text-align:center;border-bottom:1px solid var(--line)}
+table.parts thead tr:nth-child(2) th{top:24px}
+table.parts th button{all:unset;cursor:pointer;display:block;padding:5px 8px;width:100%;box-sizing:border-box}
+table.parts th button:hover,table.parts th.sorted button{color:var(--text)}
+table.parts th.num button{text-align:right}
+table.parts td{padding:4px 8px;border-bottom:1px solid var(--ink3);white-space:nowrap}
+table.parts td.num{text-align:right;font-family:var(--f-mono);font-size:12px}
+table.parts td.name{font-weight:600}
+table.parts td .tw{display:inline-block;width:14px;color:var(--faint)}
+table.parts td .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:7px}
+table.parts tbody tr{cursor:pointer}
+table.parts tbody tr:hover{background:var(--ink2)}
+table.parts tr.sel{background:var(--sun-soft)}
+table.parts tr.warnrow td.name{color:var(--warn)}
+table.parts tr.detail{cursor:default;background:var(--ink1)}
+table.parts tr.detail:hover{background:var(--ink1)}
+table.parts tr.detail td{white-space:normal;padding:10px 12px 12px 30px}
+.detail-grid{display:grid;grid-template-columns:minmax(220px,280px) minmax(260px,1fr) minmax(220px,1fr);gap:16px;align-items:start}
+.detail-grid pre{margin:0 0 6px;font-family:var(--f-mono);font-size:11.5px;background:var(--ink0);border-radius:5px;padding:6px 8px;white-space:pre;overflow-x:auto}
+table.parts td.empty{color:var(--muted);text-align:center;padding:24px}
+.ptable-foot{border-top:1px solid var(--line);background:var(--ink1);padding:10px 14px;display:grid;grid-template-columns:minmax(260px,auto) 1fr;gap:10px 24px;font-size:12.5px}
+.ptable-foot .warns{margin:0;padding-left:18px}
+.ptable-foot .warns li.warn{color:var(--warn)} .ptable-foot .warns li.info{color:var(--muted)}
+.viewsw button{font-family:var(--f-mono);font-size:11.5px}
+@media (max-width:860px){.ptable{position:relative;min-height:70vh}.detail-grid,.ptable-foot{grid-template-columns:1fr}}

@@ -17,6 +17,7 @@ import { fmt, fmtS, matHTML } from '../ui/format.js';
 import { gfx, mkView, addLights, viewPreset, renderFull } from '../gfx/renderer.js';
 import { COL, Arrow, makeTriad, makeLabel, dashedLine, disposeTree, setObjFromCBR } from '../gfx/primitives.js';
 import { createAxisWidget } from '../gfx/axisWidget.js';
+import { createPartsTable } from './layout/partsTable.js';
 import { buildSC } from '../gfx/spacecraftMesh.js';
 import { TYPES, axisName } from '../spacecraft/componentTypes.js';
 import { newId, mkComp, qFromBoresight, compAxis, envelope, sanitizeSpacecraft } from '../spacecraft/component.js';
@@ -50,6 +51,19 @@ export function createLayoutView({ renderRail }) {
   Object.values(dirArrows).forEach(a => V.scene.add(a));
   function updateDirs() { const d = nominalDirections(S.sc.align); for (const [k, a] of Object.entries(dirArrows)) { a.setDir(d[k]); a.visible = !!S.layout.show.orbitDirs; } }
   const axisW = createAxisWidget(V, ['X', 'Y', 'Z']);
+
+  /* ---------- "3D | Table" view switch ---------- */
+  const tableEl = h('div', { id: 'partsTable', class: 'ptable', hidden: true }); gfx.vp.append(tableEl);
+  let tableVer = -1;
+  const viewToggle = () => h('div', { class: 'seg viewsw', role: 'group', 'aria-label': 'Layout view' },
+    [['3d', '3D'], ['table', 'Table']].map(([v, t]) => h('button', { type: 'button', class: S.layout.view === v ? 'on' : '', onclick: () => setView(v) }, t)));
+  const table = createPartsTable(tableEl, { onEdit: id => { setView('3d'); select(id); }, viewToggle });
+  function applyView() {
+    const active = S.tab === 'layout', t = S.layout.view === 'table';
+    tableEl.hidden = !(active && t); axisW.show(active && !t);
+    if (active && t) { table.render(); tableVer = scVersion(); }
+  }
+  function setView(v) { S.layout.view = v; save(); applyView(); renderRail(); }
   let model = null, ver = -1, dragging = false;
   const selBox = new THREE.BoxHelper(undefined, 0xf2a93b); selBox.visible = false; V.scene.add(selBox);
 
@@ -96,11 +110,12 @@ export function createLayoutView({ renderRail }) {
   }
 
   function update() {
+    if (S.layout.view === 'table') { if (tableVer !== scVersion()) { table.render(); tableVer = scVersion(); } return; }
     if (ver !== scVersion() && !dragging) rebuild();
     if (selBox.visible && tc.object) selBox.update();
     V.controls.update();
   }
-  function render() { renderFull(V); axisW.render(); }
+  function render() { if (S.layout.view === 'table') return; renderFull(V); axisW.render(); }
 
   /* ---------- picking ---------- */
   const raycaster = new THREE.Raycaster(); let down = null;
@@ -111,7 +126,7 @@ export function createLayoutView({ renderRail }) {
     const hits = raycaster.intersectObject(model, true).filter(h_ => h_.object.isMesh && !h_.object.userData.noPick && h_.object.userData.compId);
     select(hits.length ? hits[0].object.userData.compId : null);
   });
-  function select(id) { S.layout.sel = id; save(); attach(); renderRail(); }
+  function select(id) { S.layout.sel = id; save(); attach(); renderRail(); if (S.layout.view === 'table') table.render(); }
 
   /* ---------- component editor ---------- */
   function compEditor(c) {
@@ -334,10 +349,10 @@ export function createLayoutView({ renderRail }) {
         return `<p class="tip">Build in SCF like a CAD model.<br>Nominal flight (${S.sc.align.ref.toUpperCase()}): Earth → <b>${dirText(d.nadir)}</b> · along-track → <b>${dirText(d.alongTrack)}</b></p>`; }),
       liveText(() => { const c = sel(); return c ? `<p class="tip" style="margin-top:6px">Selected <b>${S.layout.sel === 'bus' ? 'Bus' : c.name}</b> at [${c.pos.map(x => fmt(x, 2)).join(', ')}] m</p>` : '<p class="tip" style="margin-top:6px">Click a part to select it.</p>'; })));
     const vb = (t, d) => h('button', { class: 'vbtn', onclick: () => viewPreset(V, d, 3.6) }, t);
-    $('#hudTR').append(vb('Iso', [1, -1.1, .75]), vb('+X', [1, 0, 0.0001]), vb('−X', [-1, 0, 0.0001]), vb('+Y', [0, 1, 0.0001]), vb('−Y', [0, -1, 0.0001]), vb('+Z', [0, -0.0001, 1]), vb('−Z', [0, -0.0001, -1]));
+    $('#hudTR').append(viewToggle(), vb('Iso', [1, -1.1, .75]), vb('+X', [1, 0, 0.0001]), vb('−X', [-1, 0, 0.0001]), vb('+Y', [0, 1, 0.0001]), vb('−Y', [0, -1, 0.0001]), vb('+Z', [0, -0.0001, 1]), vb('−Z', [0, -0.0001, -1]));
   }
 
-  function enter() { if (ver !== scVersion()) rebuild(); attach(); axisW.show(true); }
-  function leave() { tc.detach(); tc.enabled = false; axisW.show(false); }
+  function enter() { if (ver !== scVersion()) rebuild(); attach(); applyView(); }
+  function leave() { tc.detach(); tc.enabled = false; axisW.show(false); tableEl.hidden = true; }
   return { V, update, render, panel, hud, enter, leave };
 }
