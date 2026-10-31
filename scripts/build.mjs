@@ -81,6 +81,9 @@ html = html
   .replace(/<link rel="stylesheet" href="src\/styles\.css">/, () => `<style>\n${css}</style>`)
   .replace(/<script type="module" src="src\/main\.js"><\/script>/, () => `${three}\n${guard}\n<script>\nif (window.THREE) ${bundle}\n</script>`);
 
+// Build label next to the version: set BUILD_LABEL (CI / Pages do, e.g. "main 0f7fc8c"); empty for releases.
+const label = (process.env.BUILD_LABEL || '').replace(/\b([0-9a-f]{7})[0-9a-f]{33}\b/, '$1').replace(/[<>"&]/g, '').trim();
+html = html.replace(/\s*<!-- Build label[^>]*-->\s*<meta name="atttool-build" content="[^"]*">/, label ? `\n  <meta name="atttool-build" content="${label}">` : '');
 const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
 html = html.replace('<head>', `<head>\n  <!-- Built ${stamp} UTC by scripts/build.mjs from src/ — do not edit; edit src/ and rebuild. -->`);
 fs.mkdirSync(path.join(root, 'dist'), { recursive: true });

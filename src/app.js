@@ -52,7 +52,9 @@ export function startApp() {
     else if (e.key === 'Escape') closeModal();
   });
   $('#btnConv').addEventListener('click', showConventions);
-  $('#ver').textContent = 'v' + VERSION;
+  const build = document.querySelector('meta[name="atttool-build"]')?.getAttribute('content');
+  $('#ver').textContent = 'v' + VERSION + (build ? ' · ' + build : '');
+  if (build) $('#ver').title = 'Not a release build: newer than v' + VERSION + ' or a test build';
 
   // main loop: 3D every frame, rail readouts ~10 Hz
   let last = performance.now(), acc = 0;

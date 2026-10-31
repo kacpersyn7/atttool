@@ -6,6 +6,11 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 ## [Unreleased]
 
 ### Added
+- Header shows which build you are running between releases (e.g. `v0.4.0 · main 0f7fc8c`); release downloads show just the version.
+
+## [0.4.0] - 2026-10-31
+
+### Added
 - **Import orientations & positions** (Layout → Save & share): paste or load DCMs, quaternions and positions per part (with worked examples for positions in the dialog), matched by name. MATLAB (`STR_1 = [a b c; d e f; g h i];`), NumPy, JSON, a full AttTool configuration, or AttTool's own exports. Choice of matrix direction and quaternion order, preview of what changes (degrees / mm), unmatched names and invalid matrices reported, nothing changes until Apply. (#7)
 - **Copy as MATLAB**: the whole layout as a MATLAB script (C_CB, q_BC, positions, bus, nominal alignment, wheel matrix, mass properties). (#7)
 - Build the satellite in its own frame (SCF) like a CAD model: the bus is now a part with its own position and orientation; "put the origin at a bus face" moves the whole satellite. (#5)
@@ -38,6 +43,7 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 ### Added
 - 40 unit tests (`npm test`), zero-dependency dev server and single-file build, architecture and conventions docs. Original kept in `legacy/`.
 
-[Unreleased]: https://github.com/kacpersyn7/atttool/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/kacpersyn7/atttool/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/kacpersyn7/atttool/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/kacpersyn7/atttool/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kacpersyn7/atttool/releases/tag/v0.2.0
