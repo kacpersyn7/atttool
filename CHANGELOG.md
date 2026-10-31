@@ -5,6 +5,9 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 
 ## [Unreleased]
 
+### Fixed
+- CI workflow failed to load since v0.4.0 (an unquoted `#` in the build-label expression); a test now guards against it.
+
 ### Added
 - Header shows which build you are running between releases (e.g. `v0.4.0 · main 0f7fc8c`); release downloads show just the version.
 
