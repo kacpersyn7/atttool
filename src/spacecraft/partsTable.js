@@ -5,24 +5,15 @@
  */
 import * as AM from '../core/attitude.js';
 import { formatMatlab } from '../core/matrixText.js';
-import { TYPES, axisName } from './componentTypes.js';
+import { TYPES, axisName, paramText } from './componentTypes.js';
+
+export { paramText };
 import { compAxis } from './component.js';
 import { busPose } from './bus.js';
 import { nominalDirections } from './alignment.js';
 import { codeName } from './orientationImport.js';
 
 const angleDeg = (a, b) => AM.v.angle(a, b) * AM.R2D;
-
-/** Type-specific parameters as short text, e.g. "FOV 20° · Sun excl. 30° · Earth excl. 20°". */
-export function paramText(c) {
-  const p = [];
-  if (c.fov !== undefined) p.push(`FOV ${+c.fov.toFixed(1)}°`);
-  if (c.type === 'str') p.push(`Sun excl. ${c.sunExcl}°`, `Earth excl. ${c.earthExcl}°`);
-  if (c.type === 'mtq') p.push(`${c.dipole} A·m²`, `L ${c.len} m`);
-  if (c.type === 'rw') p.push(`H ${c.hmax} N·m·s`);
-  if (c.type === 'sa') p.push(`${c.w} × ${c.h} m`);
-  return p.join(' · ');
-}
 
 /** Rows for the table. Angles are between the part's +Z axis and each nominal-flight direction. */
 export function partRows(sc) {

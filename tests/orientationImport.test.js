@@ -158,3 +158,23 @@ test('mass in text and JSON forms', () => {
   const j = plan(sc, JSON.stringify({ MAG: { mass: 0.3 }, IMU_mass: 1.2 }));
   close(byName(j, 'MAG').mass, 0.3, 0); close(byName(j, 'IMU').mass, 1.2, 0);
 });
+
+test('table: edits in display-only columns are reported, not silently dropped', () => {
+  const sc = defaultSC(); let t = tsvOf(sc, { comma: true });
+  t = editCell(t, 'STR-1', 'Parameters', 'FOV 25° · Sun excl. 30° · Earth excl. 20°');
+  t = editCell(t, 'MAG', 'Axis x', '1,0000');
+  t = editCell(t, 'GNSS', 'Mass', '0,2500'); t = editCell(t, 'GNSS', 'Angle to Earth', '12,0');
+  const rows = plan(sc, t);
+  const s1 = byName(rows, 'STR-1'); assert.equal(s1.status, 'ignored'); assert.match(s1.msg, /Parameters column is display-only/);
+  assert.match(byName(rows, 'MAG').msg, /Axis/);
+  const g = byName(rows, 'GNSS'); assert.equal(g.status, 'ok'); assert.match(g.msg, /Angle column/); close(g.dMass, 0.1, 1e-9);
+  assert.equal(rows.filter(r => r.status === 'ignored' || r.msg).length, 3, 'nothing else flagged');
+  assert.equal(applyImport(sc, rows), 1); // only the GNSS mass
+});
+
+test('table: cells Excel turned into dates are an error with a hint; header-less rows get a hint', () => {
+  const sc = defaultSC(); const t = editCell(tsvOf(sc), 'IMU', 'z', '01.paź');
+  const r = byName(plan(sc, t), 'IMU'); assert.equal(r.status, 'error'); assert.match(r.msg, /can't read z/); assert.match(r.msg, /Decimal comma/);
+  const rowsOnly = tsvOf(sc).split('\n').slice(1, 4).join('\n');
+  const h = plan(sc, rowsOnly); assert.equal(h.length, 1); assert.match(h[0].msg, /header row/);
+});

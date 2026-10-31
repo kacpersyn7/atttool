@@ -24,6 +24,10 @@
  */
 import * as AM from '../core/attitude.js';
 import { checkRotation, orthonormalize, parseMatrix3 } from '../core/matrixText.js';
+import { TYPES, paramText } from './componentTypes.js';
+import { compAxis } from './component.js';
+import { busPose } from './bus.js';
+import { nominalDirections } from './alignment.js';
 
 const { m } = AM;
 
@@ -108,12 +112,20 @@ function parseTable(t) {
   const head = lines[0].split('\t').map(h => h.replace(/^\uFEFF/, '').replace(/"/g, '').replace(/\s*\[.*?\]\s*$/, '').trim().toLowerCase());
   const col = name => head.indexOf(name);
   const ix = { part: col('part'), x: col('x'), y: col('y'), z: col('z'), mass: col('mass'), yaw: col('yaw'), pitch: col('pitch'), roll: col('roll'),
-    q: ['q0', 'q1', 'q2', 'q3'].map(col), dcm: head.findIndex(h => h.startsWith('c_cb')) };
+    q: ['q0', 'q1', 'q2', 'q3'].map(col), dcm: head.findIndex(h => h.startsWith('c_cb')),
+    type: col('type'), axis: ['axis x', 'axis y', 'axis z'].map(col), params: col('parameters'),
+    ang: ['angle to earth', 'angle to along-track', 'angle to orbit normal'].map(col) };
+  const NUMCOLS = [['x', ix.x], ['y', ix.y], ['z', ix.z], ['Mass', ix.mass], ['Yaw', ix.yaw], ['Pitch', ix.pitch], ['Roll', ix.roll], ...ix.q.map((i, k) => ['q' + k, i])];
   const entries = [];
   for (const line of lines.slice(1)) {
     const c = line.split('\t'); const name = (c[ix.part] || '').replace(/^"|"$/g, '').trim(); if (!name) continue;
     const num = i => (i >= 0 ? cellNum(c[i]) : NaN);
     const e = { name, base: key(name), table: true, alts: {} };
+    // cells that should be numbers but aren't (e.g. Excel turned "1.10" into a date)
+    const bad = NUMCOLS.filter(([, i]) => i >= 0 && String(c[i] ?? '').trim() !== '' && !Number.isFinite(num(i))).map(([n]) => n);
+    if (bad.length) { e.error = `${name}: can't read ${bad.join(', ')} as numbers (${bad.map(n => '"' + c[NUMCOLS.find(x => x[0] === n)[1]] + '"').slice(0, 2).join(', ')}). Excel may have turned them into dates or text; copy the table again with the "Decimal comma" option matching your Excel.`; entries.push(e); continue; }
+    // display-only columns, to warn if they were edited
+    e.ro = { type: ix.type >= 0 ? c[ix.type] : null, axis: ix.axis.map(num), params: ix.params >= 0 ? c[ix.params] : null, ang: ix.ang.map(num) };
     const pos = [ix.x, ix.y, ix.z].map(num); if (pos.every(Number.isFinite)) e.pos = pos;
     if (Number.isFinite(num(ix.mass))) e.mass = num(ix.mass);
     const ypr = [ix.yaw, ix.pitch, ix.roll].map(num); if (ypr.every(Number.isFinite)) e.alts.ypr = ypr;
@@ -152,6 +164,8 @@ function tableOrientation(alts, oldC) {
 export function parseOrientations(text) {
   const t = String(text).trim(); if (!t) return [];
   if (isPartsTable(t)) return parseTable(t);
+  if (t.includes('\t') && !/[=:]\s*(?:np\.array\s*\(\s*)?\[/.test(t) && !/^[[{]/.test(t))
+    return [{ name: '(table rows)', base: '', error: 'This looks like table rows without the header row. Copy the table including its first row (Part, Type, x …).' }];
   const raw = []; // { raw, field?, value, dir?, order? }
   let json = null;
   if (/^[[{]/.test(t)) { try { json = JSON.parse(t); } catch { json = null; } }
@@ -251,14 +265,37 @@ export function planImport(sc, entries, opts = {}) {
       if (!Number.isFinite(e.mass) || e.mass < 0) return { ...row, status: 'error', msg: 'mass must be a number ≥ 0 (kg)' };
       row.mass = e.mass; row.dMass = e.mass - (hit.obj.mass || 0);
     }
+    if (e.ro) { // display-only columns of the Layout table: report edits, they are not imported
+      const cur = currentDisplay(sc, hit), ign = [];
+      const near = (a, b, tol) => a.every((x, i) => !Number.isFinite(x) || Math.abs(x - b[i]) <= tol);
+      const norm = t => String(t ?? '').replace(/^"|"$/g, '').replace(/(\d),(\d)/g, '$1.$2').replace(/\s+/g, ' ').trim().toLowerCase();
+      if (e.ro.type != null && norm(e.ro.type) !== norm(cur.type)) ign.push('Type');
+      if (!near(e.ro.axis, cur.axis, 1e-3)) ign.push('Axis');
+      if (e.ro.params != null && norm(e.ro.params) !== norm(cur.params)) ign.push('Parameters');
+      if (!near(e.ro.ang, cur.ang, 0.06)) ign.push('Angle');
+      if (ign.length) row.ignored = ign;
+    }
     if (e.table) { // a spreadsheet round trip: write back only what was actually edited
       if (row.pos && row.dPos < 1e-6) { delete row.pos; row.dPos = 0; }
       if (row.mass !== undefined && Math.abs(row.dMass) < 1e-9) { delete row.mass; row.dMass = 0; }
     }
-    if (!row.q && !row.pos && row.mass === undefined) return { ...row, status: e.table ? 'same' : 'error', msg: e.table ? '' : 'nothing to import' };
-    if (row.status === 'ok' && row.angle < 1e-4 && row.dPos < 1e-6 && Math.abs(row.dMass) < 1e-9) row.status = 'same'; // below file precision
+    if (row.ignored) {
+      const note = `${row.ignored.join(', ')} column${row.ignored.length > 1 ? 's are' : ' is'} display-only; change ${row.ignored.length > 1 ? 'them' : 'it'} in the part editor`;
+      row.msg = row.msg ? row.msg + '; ' + note : note;
+    }
+    if (!row.q && !row.pos && row.mass === undefined) return { ...row, status: e.table ? (row.ignored ? 'ignored' : 'same') : 'error', msg: e.table ? row.msg : 'nothing to import' };
+    if (row.status === 'ok' && row.angle < 1e-4 && row.dPos < 1e-6 && Math.abs(row.dMass) < 1e-9) row.status = row.ignored ? 'ignored' : 'same'; // below file precision
     return row;
   });
+}
+
+/** What the Layout table shows in its display-only columns for a part (to detect edits to them). */
+function currentDisplay(sc, hit) {
+  const d = nominalDirections(sc.align);
+  const axis = hit.id === 'bus' ? AM.m.col(busPose(sc).C, 2) : compAxis(hit.obj);
+  const ang = [d.nadir, d.alongTrack, d.normal].map(u => AM.v.angle(axis, u) * AM.R2D);
+  if (hit.id === 'bus') { const b = sc.bus; return { type: 'Bus structure', axis, params: `${b.x} × ${b.y} × ${b.z} m`, ang }; }
+  return { type: TYPES[hit.obj.type].label, axis, params: paramText(hit.obj), ang };
 }
 
 /** Apply the rows of a plan that have something to change. Mutates sc; returns how many parts changed. */

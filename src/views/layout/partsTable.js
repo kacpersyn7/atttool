@@ -80,7 +80,7 @@ export function createPartsTable(el, { onEdit, viewToggle, onImport }) {
       const isOpen = open.has(r.id);
       const tr = h('tr', { class: [r.id === S.layout.sel ? 'sel' : '', warnIds.has(r.id) ? 'warnrow' : '', isOpen ? 'open' : ''].join(' ').trim(), onclick: e => { if (e.target.closest('button')) return; isOpen ? open.delete(r.id) : open.add(r.id); render(); } },
         COLS.map(c => h('td', { class: c.num ? 'num' : c.key === 'name' ? 'name' : '' },
-          c.key === 'name' ? [h('span', { class: 'tw' }, isOpen ? '▾' : '▸'), h('i', { class: 'sw', style: 'background:' + (r.type === 'bus' ? '#c99a3e' : TYPES[r.type].color) }), r.name] : c.cell(r))),
+          c.key === 'name' ? [h('button', { type: 'button', class: 'tw', 'aria-expanded': String(isOpen), 'aria-label': (isOpen ? 'Collapse ' : 'Expand ') + r.name, onclick: () => { isOpen ? open.delete(r.id) : open.add(r.id); render(); } }, isOpen ? '▾' : '▸'), h('i', { class: 'sw', style: 'background:' + (r.type === 'bus' ? '#c99a3e' : TYPES[r.type].color) }), r.name] : c.cell(r))),
         h('td', null, h('button', { class: 'btn', onclick: () => onEdit(r.id), title: 'Select it and open the part editor in the 3D view' }, 'Edit')));
       body.push(tr);
       if (isOpen) {
@@ -107,7 +107,7 @@ export function createPartsTable(el, { onEdit, viewToggle, onImport }) {
       h('div', { class: 'ptable-bar' }, viewToggle(), typeSel, search,
         h('span', { class: 'lbl' }, `${rows.length} of ${all.length} parts`), h('span', { class: 'hspace' }),
         h('label', { class: 'chk', title: 'Use decimal commas (e.g. Polish or German Excel). Import reads both.' }, commaBox(), 'Decimal comma'),
-        h('button', { class: 'btn', onclick: () => copyText(rowsToTSV(rows, { comma: useComma() }), 'Table') }, 'Copy table (for Excel)'),
+        h('button', { class: 'btn', onclick: () => copyText(rowsToTSV(rows, { comma: useComma() }), 'Table'), title: 'Copies the rows shown (filter and sort apply), with a header row' }, rows.length === all.length ? 'Copy table (for Excel)' : `Copy ${rows.length} of ${all.length} rows`),
         h('button', { class: 'btn', onclick: onImport, title: 'Paste the table back after editing it in Excel; you get a preview first' }, 'Import edits…')),
       h('div', { class: 'ptable-scroll' }, h('table', { class: 'parts' },
         h('thead', null, h('tr', { class: 'groups' }, groupRow), h('tr', null, headRow)),

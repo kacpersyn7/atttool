@@ -302,7 +302,7 @@ export function createLayoutView({ renderRail }) {
     let rows = [];
     const toggle = (opts, key) => { const w = h('div', { class: 'seg', role: 'group' }); const bs = opts.map(([v, t]) => { const b = h('button', { type: 'button', onclick: () => { o[key] = v; save(); bs.forEach(x => x.classList.toggle('on', x._v === v)); preview(); } }, t); b._v = v; b.classList.toggle('on', o[key] === v); w.append(b); return b; }); return w; };
     const fixBox = h('input', { type: 'checkbox', id: 'impfix' }); fixBox.checked = o.fix; fixBox.addEventListener('change', () => { o.fix = fixBox.checked; save(); preview(); });
-    const STATUS = { ok: ['ok', 'update'], fixed: ['warn', 'update · fixed'], same: ['dim', 'no change'], unmatched: ['dim', 'no match'], ambiguous: ['bad', 'ambiguous'], error: ['bad', 'error'] };
+    const STATUS = { ignored: ['warn', 'ignored'], ok: ['ok', 'update'], fixed: ['warn', 'update · fixed'], same: ['dim', 'no change'], unmatched: ['dim', 'no match'], ambiguous: ['bad', 'ambiguous'], error: ['bad', 'error'] };
     function preview() {
       result.innerHTML = ''; rows = [];
       if (!ta.value.trim()) { applyBtn.disabled = true; applyBtn.textContent = 'Apply'; return; }

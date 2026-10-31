@@ -188,7 +188,8 @@ table.parts th.num button{text-align:right}
 table.parts td{padding:4px 8px;border-bottom:1px solid var(--ink3);white-space:nowrap}
 table.parts td.num{text-align:right;font-family:var(--f-mono);font-size:12px}
 table.parts td.name{font-weight:600}
-table.parts td .tw{display:inline-block;width:14px;color:var(--faint)}
+table.parts td .tw{all:unset;display:inline-block;width:14px;color:var(--faint);cursor:pointer}
+table.parts td .tw:focus-visible{outline:2px solid var(--sun);outline-offset:1px}
 table.parts td .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:7px}
 table.parts tbody tr{cursor:pointer}
 table.parts tbody tr:hover{background:var(--ink2)}

@@ -32,3 +32,14 @@ export const PARAM_KEYS = ['fov', 'sunExcl', 'earthExcl', 'dipole', 'hmax', 'w',
 export function axisName(type) {
   return type === 'mtq' ? 'dipole axis' : type === 'rw' ? 'spin axis' : type === 'sa' ? 'panel normal' : type === 'thr' ? 'nozzle axis' : 'boresight';
 }
+
+/** Type-specific parameters as short text, e.g. "FOV 20° · Sun excl. 30° · Earth excl. 20°". */
+export function paramText(c) {
+  const p = [];
+  if (c.fov !== undefined) p.push(`FOV ${+c.fov.toFixed(1)}°`);
+  if (c.type === 'str') p.push(`Sun excl. ${c.sunExcl}°`, `Earth excl. ${c.earthExcl}°`);
+  if (c.type === 'mtq') p.push(`${c.dipole} A·m²`, `L ${c.len} m`);
+  if (c.type === 'rw') p.push(`H ${c.hmax} N·m·s`);
+  if (c.type === 'sa') p.push(`${c.w} × ${c.h} m`);
+  return p.join(' · ');
+}
