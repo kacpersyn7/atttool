@@ -67,7 +67,9 @@ This is the Shuster/JPL reading (Markley & Crassidis). The *same four numbers* a
 - Hamilton: `q_CA = q_BA ∘ q_CB`
 - Shuster: `q_CA = q_CB ⊗ q_BA`
 
-q and −q are the same attitude. `q.canon` makes the scalar part ≥ 0.
+q and −q are the same attitude. `q.canon` makes the scalar part ≥ 0. The HUD shows `C2q` as computed (largest component positive), so its sign can jump; the signal plots and their CSV keep the sign continuous along the series, starting with q₀ ≥ 0 (`sim/signals.js`).
+
+Plotted Euler angles are the 3-2-1 sequence of the relative attitude, listed as φ roll, θ pitch, ψ yaw, wrapped to (−180°, 180°]. Body rate is ω of B relative to ECI in body axes (finite difference over 0.5 s).
 
 Component orientation `c.q` is q_BC: `q2C(c.q) = C_CB`.
 

@@ -90,6 +90,5 @@ If the project outgrows it, for example when moving to TypeScript or npm package
 - Upgrade three.js (r128 → current). Watch for lighting intensity changes since r155, and for `TransformControls` becoming a helper in r169+.
 - Attitude dynamics: integrate Euler's equations with the inertia from the Layout workspace, plus wheel and magnetorquer torques and a simple controller.
 - Disturbance torques: gravity gradient, aerodynamic, SRP, residual dipole.
-- TLE / SGP4 propagation, so you can load a real satellite.
 - Ground stations and contact windows on the timeline.
-- Export timeline data as CSV.
+- SGP4 for TLEs (they are flown with Keplerian + J2 today).
