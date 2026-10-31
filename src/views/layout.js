@@ -262,7 +262,7 @@ export function createLayoutView({ renderRail }) {
         h('button', { class: 'btn', onclick: importDlg }, 'Import JSON…'),
         h('button', { class: 'btn', onclick: () => copyText(exportPython(S.sc, MP), 'Mounting matrices') }, 'Copy mounting matrices (Python)'),
         h('button', { class: 'btn', onclick: () => copyText(exportMatlab(S.sc, MP), 'Mounting matrices') }, 'Copy as MATLAB'),
-        h('button', { class: 'btn', onclick: importOrientationsDlg }, 'Import orientations…')),
+        h('button', { class: 'btn', onclick: importOrientationsDlg }, 'Import orientations & positions…')),
       h('div', { class: 'btns' }, confirmButton('Reset to example spacecraft', 'Click again to reset', () => { S.sc = defaultSC(); S.layout.sel = null; scChanged(); renderRail(); })),
       tip('Your layout is kept in this browser automatically. Copy the JSON to keep a file or move it to another computer.')));
     return out;
@@ -294,7 +294,7 @@ export function createLayoutView({ renderRail }) {
       try { rows = planImport(S.sc, parseOrientations(ta.value), o); } catch (e) { result.append(h('p', { class: 'tip', style: 'color:var(--bad)' }, 'Could not read: ' + e.message)); }
       if (!rows.length) result.append(h('p', { class: 'tip' }, 'Nothing recognised yet. Use name = [9 numbers] for a DCM, [4] for a quaternion, [3] for a position, or JSON.'));
       else result.append(h('table', { class: 'imp' },
-        h('thead', null, h('tr', null, ['In file', 'Part', 'Change', 'Status'].map(t => h('th', null, t)))),
+        h('thead', null, h('tr', null, ['In file', 'Part', 'Change (turn · move)', 'Status'].map(t => h('th', null, t)))),
         h('tbody', null, rows.map(r => { const [cls, txt] = STATUS[r.status];
           const chg = [r.q && r.status !== 'unmatched' ? r.angle.toFixed(r.angle < 1 ? 3 : 1) + '°' : '', r.pos ? (r.dPos * 1000).toFixed(1) + ' mm' : ''].filter(Boolean).join(' · ');
           return h('tr', null, h('td', { class: 'mono' }, r.name), h('td', null, r.label || '—'), h('td', { class: 'mono' }, chg || '—'),
@@ -305,15 +305,23 @@ export function createLayoutView({ renderRail }) {
     let tmr = 0; ta.addEventListener('input', () => { clearTimeout(tmr); tmr = setTimeout(preview, 250); });
     file.addEventListener('change', () => { const f = file.files[0]; if (!f) return; f.text().then(t => { ta.value = t; preview(); }); });
     applyBtn.addEventListener('click', () => { const n = applyImport(S.sc, rows); scChanged(); closeModal(); renderRail(); toast(`Updated ${n} part${n === 1 ? '' : 's'}`); });
-    showModal(h('div', null, h('h2', null, 'Import orientations'),
-      h('p', { class: 'tip' }, 'Paste or load a DCM, quaternion or position per part, matched by name: MATLAB (STR_1 = [a b c; d e f; g h i];), NumPy, JSON, or AttTool\'s own MATLAB / Python export. Nothing changes until you press Apply.'),
+    const ex = (title, code) => h('div', { class: 'imp-ex' }, h('div', { class: 'lbl' }, title), h('pre', null, code),
+      h('button', { class: 'btn', onclick: () => { ta.value = code; preview(); } }, 'Try this'));
+    showModal(h('div', null, h('h2', null, 'Import orientations & positions'),
+      tip('Paste or load a file with one entry per part, matched by name. The number of values decides what an entry sets: <b>9 = orientation (DCM)</b>, <b>4 = orientation (quaternion)</b>, <b>3 = position</b> (m). Give a part both with two lines, or "dcm" / "q" and "pos" in JSON. Nothing changes until you press Apply.'),
+      h('details', { class: 'more' }, h('summary', null, 'How to import positions — examples'),
+        h('p', { class: 'tip' }, 'Positions are in metres, in the spacecraft frame (SCF): measured from the SCF origin along the SCF axes, the same numbers as "Position in SCF" in the part editor. A position is the part\'s mounting point, where its axes start. Position-only files are fine; orientations are left as they are.'),
+        ex('MATLAB: positions only (the _pos suffix makes 3 numbers a position)', 'STR_1_pos = [0.25 0.24 -0.05];\nSTR_2_pos = [0.25 -0.24 -0.05];\nGNSS_pos  = [-0.3 -0.3 0];'),
+        ex('MATLAB: orientation and position of one part', '% CSS-+X is written CSS_pX, SA −Y as SA_mY\nCSS_pX_C_CB = [0 0 -1; 0 1 0; 1 0 0];\nCSS_pX_pos  = [0.4 0.05 0.3];'),
+        ex('JSON: position, or position and quaternion', '{\n  "STR-1": { "pos": [0.25, 0.24, -0.05] },\n  "MAG":   { "pos": [-0.3, 0.3, 0], "q": [1, 0, 0, 0] }\n}'),
+        h('p', { class: 'tip' }, 'Without a suffix, an entry with exactly 3 numbers is read as a position; with 4 as a quaternion; with 9 as a DCM. Accepted suffixes: _pos / _pos_B (position), _C_CB / _dcm (DCM, SCF → part), _C_BC (DCM, part → SCF), _q / _q_BC (quaternion).')),
       h('div', { class: 'btns', style: 'align-items:center' }, file),
       ta,
       h('div', { class: 'imp-opts' },
         h('span', { class: 'lbl' }, 'Matrices / quaternions map'), toggle([['CS', 'SCF → part (C_C←SCF)'], ['SC', 'part → SCF (C_SCF←C)']], 'dir'),
         h('span', { class: 'lbl' }, 'Quaternion arrays'), toggle([['first', 'scalar first'], ['last', 'scalar last']], 'order'),
         h('label', { class: 'chk', for: 'impfix' }, fixBox, 'Orthonormalise near-rotations')),
-      h('p', { class: 'tip' }, 'Name suffixes fix the meaning and override these options: _C_CB, _C_BC, _q_BC (scalar first), _q, _pos_B. "CSS-+X" is written CSS_pX, "SA −Y" SA_mY.'),
+      h('p', { class: 'tip' }, 'These options apply to orientations only; positions are always SCF metres. Name suffixes override them: _C_CB, _C_BC, _q_BC (scalar first). "CSS-+X" is written CSS_pX, "SA −Y" SA_mY.'),
       result,
       h('div', { class: 'btns', style: 'margin-top:8px' }, applyBtn)));
     ta.focus();

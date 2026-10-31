@@ -168,3 +168,6 @@ table.imp th{text-align:left;color:var(--muted);font-weight:600;border-bottom:1p
 table.imp td{border-bottom:1px solid var(--ink3);padding:4px 6px;vertical-align:top}
 table.imp td.mono{font-family:var(--f-mono);font-size:12px}
 table.imp small{color:var(--muted)}
+.imp-ex{display:grid;grid-template-columns:1fr auto;gap:4px 8px;align-items:end;margin:8px 0}
+.imp-ex .lbl{grid-column:1/-1}
+.imp-ex pre{margin:0;font-family:var(--f-mono);font-size:12px;background:var(--ink0);border-radius:5px;padding:6px 8px;overflow-x:auto;white-space:pre}
