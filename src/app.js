@@ -45,6 +45,7 @@ export function startApp() {
   document.querySelectorAll('nav.tabs button').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
   new ResizeObserver(resize).observe(gfx.vp);
   window.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !$('#modal').hidden) { closeModal(); return; } // also while typing in a dialog
     if (/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
     if (TAB_KEYS[e.key]) setTab(TAB_KEYS[e.key]);
     else if (e.key === ' ' && S.tab === 'orbit') { S.orbit.playing = !S.orbit.playing; save(); syncAll(); e.preventDefault(); }
