@@ -6,6 +6,7 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 ## [Unreleased]
 
 ### Fixed
+- Body frame view: the spacecraft no longer intersects the Earth; the Earth keeps its true apparent size but sits beyond the camera's reach. (#27)
 - CI workflow failed to load since v0.4.0 (an unquoted `#` in the build-label expression); a test now guards against it.
 
 ### Added
