@@ -164,5 +164,5 @@ test('layout warnings: duplicates, export-name clashes, same position, no mass',
 test('parts table TSV has a header and one line per row', () => {
   const sc = defaultSC(); const t = rowsToTSV(partRows(sc)).split('\n');
   assert.equal(t.length, sc.comps.length + 2); assert.equal(t[0].split('\t').length, t[1].split('\t').length);
-  assert.match(t[2], /^PL cam\tPayload camera\t0\.0000\t0\.0000\t0\.9200/);
+  assert.match(t[2], /^PL cam\tPayload camera\t0\.000000\t0\.000000\t0\.920000/);
 });

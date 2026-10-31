@@ -54,12 +54,15 @@ export function layoutWarnings(sc) {
   return out;
 }
 
-/** Tab-separated table (paste into a spreadsheet). */
-export function rowsToTSV(rows) {
-  const f = (x, n) => (+x).toFixed(n);
+/**
+ * Tab-separated table (paste into a spreadsheet; "Import part data" reads it back).
+ * @param {object} [opts] comma: use decimal commas (spreadsheets in e.g. Polish or German locales)
+ */
+export function rowsToTSV(rows, opts = {}) {
+  const f = (x, n) => { const t = (+x).toFixed(n); return opts.comma ? t.replace('.', ',') : t; };
   const head = ['Part', 'Type', 'x [m]', 'y [m]', 'z [m]', 'Axis', 'Axis x', 'Axis y', 'Axis z', 'Yaw [deg]', 'Pitch [deg]', 'Roll [deg]', 'Mass [kg]', 'Parameters',
     'Angle to Earth [deg]', 'Angle to along-track [deg]', 'Angle to orbit normal [deg]', 'q0', 'q1', 'q2', 'q3', 'C_CB (MATLAB)'];
-  const lines = rows.map(r => [r.name, r.typeLabel, ...r.pos.map(x => f(x, 4)), r.axisLabel, ...r.axis.map(x => f(x, 4)), ...r.ypr.map(x => f(x, 2)), f(r.mass, 3), r.params,
+  const lines = rows.map(r => [r.name, r.typeLabel, ...r.pos.map(x => f(x, 6)), r.axisLabel, ...r.axis.map(x => f(x, 4)), ...r.ypr.map(x => f(x, 2)), f(r.mass, 4), r.params,
     f(r.toEarth, 1), f(r.toAlong, 1), f(r.toNormal, 1), f(r.q.w, 6), f(r.q.x, 6), f(r.q.y, 6), f(r.q.z, 6), formatMatlab(r.C, 6)].join('\t'));
   return [head.join('\t'), ...lines].join('\n');
 }

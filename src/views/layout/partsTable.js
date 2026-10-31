@@ -39,11 +39,15 @@ const COLS = [
 
 /**
  * @param el container element (an overlay inside the viewport)
- * @param o { onEdit(id), viewToggle(): Node }
+ * @param o { onEdit(id), viewToggle(): Node, onImport() }
  */
-export function createPartsTable(el, { onEdit, viewToggle }) {
+export function createPartsTable(el, { onEdit, viewToggle, onImport }) {
   const open = new Set(); // expanded rows (not persisted)
   const T = () => S.layout.table;
+  // decimal comma: the user's choice, else whatever the browser locale uses
+  const localeComma = (() => { try { return new Intl.NumberFormat(navigator.language).format(1.5).includes(','); } catch { return false; } })();
+  const useComma = () => (T().comma ?? localeComma);
+  const commaBox = () => { const b = h('input', { type: 'checkbox' }); b.checked = useComma(); b.addEventListener('change', () => { T().comma = b.checked; save(); }); return b; };
 
   function render() {
     const t = T(), sc = S.sc, all = partRows(sc), warns = layoutWarnings(sc);
@@ -102,7 +106,9 @@ export function createPartsTable(el, { onEdit, viewToggle }) {
     el.append(
       h('div', { class: 'ptable-bar' }, viewToggle(), typeSel, search,
         h('span', { class: 'lbl' }, `${rows.length} of ${all.length} parts`), h('span', { class: 'hspace' }),
-        h('button', { class: 'btn', onclick: () => copyText(rowsToTSV(rows), 'Table') }, 'Copy table (for Excel)')),
+        h('label', { class: 'chk', title: 'Use decimal commas (e.g. Polish or German Excel). Import reads both.' }, commaBox(), 'Decimal comma'),
+        h('button', { class: 'btn', onclick: () => copyText(rowsToTSV(rows, { comma: useComma() }), 'Table') }, 'Copy table (for Excel)'),
+        h('button', { class: 'btn', onclick: onImport, title: 'Paste the table back after editing it in Excel; you get a preview first' }, 'Import edits…')),
       h('div', { class: 'ptable-scroll' }, h('table', { class: 'parts' },
         h('thead', null, h('tr', { class: 'groups' }, groupRow), h('tr', null, headRow)),
         h('tbody', null, body.length ? body : h('tr', null, h('td', { colspan: COLS.length + 1, class: 'empty' }, 'No parts match the filter.'))))),
@@ -111,7 +117,9 @@ export function createPartsTable(el, { onEdit, viewToggle }) {
           h('dt', null, 'Total mass'), h('dd', null, MP.M.toFixed(2) + ' kg'),
           h('dt', null, 'CoM in SCF'), h('dd', null, '[' + MP.com.map(n3).join(', ') + '] m'),
           h('dt', null, 'Nominal flight'), h('dd', null, `${sc.align.ref.toUpperCase()} · angles between each part's +Z axis and Earth (nadir), along-track and the orbit normal; circular orbit`)),
-        warns.length ? h('ul', { class: 'warns' }, warns.map(w => h('li', { class: w.level }, w.text))) : h('p', { class: 'tip' }, 'No layout warnings.')));
+        h('div', null,
+          warns.length ? h('ul', { class: 'warns' }, warns.map(w => h('li', { class: w.level }, w.text))) : h('p', { class: 'tip' }, 'No layout warnings.'),
+          h('p', { class: 'tip' }, 'To edit many parts at once: Copy table → edit positions, masses or angles in Excel → Import edits. You get a preview before anything changes.'))));
   }
   return { render };
 }

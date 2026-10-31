@@ -49,6 +49,8 @@ Read `docs/CONVENTIONS.md` before touching the math. Key points:
 - New pure logic gets unit tests. Check physics against a known value, such as a textbook result or a reference orbit.
 - The PR description says what changed, what was tested, and what still needs a visual check in the browser. Headless runs can't verify 3D rendering.
 - Add a line to the top (unreleased) section of `CHANGELOG.md` in every feature or fix PR, with the issue number.
+- Don't edit `legacy/`; it's a reference copy of the original single-file version. Don't commit `dist/`.
+- Keep the UI text in English. Keep the existing visual style: `src/styles.css` and the `COL` colours in `gfx/primitives.js`.
 
 ## Releases
 
@@ -59,5 +61,3 @@ Read `docs/CONVENTIONS.md` before touching the math. Key points:
 - Propose a release PR after a batch of merged features, or when the user asks for one.
 - After merging, the user runs **Actions → Release → Run workflow → `vX.Y.Z`**. Claude sessions can't create tags or releases.
 - Builds between releases are labelled in the header (`v0.4.0 · main 0f7fc8c`) via `BUILD_LABEL` in CI and Pages.
-- Don't edit `legacy/`; it's a reference copy of the original single-file version. Don't commit `dist/`.
-- Keep the UI text in English. Keep the existing visual style: `src/styles.css` and the `COL` colours in `gfx/primitives.js`.

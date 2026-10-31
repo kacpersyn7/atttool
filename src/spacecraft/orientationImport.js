@@ -10,15 +10,20 @@
  *           NAME = [w x y z]                  (4 numbers → quaternion)
  *           NAME_pos = [x y z]                (3 numbers → position, m)
  *           NAME_C_CB = np.array([[…], …])    (NumPy, multi-line is fine)
+ *           NAME_mass = 0.4                   (kg)
+ *   table   the Layout table copied to Excel and back (tab-separated, header row "Part …"):
+ *           position, mass and orientation. The table carries yaw-pitch-roll, quaternion and DCM;
+ *           whichever of them was edited is used (if two were edited differently, that's an error).
+ *           Decimal commas (e.g. Polish Excel) are accepted.
  * Name suffixes fix the meaning and override the dialog options: _C_CB / _dcm (C_C←SCF),
- * _C_BC / _C_SG (C_SCF←C), _q_BC (scalar-first, A(q) = C_C←SCF), _q, _pos_B / _pos.
+ * _C_BC / _C_SG (C_SCF←C), _q_BC (scalar-first, A(q) = C_C←SCF), _q, _pos_B / _pos, _mass.
  *
  * Names are matched like the exports write them (see codeName): case-insensitive, with
  * '+X' → '_pX', '−X' → '_mX' and other punctuation → '_', so "CSS-+X" matches CSS_pX.
  * Pure module: parse → plan (preview, nothing changed) → apply.
  */
 import * as AM from '../core/attitude.js';
-import { checkRotation, orthonormalize } from '../core/matrixText.js';
+import { checkRotation, orthonormalize, parseMatrix3 } from '../core/matrixText.js';
 
 const { m } = AM;
 
@@ -33,7 +38,7 @@ const key = name => codeName(name).toLowerCase();
 const SUFFIXES = [ // [suffix, field, direction, quaternion order]
   ['_c_cb', 'dcm', 'CS'], ['_c_bc', 'dcm', 'SC'], ['_c_sg', 'dcm', 'SC'], ['_dcm', 'dcm', null],
   ['_q_bc', 'q', 'CS', 'first'], ['_quat', 'q', null], ['_q', 'q', null],
-  ['_pos_b', 'pos', null], ['_pos', 'pos', null],
+  ['_pos_b', 'pos', null], ['_pos', 'pos', null], ['_mass', 'mass', null],
 ];
 /** Names AttTool's own exports write that are not parts. */
 const IGNORE = new Set(['c_sr_nominal', 'a_rw', 'j', 'com_b']);
@@ -62,6 +67,9 @@ function parseText(text) {
     const nums = (body.replace(/\.\.\./g, ' ').match(NUM) || []).map(Number);
     out.push({ raw: mt[1].trim().replace(/^['"]|['"]$/g, ''), nums });
   }
+  // scalar masses: NAME_mass = 0.4
+  const sc_ = /([A-Za-z_][\w.\-+−' ]*?_mass)\s*[:=]\s*([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)(?![\d.])/gi;
+  while ((mt = sc_.exec(text))) out.push({ raw: mt[1].trim(), nums: [Number(mt[2])] });
   return out;
 }
 
@@ -71,6 +79,7 @@ const qArr = q => (Array.isArray(q) ? q.map(Number) : q && typeof q === 'object'
 
 /** One JSON value (matrix / quaternion / position / object with fields) → partial entry. */
 function fromValue(v) {
+  if (typeof v === 'number') return { mass: v };
   if (isNumArr(v, 9)) return { dcm: to3x3(v) };
   if (isNumArr(v, 4)) return { q: v.flat().map(Number) };
   if (isNumArr(v, 3)) return { pos: v.flat().map(Number) };
@@ -80,9 +89,60 @@ function fromValue(v) {
     if (isNumArr(v.C_BC, 9)) { e.dcm = to3x3(v.C_BC); e.dir = 'SC'; }
     const Q = v.q ?? v.quat ?? v.quaternion; if (Q) e.q = qArr(Q);
     if (isNumArr(v.pos, 3)) e.pos = v.pos.flat().map(Number);
+    if (v.mass !== undefined) e.mass = Number(v.mass);
     return e;
   }
   return null;
+}
+
+/* ---------------- the Layout table, round-tripped through a spreadsheet ---------------- */
+
+/** Number from a spreadsheet cell; accepts decimal commas and a Unicode minus. */
+const cellNum = c => { const t = String(c ?? '').trim().replace(/\s/g, '').replace('−', '-'); return t === '' ? NaN : Number(/^-?\d*,\d+(e[-+]?\d+)?$/i.test(t) ? t.replace(',', '.') : t); };
+
+/** Is this the tab-separated Layout table (header row starting with "Part")? */
+export const isPartsTable = t => /^\uFEFF?"?part"?\t/i.test(String(t).trim());
+
+function parseTable(t) {
+  const lines = t.split(/\r?\n/).filter(l => l.trim());
+  const head = lines[0].split('\t').map(h => h.replace(/^\uFEFF/, '').replace(/"/g, '').replace(/\s*\[.*?\]\s*$/, '').trim().toLowerCase());
+  const col = name => head.indexOf(name);
+  const ix = { part: col('part'), x: col('x'), y: col('y'), z: col('z'), mass: col('mass'), yaw: col('yaw'), pitch: col('pitch'), roll: col('roll'),
+    q: ['q0', 'q1', 'q2', 'q3'].map(col), dcm: head.findIndex(h => h.startsWith('c_cb')) };
+  const entries = [];
+  for (const line of lines.slice(1)) {
+    const c = line.split('\t'); const name = (c[ix.part] || '').replace(/^"|"$/g, '').trim(); if (!name) continue;
+    const num = i => (i >= 0 ? cellNum(c[i]) : NaN);
+    const e = { name, base: key(name), table: true, alts: {} };
+    const pos = [ix.x, ix.y, ix.z].map(num); if (pos.every(Number.isFinite)) e.pos = pos;
+    if (Number.isFinite(num(ix.mass))) e.mass = num(ix.mass);
+    const ypr = [ix.yaw, ix.pitch, ix.roll].map(num); if (ypr.every(Number.isFinite)) e.alts.ypr = ypr;
+    const q = ix.q.map(num); if (q.every(Number.isFinite)) e.alts.q = q;
+    if (ix.dcm >= 0 && c[ix.dcm]) {
+      let d = c[ix.dcm].replace(/^"|"$/g, ''); if (!d.includes('.') && /\d,\d/.test(d)) d = d.replace(/(\d),(\d)/g, '$1.$2');
+      try { e.alts.dcm = parseMatrix3(d); } catch { /* ignore an unreadable DCM cell; the other columns still work */ }
+    }
+    if (!e.pos && e.mass === undefined && !Object.keys(e.alts).length) e.error = `${name}: no numbers found in this row`;
+    entries.push(e);
+  }
+  return entries;
+}
+
+/**
+ * Orientation from a table row: use whichever of yaw-pitch-roll / quaternion / DCM was edited.
+ * Returns { C } (C_C←SCF, or null when nothing changed) or { error }.
+ */
+function tableOrientation(alts, oldC) {
+  const ang = (A, B) => { const d = AM.C2q(m.mul(A, m.T(B))); return 2 * Math.atan2(Math.hypot(d.x, d.y, d.z), Math.abs(d.w)) * AM.R2D; };
+  const cands = [];
+  if (alts.dcm) { const r = checkRotation(alts.dcm, 1e-5); if (!r.ok) return { error: r.det < 0 ? 'DCM column is a reflection (det −1)' : 'DCM column is not a rotation' }; cands.push({ k: 'DCM', C: orthonormalize(alts.dcm), tol: 1e-3 }); }
+  if (alts.q) { const n = AM.q.norm({ w: alts.q[0], x: alts.q[1], y: alts.q[2], z: alts.q[3] }); if (!(n > 1e-9)) return { error: 'quaternion columns are zero' };
+    cands.push({ k: 'quaternion', C: AM.q2C(AM.q.unit({ w: alts.q[0], x: alts.q[1], y: alts.q[2], z: alts.q[3] })), tol: 1e-3 }); }
+  if (alts.ypr) cands.push({ k: 'yaw-pitch-roll', C: AM.euler2C('321', alts.ypr.map(x => x * AM.D2R)), tol: 0.02 }); // 2 decimals in the table
+  const edited = cands.filter(c => ang(c.C, oldC) > c.tol);
+  if (!edited.length) return { C: null };
+  for (const a of edited) for (const b of edited) if (a !== b && ang(a.C, b.C) > Math.max(a.tol, b.tol)) return { error: `${edited.map(c => c.k).join(' and ')} columns were edited differently. Edit only one of them.` };
+  return { C: edited[0].C, used: edited[0].k }; // DCM > quaternion > yaw-pitch-roll (most precise first)
 }
 
 /**
@@ -91,6 +151,7 @@ function fromValue(v) {
  */
 export function parseOrientations(text) {
   const t = String(text).trim(); if (!t) return [];
+  if (isPartsTable(t)) return parseTable(t);
   const raw = []; // { raw, field?, value, dir?, order? }
   let json = null;
   if (/^[[{]/.test(t)) { try { json = JSON.parse(t); } catch { json = null; } }
@@ -114,20 +175,23 @@ export function parseOrientations(text) {
     let part;
     if (r.nums) {
       const n = r.nums.length;
-      part = s.field === 'pos' || (!s.field && n === 3) ? (n === 3 ? { pos: r.nums } : null)
+      part = s.field === 'mass' ? (n === 1 ? { mass: r.nums[0] } : null)
+        : s.field === 'pos' || (!s.field && n === 3) ? (n === 3 ? { pos: r.nums } : null)
         : s.field === 'q' || (!s.field && n === 4) ? (n === 4 ? { q: r.nums } : null)
           : n === 9 ? { dcm: to3x3(r.nums) } : null;
-      if (!part) { e.error = `${r.raw}: expected 9 (DCM), 4 (quaternion) or 3 (position) numbers, found ${n}`; continue; }
+      if (!part) { e.error = s.field === 'mass' ? `${r.raw}: expected one number (kg)` : `${r.raw}: expected 9 (DCM), 4 (quaternion) or 3 (position) numbers, found ${n}`; continue; }
     } else {
       part = fromValue(r.value);
       if (part && s.field && part[s.field] === undefined) { // e.g. "STR_1_q": [ … ] given as a bare array
         const only = Object.values(part)[0]; part = { [s.field]: only };
       }
-      if (!part || !Object.keys(part).some(k => ['dcm', 'q', 'pos'].includes(k))) { e.error = `${r.raw}: no DCM, quaternion or position found`; continue; }
+      if (part && s.field === 'mass' && typeof r.value === 'number') part = { mass: r.value };
+      if (!part || !Object.keys(part).some(k => ['dcm', 'q', 'pos', 'mass'].includes(k))) { e.error = `${r.raw}: no DCM, quaternion, position or mass found`; continue; }
     }
     if (part.dcm) { e.dcm = part.dcm; e.dcmDir = part.dir || s.dir || r.dir || null; }
     if (part.q) { e.q = part.q; e.qDir = s.dir || r.dir || null; e.qOrder = s.order || null; }
     if (part.pos) e.pos = part.pos;
+    if (part.mass !== undefined) e.mass = part.mass;
   }
   return [...byBase.values()];
 }
@@ -139,14 +203,15 @@ export function parseOrientations(text) {
  * @param sc spacecraft; @param entries from parseOrientations
  * @param opts { dir: 'CS' | 'SC' (matrices/quaternions given as C_C←SCF or C_SCF←C),
  *               order: 'first' | 'last' (array quaternions), fix: orthonormalise near-rotations }
- * @returns rows { name, target ('bus' | component id | null), label, q?, pos?, angle (deg), dPos (m),
+ * Table rows (from the Layout table) always use C_C←SCF and scalar-first; the options don't apply.
+ * @returns rows { name, target ('bus' | component id | null), label, q?, pos?, mass?, angle (deg), dPos (m), dMass (kg),
  *                 status: 'ok' | 'fixed' | 'same' | 'unmatched' | 'ambiguous' | 'error', msg }
  */
 export function planImport(sc, entries, opts = {}) {
   const dir = opts.dir || 'CS', order = opts.order || 'first', fix = opts.fix !== false;
   const parts = [{ id: 'bus', name: 'Bus', obj: sc.bus, k: 'bus' }, ...sc.comps.map(c => ({ id: c.id, name: c.name, obj: c, k: key(c.name) }))];
   return entries.map(e => {
-    const row = { name: e.name, target: null, label: '', angle: 0, dPos: 0, status: 'ok', msg: '' };
+    const row = { name: e.name, target: null, label: '', angle: 0, dPos: 0, dMass: 0, status: 'ok', msg: '' };
     if (e.error) return { ...row, status: 'error', msg: e.error };
     const hits = parts.filter(p => p.k === e.base);
     const exact = hits.filter(p => p.name.toLowerCase() === String(e.name).toLowerCase());
@@ -155,7 +220,11 @@ export function planImport(sc, entries, opts = {}) {
     row.target = hit.id; row.label = hit.name;
     const oldC = AM.q2C(hit.obj.q || AM.q.id());
     let C = null;
-    if (e.dcm) {
+    if (e.alts) {
+      const r = tableOrientation(e.alts, oldC);
+      if (r.error) return { ...row, status: 'error', msg: r.error };
+      C = r.C; if (r.used) row.msg = 'from the ' + r.used + ' column' + (r.used === 'yaw-pitch-roll' ? 's' : '');
+    } else if (e.dcm) {
       let D = (e.dcmDir || dir) === 'SC' ? m.T(e.dcm) : e.dcm;
       const r = checkRotation(D, 1e-5); // files often carry 6 decimals
       if (r.ok) D = orthonormalize(D);
@@ -178,8 +247,16 @@ export function planImport(sc, entries, opts = {}) {
       row.angle = 2 * Math.atan2(Math.hypot(dq.x, dq.y, dq.z), Math.abs(dq.w)) * AM.R2D;
     }
     if (e.pos) { row.pos = e.pos.slice(); row.dPos = AM.v.norm(AM.v.sub(e.pos, hit.obj.pos || [0, 0, 0])); }
-    if (!row.q && !row.pos) return { ...row, status: 'error', msg: 'nothing to import' };
-    if (row.status === 'ok' && row.angle < 1e-4 && row.dPos < 1e-6) row.status = 'same'; // below file precision
+    if (e.mass !== undefined) {
+      if (!Number.isFinite(e.mass) || e.mass < 0) return { ...row, status: 'error', msg: 'mass must be a number ≥ 0 (kg)' };
+      row.mass = e.mass; row.dMass = e.mass - (hit.obj.mass || 0);
+    }
+    if (e.table) { // a spreadsheet round trip: write back only what was actually edited
+      if (row.pos && row.dPos < 1e-6) { delete row.pos; row.dPos = 0; }
+      if (row.mass !== undefined && Math.abs(row.dMass) < 1e-9) { delete row.mass; row.dMass = 0; }
+    }
+    if (!row.q && !row.pos && row.mass === undefined) return { ...row, status: e.table ? 'same' : 'error', msg: e.table ? '' : 'nothing to import' };
+    if (row.status === 'ok' && row.angle < 1e-4 && row.dPos < 1e-6 && Math.abs(row.dMass) < 1e-9) row.status = 'same'; // below file precision
     return row;
   });
 }
@@ -192,6 +269,7 @@ export function applyImport(sc, rows) {
     const obj = r.target === 'bus' ? sc.bus : sc.comps.find(c => c.id === r.target); if (!obj) continue;
     if (r.q) obj.q = r.q;
     if (r.pos) obj.pos = r.pos.slice();
+    if (r.mass !== undefined) obj.mass = r.mass;
     delete obj.eul; n++;
   }
   return n;
