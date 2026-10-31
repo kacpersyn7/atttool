@@ -26,6 +26,7 @@ const HTML = `
 <h3>Environment models (deliberately simple)</h3>
 <ul>
 <li>Orbit: Keplerian two-body with optional J2 secular drift of Ω and ω. No drag, no SRP.</li>
+<li>Orbit definition: elements, a J2000/GCRF state vector r, v at the epoch, or a TLE. A TLE is flown with the same Keplerian + J2 model (not SGP4): good near its epoch, drifting by kilometres per day.</li>
 <li>Sun: low-precision almanac formula (~0.01°). Eclipse: cylindrical shadow (no penumbra).</li>
 <li>Magnetic field: tilted dipole, pole at 80.8°N 72.7°W, B₀ = 29 900 nT. Real IGRF differs by up to ~20 %.</li>
 <li>Star tracker availability: blinded if the Sun is inside the Sun-exclusion angle (outside eclipse) or the Earth limb is closer than the Earth-exclusion angle. Moon ignored.</li>

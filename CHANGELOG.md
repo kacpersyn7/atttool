@@ -5,6 +5,10 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 
 ## [Unreleased]
 
+### Added
+- **Orbit from a state vector or a TLE** (Orbit tab → Orbit → *Defined by: Elements | r, v (J2000) | TLE*). r, v at the epoch are converted exactly to elements (circular / equatorial cases handled; open or sub-surface orbits reported); a pasted TLE is checked (checksums) and sets the epoch. Switching definitions keeps the orbit. *State now* shows r, v at the current time, with *Make this the initial state* and *Copy r, v (MATLAB)*. TLEs are flown with Keplerian + J2, not SGP4 (stated in the UI). (#8)
+- The epoch can have seconds.
+
 ### Fixed
 - Body frame view: the spacecraft no longer intersects the Earth; the Earth keeps its true apparent size but sits beyond the camera's reach. (#27)
 

@@ -105,3 +105,46 @@ test('timeline: SSO 10:30 has ~35 % eclipse and caches', () => {
   assert.equal(computeTimeline(s, 1, tl, 180), tl, 'cached');
   assert.notEqual(computeTimeline(s, 2, tl, 180), tl, 'invalidated by scVersion');
 });
+
+/* ---------------- orbit definitions ---------------- */
+import { switchDefinition, restartFromState, epochDate, parseEpoch, formatEpoch, definitionError } from '../src/sim/scenario.js';
+import * as ENV2 from '../src/env/index.js';
+
+const posAt = (o, t) => ENV2.propagate(orbitElements(o), t, o.j2).r;
+
+test('switching elements → r,v → elements keeps the orbit', () => {
+  const s = state('offsets'); s.orbit.hp = 500; s.orbit.ha = 900; s.orbit.argp = 40; s.orbit.nu0 = 75;
+  const before = [0, 3000, 50000].map(t => posAt(s.orbit, t));
+  switchDefinition(s.orbit, 'rv'); assert.equal(s.orbit.def, 'rv');
+  [0, 3000, 50000].forEach((t, k) => close(AM.v.norm(AM.v.sub(posAt(s.orbit, t), before[k])), 0, 1e-3, 'rv t=' + t));
+  switchDefinition(s.orbit, 'elements');
+  [0, 3000, 50000].forEach((t, k) => close(AM.v.norm(AM.v.sub(posAt(s.orbit, t), before[k])), 0, 0.05, 'elements t=' + t));
+});
+
+test('restart from the current state continues the same trajectory (with J2)', () => {
+  const s = state('offsets'); s.orbit.j2 = true;
+  const t0 = 4321.5, ahead = 2000, want = posAt(s.orbit, t0 + ahead), d0 = epochDate(s.orbit).getTime();
+  restartFromState(s.orbit, t0);
+  assert.equal(s.orbit.def, 'rv'); assert.equal(s.orbit.t, 0);
+  close(epochDate(s.orbit).getTime() - d0, t0 * 1000, 1);
+  close(AM.v.norm(AM.v.sub(posAt(s.orbit, ahead), want)), 0, 1e-3);
+});
+
+test('TLE definition: epoch and elements come from the TLE', () => {
+  const s = state('offsets'); s.orbit.def = 'tle';
+  s.orbit.tle = '1 25544U 98067A   08264.51782528 -.00002182  00000-0 -11606-4 0  2927\n2 25544  51.6416 247.4627 0006703 130.5360 325.0288 15.72125391563537';
+  assert.equal(definitionError(s.orbit), null);
+  assert.equal(epochDate(s.orbit).toISOString(), '2008-09-20T12:25:40.104Z');
+  close(orbitElements(s.orbit).i * AM.R2D, 51.6416, 1e-9);
+  switchDefinition(s.orbit, 'elements'); // keeps the TLE epoch as the scenario epoch
+  assert.equal(s.orbit.epoch, '2008-09-20T12:25:40.104'); close(s.orbit.i, 51.6416, 1e-9);
+});
+
+test('epochs with seconds; definition errors', () => {
+  assert.equal(parseEpoch('2026-10-05T10:00').toISOString(), '2026-10-05T10:00:00.000Z');
+  assert.equal(parseEpoch('2026-10-05T10:00:07.25').toISOString(), '2026-10-05T10:00:07.250Z');
+  assert.equal(parseEpoch('nonsense'), null);
+  assert.equal(formatEpoch(new Date('2026-10-05T10:00:00Z')), '2026-10-05T10:00');
+  const o = { def: 'rv', r: [7000, 0, 0], v: [0, 12, 0] }; assert.match(definitionError(o), /escape/);
+  o.v = [0, 5, 0]; assert.match(definitionError(o), /below the surface/);
+});

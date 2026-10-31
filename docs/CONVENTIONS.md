@@ -85,7 +85,9 @@ Component orientation `c.q` is q_BC: `q2C(c.q) = C_CB`.
 
 ## Environment models (deliberately simple)
 
-- **Orbit:** Keplerian two-body with optional J2 secular drift of Ω and ω. No drag, no SRP.
+- **Orbit:** Keplerian two-body with optional J2 secular drift of Ω and ω. No drag, no SRP. The orbit is defined by elements, by a **J2000/GCRF state vector** at the epoch (converted exactly to osculating elements; with J2 these feed a mean-element secular model, so long runs drift slightly), or by a **TLE**.
+- **TLE:** the mean elements are flown with the same Keplerian + J2 model, **not SGP4** (no drag, no Kozai/Brouwer correction, TEME treated as ECI). Good near the TLE epoch, drifting by kilometres per day.
+- **ECI** ignores precession and nutation, so it is J2000 ≈ GCRF to well under a degree over decades.
 - **Sun:** low-precision almanac formula (~0.01°). **Eclipse:** cylindrical shadow (no penumbra).
 - **Magnetic field:** tilted dipole, pole at 80.8°N 72.7°W, B₀ = 29 900 nT. Real IGRF differs by up to ~20 %.
 - **Earth:** sphere, R = 6378.137 km. GMST from the IAU-82 polynomial; UT1 ≈ UTC.
