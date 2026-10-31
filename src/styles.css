@@ -108,6 +108,15 @@ details.more[open] summary{margin-bottom:6px}
 #inset .t{position:absolute;top:6px;left:8px;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);pointer-events:none}
 #timeline{position:absolute;left:12px;right:12px;bottom:12px;height:auto}
 #timeline canvas{width:100%;display:block;cursor:crosshair}
+.plotbar{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:6px;font-size:12px}
+.plotbar .lbl{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-right:4px}
+.plotbar select{width:auto;max-width:260px;padding:2px 4px;font-size:12px}
+.plotbar .sp{flex:1}
+.plotbar .chk{font-size:12px;color:var(--muted)}
+.pchip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:999px;padding:1px 4px 1px 9px;color:var(--text);white-space:nowrap;max-width:240px;overflow:hidden;text-overflow:ellipsis}
+.pchip button{background:none;border:0;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:0 3px}
+.pchip button:hover{color:var(--bad)}
+#timeline canvas.plots{margin-bottom:8px}
 .legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted)}
 .legend i{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}
 .hud .kv{min-width:220px}

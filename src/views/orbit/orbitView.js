@@ -2,7 +2,7 @@
  * Workspace 2 — Orbit & Frames.
  * Earth (ECEF texture, rotating by GMST), orbit line coloured by eclipse, ground track,
  * the spacecraft with ECI / orbital (VVLH, LVLH, VNC) / body frames, Sun & B-field vectors, payload footprint,
- * a body-frame inset and a one-orbit sensor timeline.
+ * a body-frame inset, signal plots and a one-orbit sensor timeline.
  *
  * Scene unit = 1000 km. Physics lives in sim/ and env/; this file only draws.
  */
@@ -21,6 +21,7 @@ import { epochDate, orbitElements, applyPreset } from '../../sim/scenario.js';
 import { attitudeAt, bodyRate, payloadComp } from '../../sim/guidance.js';
 import { createBodyInset } from './bodyInset.js';
 import { createTimelineView } from './timelineView.js';
+import { createPlotView } from './plotView.js';
 import { orbitPanel } from './orbitPanel.js';
 
 const U = 1 / 1000; // scene unit = 1000 km
@@ -72,6 +73,7 @@ export function createOrbitView({ renderRail }) {
   const insetEl = $('#inset');
   const inset = createBodyInset(insetEl, earthMesh.material.map);
   const timeline = createTimelineView($('#tlc'));
+  const plots = createPlotView($('#timeline .hud'));
 
   /* ---------- geometry refresh (cached) ---------- */
   let lastOrbitKey = '', lastOrbitT = 0, lastTrackT = -1e9, lastTrackKey = '';
@@ -191,7 +193,7 @@ export function createOrbitView({ renderRail }) {
   function leave() { insetEl.hidden = true; $('#timeline').hidden = true; }
   /** Called ~10×/s: timeline redraw and inset placement above it. */
   function tick() {
-    timeline.draw();
+    plots.draw(); timeline.draw();
     const tlH = $('#timeline').getBoundingClientRect().height; insetEl.style.bottom = (tlH + 22) + 'px';
     if (S.orbit.playing) syncAll();
   }
