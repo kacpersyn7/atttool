@@ -24,7 +24,7 @@ export function defaultState() {
     tab: 'rot',
     rot: { seq: '321', euler: [30, 20, 10], q: AM.C2q(AM.euler2C('321', [30 * D2R, 20 * D2R, 10 * D2R])), scalarFirst: true, dcmView: 'BR', probe: [1, 1, 0], showProbe: true, showGhosts: true, showTrails: true, showSC: true, nudge: 15 },
     orbit: {
-      preset: 'sso1030', epoch: EPOCH0, hp: 550, ha: 550, i: 97.59, raan: 0, argp: 0, nu0: 0, j2: true, t: 0, playing: true, speed: 60,
+      preset: 'sso1030', def: 'elements', r: null, v: null, tle: '', epoch: EPOCH0, hp: 550, ha: 550, i: 97.59, raan: 0, argp: 0, nu0: 0, j2: true, t: 0, playing: true, speed: 60,
       mode: 'offsets', refFrame: 'vvlh', roll: 0, pitch: 0, yaw: 0, sunAxis: '-Z', sunSec: 'nadir', tgtLat: 52.23, tgtLon: 21.01, tgtComp: '',
       show: { eci: true, orbFrame: true, track: true, sunv: true, bv: true, cones: true, follow: false }, scale: 1.0,
     },

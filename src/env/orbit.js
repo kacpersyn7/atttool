@@ -39,6 +39,44 @@ export function propagate(el, t, j2) {
   return { r: m.mulv(R, rp), v: m.mulv(R, vp), nu, raan, argp, period: 2 * Math.PI / n };
 }
 
+/**
+ * Classical elements from an inertial state vector (r km, v km/s) — the inverse of
+ * propagate(el, 0). Singular cases are resolved so the round trip is exact:
+ *   circular (e ≈ 0)            → argp = 0, nu0 = argument of latitude
+ *   equatorial (i ≈ 0 or 180°)  → raan = 0, argp = longitude of perigee
+ *   circular + equatorial       → raan = argp = 0, nu0 = true longitude
+ * @returns {{a, e, i, raan, argp, nu0, flags: string[]} | {error: string}} angles in rad
+ */
+export function rv2coe(r, vel) {
+  const rn = v.norm(r), vn = v.norm(vel);
+  if (!(rn > 1e-6) || !Number.isFinite(vn)) return { error: 'position must be non-zero' };
+  const hv = v.cross(r, vel), hn = v.norm(hv);
+  if (hn < 1e-9) return { error: 'position and velocity are parallel (radial trajectory)' };
+  const energy = vn * vn / 2 - MU / rn;
+  if (energy >= 0) return { error: 'not a closed orbit: speed ≥ escape speed (' + Math.sqrt(2 * MU / rn).toFixed(3) + ' km/s here)' };
+  const a = -MU / (2 * energy);
+  const ev = v.scale(v.sub(v.scale(r, vn * vn - MU / rn), v.scale(vel, v.dot(r, vel))), 1 / MU);
+  const e = v.norm(ev);
+  const i = Math.acos(Math.max(-1, Math.min(1, hv[2] / hn)));
+  const nv = [-hv[1], hv[0], 0], nn = v.norm(nv); // node vector
+  const EPS = 1e-10, flags = [];
+  const ang = (x, y) => Math.acos(Math.max(-1, Math.min(1, v.dot(x, y) / (v.norm(x) * v.norm(y)))));
+  const wrap = x => ((x % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+  const equatorial = nn / hn < EPS, circular = e < EPS;
+  let raan = 0, argp = 0, nu0;
+  if (!equatorial) { raan = Math.atan2(nv[1], nv[0]); } else flags.push('equatorial');
+  if (circular) flags.push('circular');
+  // reference direction in the orbit plane from which ω and ν are measured
+  const hHat = v.scale(hv, 1 / hn);
+  const nodeDir = equatorial ? [1, 0, 0] : v.scale(nv, 1 / nn);
+  // in-plane angle from u to w, signed by the orbit normal
+  const inPlane = (u, w) => { const t = ang(u, w); return v.dot(v.cross(u, w), hHat) < 0 ? 2 * Math.PI - t : t; };
+  if (!circular) { argp = inPlane(nodeDir, ev); nu0 = inPlane(ev, r); }
+  else nu0 = inPlane(nodeDir, r);
+  if (equatorial && i > Math.PI / 2) { /* retrograde equatorial: node direction stays +X */ }
+  return { a, e: circular ? 0 : e, i, raan: wrap(raan), argp: wrap(argp), nu0: wrap(nu0), flags };
+}
+
 /** Orbital period (s) for semi-major axis a (km). */
 export function period(a) { return 2 * Math.PI * Math.sqrt(a * a * a / MU); }
 

@@ -123,3 +123,61 @@ test('dipole field: ~30 µT at the equator, twice that at the pole', () => {
   assert.ok(eq > 25000 && eq < 40000, 'equator ' + eq);
   assert.ok(pole / eq > 1.6 && pole / eq < 2.1, 'ratio ' + pole / eq);
 });
+
+/* ---------------- state vectors and TLEs ---------------- */
+import { rng } from './helpers.js';
+
+test('rv2coe: Vallado example 2-5', () => {
+  const c = ENV.rv2coe([6524.834, 6862.875, 6448.296], [4.901327, 5.533756, -1.976341]);
+  close(c.a, 36127.343, 0.02); close(c.e, 0.832853, 1e-6);
+  close(c.i / D2R, 87.870, 1e-3); close(c.raan / D2R, 227.898, 1e-3); close(c.argp / D2R, 53.38, 0.01); close(c.nu0 / D2R, 92.335, 1e-3);
+});
+
+test('rv2coe inverts propagate(el, 0), including circular / equatorial / retrograde orbits', () => {
+  const rand = rng(7);
+  const cases = [];
+  for (let k = 0; k < 60; k++) cases.push({ a: 6700 + rand() * 30000, e: rand() * 0.8, i: rand() * Math.PI, raan: rand() * 6.28, argp: rand() * 6.28, nu0: rand() * 6.28 });
+  cases.push({ a: 7000, e: 0, i: 1.7, raan: 1, argp: 0, nu0: 2 });        // circular
+  cases.push({ a: 7000, e: 0.1, i: 0, raan: 0, argp: 1.2, nu0: 0.4 });    // equatorial
+  cases.push({ a: 42164, e: 0, i: 0, raan: 0, argp: 0, nu0: 4 });         // GEO: circular + equatorial
+  cases.push({ a: 7000, e: 0.05, i: Math.PI, raan: 0, argp: 1, nu0: 2 }); // retrograde equatorial
+  for (const el of cases) {
+    const s = ENV.propagate(el, 0, false), c = ENV.rv2coe(s.r, s.v);
+    assert.equal(c.error, undefined);
+    const s2 = ENV.propagate(c, 0, false);
+    close(v.norm(v.sub(s.r, s2.r)), 0, 1e-6, 'r'); close(v.norm(v.sub(s.v, s2.v)), 0, 1e-9, 'v');
+    close(c.a, el.a, 1e-6 * el.a); close(c.e, el.e, 1e-9);
+  }
+});
+
+test('rv2coe rejects open and degenerate trajectories', () => {
+  assert.match(ENV.rv2coe([7000, 0, 0], [0, 11, 0]).error, /escape/);
+  assert.match(ENV.rv2coe([7000, 0, 0], [3, 0, 0]).error, /radial/);
+  assert.match(ENV.rv2coe([0, 0, 0], [7, 0, 0]).error, /non-zero/);
+});
+
+const ISS = 'ISS (ZARYA)\n1 25544U 98067A   08264.51782528 -.00002182  00000-0 -11606-4 0  2927\n2 25544  51.6416 247.4627 0006703 130.5360 325.0288 15.72125391563537';
+
+test('TLE: ISS example (epoch, elements, checksum)', () => {
+  const t = ENV.parseTLE(ISS);
+  assert.equal(t.name, 'ISS (ZARYA)'); assert.equal(t.satnum, '25544');
+  assert.equal(t.epoch.toISOString(), '2008-09-20T12:25:40.104Z');
+  close(t.i, 51.6416, 0); close(t.raan, 247.4627, 0); close(t.e, 0.0006703, 0); close(t.argp, 130.536, 0); close(t.M, 325.0288, 0);
+  close(t.n, 15.72125391, 0); close(t.bstar, -0.11606e-4, 1e-12);
+  close(t.a - ENV.RE, 352.8, 0.5); // ~350 km in 2008
+  assert.deepEqual(t.warnings, []);
+});
+
+test('TLE: bad checksum is a warning, garbage is an error', () => {
+  const bad = ISS.replace('563537', '563530');
+  assert.match(ENV.parseTLE(bad).warnings[0], /checksum/);
+  assert.throws(() => ENV.parseTLE('hello'), /two lines/);
+  assert.throws(() => ENV.parseTLE('1 25544U\n2 25544'), /69/);
+});
+
+test('meanToTrue: Kepler', () => {
+  for (const e of [0, 0.1, 0.7]) for (const M of [0.3, 2, 5]) {
+    const nu = ENV.meanToTrue(M, e), E = 2 * Math.atan(Math.sqrt((1 - e) / (1 + e)) * Math.tan(nu / 2));
+    close(((E - e * Math.sin(E)) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI), M, 1e-10);
+  }
+});
