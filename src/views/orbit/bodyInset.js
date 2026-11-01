@@ -29,6 +29,8 @@ export function createBodyInset(insetEl, earthMap) {
   const iSunA = new Arrow(COL.sun, 1.5, 0.014, { label: 'Sun' }); I.scene.add(iSunA);
   const iSunGlow = glowSprite('#ffd27a', 0.9); I.scene.add(iSunGlow);
   const iMoon = new Arrow(COL.moon, 1.3, 0.011, { label: 'Moon' }); I.scene.add(iMoon);
+  // Moon disc where the arrow points, lit by iSun so it shows the phase (not to scale)
+  const iMoonBall = new THREE.Mesh(new THREE.SphereGeometry(0.07, 32, 16), new THREE.MeshPhongMaterial({ color: 0xd4d1cb, emissive: 0x1c1b22, shininess: 2 })); I.scene.add(iMoonBall);
   const iB = new Arrow(COL.teal, 1.35, 0.014, { label: 'B' }); I.scene.add(iB);
   const iV = new Arrow(COL.cyan, 1.2, 0.01, { label: 'v' }); I.scene.add(iV);
   const iPlane = new THREE.Mesh(new THREE.CircleGeometry(0.95, 48), new THREE.MeshBasicMaterial({ color: COL.teal, transparent: true, opacity: .13, side: THREE.DoubleSide, depthWrite: false })); I.scene.add(iPlane);
@@ -49,6 +51,7 @@ export function createBodyInset(insetEl, earthMap) {
     iSunA.setDir(sunB); iSunA.mat.transparent = true; iSunA.mat.opacity = A.ecl ? .3 : 1; iSunGlow.position.set(...AM.v.scale(sunB, 2.1)); iSunGlow.visible = !A.ecl;
     // Moon: dimmed while it is hidden behind the Earth (it cannot blind a star tracker then)
     const moonB = AM.m.mulv(A.CBI, A.moon); iMoon.visible = S.orbit.show.moonv; iMoon.setDir(moonB); iMoon.mat.transparent = true; iMoon.mat.opacity = A.moonUp ? 1 : .3;
+    iMoonBall.visible = S.orbit.show.moonv && A.moonUp; iMoonBall.position.set(...AM.v.scale(AM.v.unit(moonB), 1.75)); // hidden behind the Earth
     iB.setDir(BB); iPlane.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), V3(AM.v.unit(BB))); iV.setDir(vB);
     I.controls.update();
   }

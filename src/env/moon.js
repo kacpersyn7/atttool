@@ -3,6 +3,9 @@ import { D2R } from '../core/linalg.js';
 import { RE } from './constants.js';
 import { jd } from './time.js';
 
+/** Mean radius of the Moon (km). */
+export const RMOON = 1737.4;
+
 /**
  * Geocentric Moon position in ECI (km), low-precision series from the Astronomical Almanac
  * (Vallado, "Fundamentals of Astrodynamics", Algorithm 31): ~0.3° in longitude, ~0.2° in

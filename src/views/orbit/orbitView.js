@@ -36,6 +36,8 @@ export function createOrbitView({ renderRail }) {
   V.scene.add(new THREE.AmbientLight(0x6d7f99, 0.28));
   const sunLight = new THREE.DirectionalLight(0xfff3dc, 1.25); V.scene.add(sunLight); V.scene.add(sunLight.target);
   const sunGlow = glowSprite('#ffd27a', 60); V.scene.add(sunGlow);
+  // Moon at its true distance and size; lit by sunLight, so it shows the right phase
+  const moonMesh = new THREE.Mesh(new THREE.SphereGeometry(ENV.RMOON * U, 48, 24), new THREE.MeshPhongMaterial({ color: 0xc9c6c0, shininess: 2 })); V.scene.add(moonMesh);
 
   /* ---------- Earth & frames ---------- */
   const RE = ENV.RE * U;
@@ -127,6 +129,7 @@ export function createOrbitView({ renderRail }) {
     // vectors at the spacecraft (thickness scales with S/C size, length kept in scene units)
     const L = k * 2.6, vs = Math.max(.4, k * 6);
     sunArrow.visible = o.show.sunv; sunArrow.position.copy(pos); sunArrow.setDir(A.sun); sunArrow.mat.opacity = A.ecl ? .35 : 1; sunArrow.mat.transparent = true; sunArrow.scale.setScalar(vs); sunArrow.setLength(L / vs);
+    moonMesh.visible = o.show.moonv; moonMesh.position.set(...AM.v.scale(ENV.moonECI(A.date), U));
     moonArrow.visible = o.show.moonv; moonArrow.position.copy(pos); moonArrow.setDir(A.moon); moonArrow.mat.transparent = true; moonArrow.mat.opacity = A.moonUp ? 1 : .3; moonArrow.scale.setScalar(vs); moonArrow.setLength(L * .75 / vs);
     const BI = ENV.bfieldECI(A.st.r, A.date);
     bArrow.visible = o.show.bv; bArrow.position.copy(pos); bArrow.setDir(BI); bArrow.scale.setScalar(vs); bArrow.setLength(L * .8 / vs);
