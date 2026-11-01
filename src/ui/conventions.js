@@ -22,7 +22,7 @@ const HTML = `
 <h3>Euler angles</h3>
 <p>Sequence i-j-k (e.g. 3-2-1) means intrinsic rotations: θ₁ about axis i of R, θ₂ about the <i>new</i> j axis, θ₃ about the <i>newest</i> k axis. <code>C_BR = R_k(θ₃)·R_j(θ₂)·R_i(θ₁)</code> with frame-rotation matrices, e.g. <code>R₃(ψ) = [[c, s, 0], [−s, c, 0], [0, 0, 1]]</code>. 3-2-1 = yaw ψ, pitch θ, roll φ.</p>
 <h3>Quaternions</h3>
-<p><code>q = [q₀; q₁ q₂ q₃] = [cos(φ/2); ê sin(φ/2)]</code>. The attitude matrix is <code>C_BR = A(q) = (q₀² − |q_v|²)I + 2 q_v q_vᵀ − 2 q₀[q_v×]</code> (Shuster/JPL reading, same numbers as the Hamilton quaternion of the active rotation R→B). Toggle scalar-first / scalar-last in the Rotation Lab. q and −q are the same attitude.</p>
+<p><code>q = [q₀; q₁ q₂ q₃] = [cos(φ/2); ê sin(φ/2)]</code>. The attitude matrix is <code>C_BR = A(q) = (q₀² − |q_v|²)I + 2 q_v q_vᵀ − 2 q₀[q_v×]</code> (Shuster/JPL reading, same numbers as the Hamilton quaternion of the active rotation R→B). Toggle scalar-first / scalar-last in the Rotation Lab. q and −q are the same attitude. The signal plots keep q sign-continuous (starting with q₀ ≥ 0); the HUD value can flip sign.</p>
 <h3>Environment models (deliberately simple)</h3>
 <ul>
 <li>Orbit: Keplerian two-body with optional J2 secular drift of Ω and ω. No drag, no SRP.</li>

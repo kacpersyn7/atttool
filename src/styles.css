@@ -41,7 +41,7 @@ nav.tabs button .k{font-family:var(--f-mono);font-size:11px;color:var(--faint);m
 main{display:grid;grid-template-columns:var(--rail) 1fr;min-height:0}
 aside{min-width:0;background:var(--ink1);border-right:1px solid var(--line);overflow-y:auto;padding:12px 12px 40px;display:flex;flex-direction:column;gap:10px;min-height:0}
 #vp{position:relative;min-width:0;min-height:0;overflow:hidden;background:var(--ink0)}
-#vp canvas.main{display:block;width:100%;height:100%;outline:none}
+#vp canvas.main{display:block;width:100%;height:calc(100% - var(--dock, 0px));outline:none}
 .card{background:var(--ink2);border:1px solid var(--line);border-radius:8px;padding:10px 12px 12px;display:flex;flex-direction:column;gap:8px}
 .card h3{margin:0;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:8px}
 .card h3 .sp{flex:1}
@@ -106,8 +106,27 @@ details.more[open] summary{margin-bottom:6px}
 #caption .hud{padding:8px 14px}
 #inset{position:absolute;right:12px;width:min(290px,42%);aspect-ratio:1/1;border:1px solid var(--line);border-radius:8px;cursor:grab;touch-action:none}
 #inset .t{position:absolute;top:6px;left:8px;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);pointer-events:none}
-#timeline{position:absolute;left:12px;right:12px;bottom:12px;height:auto}
+#timeline{position:absolute;left:0;right:0;bottom:0;background:var(--ink1);border-top:1px solid var(--line);font-size:12.5px}
+.dockbody{padding:6px 12px 8px}
+.dock-grip{height:7px;margin-top:-4px;cursor:ns-resize;position:relative}
+.dock-grip::after{content:"";position:absolute;left:50%;top:2px;width:44px;height:3px;margin-left:-22px;border-radius:2px;background:var(--line)}
+.dock-grip:hover::after,.dock-grip.drag::after{background:var(--sun)}
+#timeline.collapsed .dock-grip{visibility:hidden}
+.dockbtn{min-width:26px}
+#hudTL{max-height:calc(100% - var(--dock, 0px) - 24px);overflow:auto}
 #timeline canvas{width:100%;display:block;cursor:crosshair}
+.plotbar{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:6px;font-size:12px;min-height:26px}
+#timeline.collapsed .plotbar{margin-bottom:0;flex-wrap:nowrap}
+.plotbar .lbl{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-right:4px}
+.plotbar select{width:auto;max-width:260px;padding:2px 4px;font-size:12px}
+.plotbar .muted{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
+.plotbar .sp{flex:1}
+.plotbar .chk{font-size:12px;color:var(--muted)}
+.pchip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:999px;padding:1px 4px 1px 9px;color:var(--text);white-space:nowrap;max-width:190px;min-width:0}
+.pchip>span{overflow:hidden;text-overflow:ellipsis}
+.pchip button{background:none;border:0;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:0 3px}
+.pchip button:hover{color:var(--bad)}
+#timeline canvas.plots{margin-bottom:8px}
 .legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted)}
 .legend i{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}
 .hud .kv{min-width:220px}
