@@ -5,6 +5,8 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-01
+
 ### Added
 - **Orbit from a state vector or a TLE** (Orbit tab → Orbit → *Defined by: Elements | r, v (J2000) | TLE*). r, v at the epoch are converted exactly to elements (circular / equatorial cases handled; open or sub-surface orbits reported); a pasted TLE is checked (checksums) and sets the epoch. Switching definitions keeps the orbit. *State now* shows r, v at the current time, with *Make this the initial state* and *Copy r, v (MATLAB)*. TLEs are flown with Keplerian + J2, not SGP4 (stated in the UI). (#8)
 - The epoch can have seconds.
@@ -60,7 +62,8 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 ### Added
 - 40 unit tests (`npm test`), zero-dependency dev server and single-file build, architecture and conventions docs. Original kept in `legacy/`.
 
-[Unreleased]: https://github.com/kacpersyn7/atttool/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/kacpersyn7/atttool/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/kacpersyn7/atttool/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/kacpersyn7/atttool/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/kacpersyn7/atttool/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/kacpersyn7/atttool/compare/v0.2.0...v0.3.0
