@@ -78,8 +78,8 @@ export function createPayloadInset(el) {
       const [a, b] = P([c.x, c.y]), cap = c.kind === 2; x.fillStyle = C.city;
       if (cap) x.fillRect(a - 2.5, b - 2.5, 5, 5); else { x.beginPath(); x.arc(a, b, 2, 0, 2 * Math.PI); x.fill(); }
       if (nLab >= maxLab) continue;
-      const tw = x.measureText(c.name).width;
-      for (const [lx, ly] of [[a + 6, b], [a - 6 - tw, b], [a - tw / 2, b - 11], [a - tw / 2, b + 11]]) {
+      const tw = x.measureText(c.name).width, g = c === near ? 11 : 6; // clear of the target ring (r = 7 px)
+      for (const [lx, ly] of [[a + g, b], [a - g - tw, b], [a - tw / 2, b - g - 5], [a - tw / 2, b + g + 5]]) {
         const rc = [lx - 2, ly - 7, tw + 4, 14];
         if (lx < M || lx + tw > W - M || ly < 9 || ly > H - 9 || !free(rc)) continue;
         placed.push(rc); T(x, c.name, lx, ly, cap ? C.city : C.txt); nLab++; break;
