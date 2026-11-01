@@ -41,7 +41,7 @@ export function createPayloadInset(el) {
     };
     x.save(); x.beginPath(); x.rect(0, 0, W, H); x.clip();
     // map: Earth disc (sea), land, lakes, then lines; all clipped and projected by sim/payloadMap.js
-    const sh = S.orbit.show, Mp = mapView(V.p.CCI, A.st.r, A.date, W / 2 / sc, H / 2 / sc, { borders: sh.plBorders !== false, provinces: sh.plBorders !== false, cities: sh.plCities !== false });
+    const sh = S.orbit.show, Mp = mapView(V.p.CCI, A.st.r, A.date, W / 2 / sc, H / 2 / sc, { borders: sh.plBorders !== false, provinces: sh.plBorders !== false, cities: sh.plCities !== false, px: W });
     const ring = f => { for (let i = 0; i < f.length; i += 2) { const a = cx + f[i] * sc, b = cy + f[i + 1] * sc; i ? x.lineTo(a, b) : x.moveTo(a, b); } x.closePath(); };
     const runs = (list, col, w, dash = []) => { if (!list.length) return; x.strokeStyle = col; x.lineWidth = w; x.setLineDash(dash); x.beginPath(); for (const f of list) for (let i = 0; i < f.length; i += 2) { const a = cx + f[i] * sc, b = cy + f[i + 1] * sc; i ? x.lineTo(a, b) : x.moveTo(a, b); } x.stroke(); x.setLineDash([]); };
     if (Mp.earth) { x.fillStyle = C.sea; x.beginPath(); ring(Mp.earth); x.fill(); }
@@ -60,7 +60,7 @@ export function createPayloadInset(el) {
     }
     const caption = `${p.c.name} · view ${(2 * Math.atan(V.viewTan) * 180 / Math.PI).toFixed(1)}°`;
     const rw = Math.max(...rows.map(([k, val]) => x.measureText(k).width + x.measureText(val).width + 6)) + 12;
-    const boxR = [W - rw - 4, 0, rw + 4, rows.length * 13 + 6], boxL = [0, H - 36, Math.max(x.measureText(caption).width, W * 0.25 + 50) + 14, 36];
+    const boxR = [W - rw - 4, 0, rw + 4, rows.length * 13 + 6], boxL = [0, H - 56, Math.max(x.measureText(caption).width, W * 0.25 + 50, 104) + 14, 56]; // incl. the "Payload view" title
     // reserved: readouts (top right), caption + scale bar (bottom left), the along / right arrow labels
     const placed = [boxR, boxL], M = 4;
     const arrows = V.alongDir ? [[V.alongDir, 26, C.along, 'along'], [V.rightDir, 18, C.muted, 'right']].map(([d, L, col, label]) => ({ d, L, col, label, at: arrowLabel(x, cx, cy, d, L, label) })) : [];
@@ -68,15 +68,22 @@ export function createPayloadInset(el) {
     const free = rc => !placed.some(o => rc[0] < o[0] + o[2] && o[0] < rc[0] + rc[2] && rc[1] < o[1] + o[3] && o[1] < rc[1] + rc[3]);
     x.textAlign = 'left';
     for (const g of V.grid) line(g.pts, C.grid);
-    // cities: dots for all in view, names for the largest that fit (they win over grid labels)
+    // cities: dots for all in view; names for the largest that fit (they win over grid labels), the city
+    // nearest the target first, each tried right, left, above and below its dot
     let nLab = 0; const maxLab = Math.max(3, Math.round(W * H / 6000));
-    for (const c of Mp.cities) {
+    const tq = V.target, d2 = c => tq ? (c.x - tq[0]) ** 2 + (c.y - tq[1]) ** 2 : Infinity;
+    const near = tq && Mp.cities.length ? Mp.cities.reduce((a, c) => d2(c) < d2(a) ? c : a) : null;
+    const order = near && d2(near) < (0.02 * V.viewTan) ** 2 ? [near, ...Mp.cities.filter(c => c !== near)] : Mp.cities;
+    for (const c of order) {
       const [a, b] = P([c.x, c.y]), cap = c.kind === 2; x.fillStyle = C.city;
       if (cap) x.fillRect(a - 2.5, b - 2.5, 5, 5); else { x.beginPath(); x.arc(a, b, 2, 0, 2 * Math.PI); x.fill(); }
       if (nLab >= maxLab) continue;
-      const tw = x.measureText(c.name).width, lx = a + 5 + tw + M < W ? a + 5 : a - 5 - tw, rc = [lx - 2, b - 7, tw + 4, 14];
-      if (lx < M || b < 9 || b > H - 9 || !free(rc)) continue;
-      placed.push(rc); T(x, c.name, lx, b, cap ? C.city : C.txt); nLab++;
+      const tw = x.measureText(c.name).width;
+      for (const [lx, ly] of [[a + 6, b], [a - 6 - tw, b], [a - tw / 2, b - 11], [a - tw / 2, b + 11]]) {
+        const rc = [lx - 2, ly - 7, tw + 4, 14];
+        if (lx < M || lx + tw > W - M || ly < 9 || ly > H - 9 || !free(rc)) continue;
+        placed.push(rc); T(x, c.name, lx, ly, cap ? C.city : C.txt); nLab++; break;
+      }
     }
     for (const g of V.grid) {
       const inView = q => { if (!q) return false; const [a, b] = P(q); return a > M && a < W - M && b > M && b < H - M; };

@@ -200,7 +200,13 @@ export function clipLine(pts, F) {
 
 /** 4-vector points → flat image tangents [x0, y0, x1, y1, …]. */
 const flat = pts => { const o = new Float64Array(2 * pts.length); pts.forEach((p, i) => { o[2 * i] = p[0] / p[2]; o[2 * i + 1] = p[1] / p[2]; }); return o; };
-const pts4 = (cam, u) => { const o = []; for (let i = 0; i < u.length; i += 3) o.push(cam.P(u, i)); return o; };
+/** 4-vectors of a chunk / ring, every cam.step-th vertex (level of detail; lines keep their last point). */
+const pts4 = (cam, u, line = false) => {
+  const o = [], n = u.length / 3, k = cam.step;
+  for (let i = 0; i < n; i += k) o.push(cam.P(u, 3 * i));
+  if (line && (n - 1) % k) o.push(cam.P(u, 3 * (n - 1)));
+  return o;
+};
 
 function clipPoly(cam, poly) {
   const out = [];
@@ -214,18 +220,22 @@ function clipPoly(cam, poly) {
 /**
  * The map as seen by the payload camera.
  * @param CCI payload C_CI, r spacecraft ECI (km), date, halfX/halfY view half-extent (tangents)
- * @param opts { borders, provinces, rivers, cities } (default all true)
+ * @param opts { borders, provinces, rivers, cities } (default all true); px: image width in pixels, enables
+ *   the level of detail (fewer vertices when a pixel spans many km, e.g. a full Earth disc from GEO)
  * @returns { earth: ring | null (Earth disc ∩ view; null if no Earth in view), land, lakes: [[ring, …], …]
  *   (draw each polygon with even-odd fill), coast, shore, borders, provinces, rivers: [run, …],
  *   cities: [{ name, pop, kind, x, y }] largest first }. Rings and runs are flat [x, y, …] tangent arrays.
  */
 export function mapView(CCI, r, date, halfX, halfY, opts = {}) {
   const cam = mapCamera(CCI, r, date, halfX, halfY), pm = preparedMap();
+  // level of detail: with opts.px (image width in pixels), skip vertices closer than about a pixel. The
+  // nearest ground is at the altitude, so this underestimates km per pixel; vertices are ~3 km apart.
+  cam.step = opts.px ? Math.max(1, Math.min(32, Math.floor((v.norm(r) - ENV.RE) * 2 * halfX / opts.px / 3))) : 1;
   // Earth disc: the limb circle (h = 0) clipped by the pyramid
   let d = limbArc(cam, 0, TAU + 4 * D2R).slice(0, 180); for (let k = 1; k < 5 && d.length; k++) d = clipRing(d, cam.F[k]);
   const out = { earth: d.length >= 3 ? flat(d) : null, land: [], lakes: [], coast: [], shore: [], borders: [], provinces: [], rivers: [], cities: [] };
   if (!out.earth) return out;
-  const lines = (list, dst) => { for (const ch of list) if (cam.maybe(ch)) for (const run of clipLine(pts4(cam, ch.u), cam.F)) if (run.length > 1) dst.push(flat(run)); };
+  const lines = (list, dst) => { for (const ch of list) if (cam.maybe(ch)) for (const run of clipLine(pts4(cam, ch.u, true), cam.F)) if (run.length > 1) dst.push(flat(run)); };
   for (const p of pm.land) if (cam.maybe(p)) { const c = clipPoly(cam, p); if (c.length) out.land.push(c); }
   for (const p of pm.lakes) if (cam.maybe(p)) { const c = clipPoly(cam, p); if (c.length) out.lakes.push(c); }
   lines(pm.coast, out.coast); lines(pm.lakeShore, out.shore);

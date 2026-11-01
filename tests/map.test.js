@@ -31,8 +31,8 @@ function camera(lat, lon, h, off = 0) {
 }
 
 /** Classify an N×N grid of image points as sky / sea / land, from the map output and from ray casting. */
-function compare({ CCI, r }, half, N = 20) {
-  const M = mapView(CCI, r, date, half, half), CIC = m.T(CCI); let bad = 0; const count = { sky: 0, sea: 0, land: 0 };
+function compare({ CCI, r }, half, N = 20, opts = {}) {
+  const M = mapView(CCI, r, date, half, half, opts), CIC = m.T(CCI); let bad = 0; const count = { sky: 0, sea: 0, land: 0 };
   for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
     const x = half * (2 * (i + .5) / N - 1), y = half * (2 * (j + .5) / N - 1);
     const hit = ENV.rayEarth(r, v.unit(m.mulv(CIC, [x, y, 1])));
@@ -112,6 +112,8 @@ test('payload map: land / sea / sky match ray casting (nadir, oblique, limb in v
   const cases = [
     ['Afro-Eurasia contains the antipode, from 1500 km', camera(-65, -10, 1500), 0.1],
     ['GEO full disc', camera(0, -150, 35786), 0.17],
+    ['GEO full disc, level of detail for a 250 px image', camera(0, -150, 35786), 0.17, { px: 250 }],
+    ['1500 km, level of detail for a 250 px image', camera(-65, -10, 1500), 0.1, { px: 250 }],
     ['South Pole nadir', camera(-89.9, 0, 550), 0.3],
     ['Chukotka across ±180°', camera(66, -179.5, 550), 0.3],
     ['Fiji across ±180°', camera(-17, 179.5, 550), 0.3],
@@ -121,14 +123,14 @@ test('payload map: land / sea / sky match ray casting (nadir, oblique, limb in v
     ['Pacific: no land', camera(0, -150, 550), 0.3],
     ['Norway coast with the limb in view', camera(55, 8, 550, 60), 0.5],
   ];
-  for (const [name, cam, half] of cases) {
-    const { bad, count, M } = compare(cam, half);
+  for (const [name, cam, half, opts] of cases) {
+    const { bad, count, M } = compare(cam, half, 20, opts);
     // ≤ 2 of 400 samples: the reference tests lon/lat polygons in the plane, the map clips 3-D chords,
     // so a sample right on a coastline can fall either way
     assert.ok(bad <= 2 / 400, `${name}: ${(100 * bad).toFixed(2)} % of samples differ ${JSON.stringify(count)}`);
     if (name.startsWith('Chad')) assert.equal(count.land, 400, 'all land');
     if (name.startsWith('Pacific')) assert.equal(M.land.length, 0);
-    if (name.startsWith('Afro')) assert.equal(count.land, 0, 'all sea');
+    if (name.startsWith('Afro') || name.startsWith('1500')) assert.equal(count.land, 0, 'all sea');
     if (name.startsWith('GEO')) assert.ok(count.sky > 0 && count.land > 0 && count.sea > 0, JSON.stringify(count));
     if (name.startsWith('Norway')) assert.ok(count.sky > 0 && count.land > 0 && count.sea > 0, JSON.stringify(count));
   }
