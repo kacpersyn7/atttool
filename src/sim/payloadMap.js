@@ -72,7 +72,7 @@ let prep = null;
 export function preparedMap() {
   if (prep) return prep;
   const w = worldMap();
-  const polys = P => P.map(rings => { const us = rings.map(r => units(r)); return { rings: us, ...cap(us) }; });
+  const polys = P => P.map(rings => { const us = rings.map(r => units(r)); return { rings: us, ll: rings, ...cap(us) }; });
   prep = {
     land: polys(w.land), lakes: polys(w.lakes),
     coast: chunks(w.land.flat().flatMap(coastRuns)), lakeShore: chunks(w.lakes.flat().flatMap(coastRuns)),
@@ -90,6 +90,9 @@ export function mapCamera(CCI, r, date, halfX, halfY) {
   const RIE = AM.Ra(3, ENV.gmst(date)), M = m.mul(CCI, RIE); // ECEF → payload frame
   const t = m.mulv(CCI, r), rn = v.norm(r), rE = v.unit(m.mulv(m.T(RIE), r)), hc = ENV.RE / rn;
   const Kx = halfX * 1.02, Ky = halfY * 1.02;
+  // sub-satellite point and its antipode, [lon, lat] deg (for clipHorizon's containment tests)
+  const nLat = Math.asin(rE[2]) / D2R, nLon = Math.atan2(rE[1], rE[0]) / D2R;
+  const nadirLL = [nLon, nLat], antiLL = [nLon > 0 ? nLon - 180 : nLon + 180, -nLat];
   // limb circle (camera coords): centre, radius, and a right-handed basis (limbA, limbB, limbN) with limbN
   // along r̂ (outward), so the azimuth about the nadir axis grows counter-clockwise seen from outside
   const limbC = m.mulv(CCI, v.sub(v.scale(r, ENV.RE * ENV.RE / (rn * rn)), r)), limbN = m.mulv(CCI, v.scale(r, 1 / rn));
@@ -112,7 +115,7 @@ export function mapCamera(CCI, r, date, halfX, halfY) {
     const p = P(c), rho = 2 * ENV.RE * Math.sin(ang / 2); // every point of the cap is within this chord of its centre
     return N.every(n => n[0] * p[0] + n[1] * p[1] + n[2] * p[2] <= rho);
   };
-  return { P, F, maybe, limbC, limbN, limbR, limbA, limbB, rE, hc, Kx, Ky };
+  return { P, F, maybe, limbC, limbN, limbR, limbA, limbB, rE, hc, Kx, Ky, nadirLL, antiLL };
 }
 
 const lerp = (a, b, s) => [a[0] + (b[0] - a[0]) * s, a[1] + (b[1] - a[1]) * s, a[2] + (b[2] - a[2]) * s, a[3] + (b[3] - a[3]) * s];
@@ -130,21 +133,28 @@ function limbArc(cam, f0, dphi) {
   return out;
 }
 
+/** Even-odd point-in-ring test in lon/lat (rings never cross ±180°: Natural Earth splits them there). */
+export function inRingLL(ll, [x, y]) {
+  let c = false; const n = ll.length / 2;
+  for (let i = 0, j = n - 1; i < n; j = i++) { const xi = ll[2 * i], yi = ll[2 * i + 1], xj = ll[2 * j], yj = ll[2 * j + 1]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c; }
+  return c;
+}
+
 /**
- * Clip a closed ring of 4-vectors to the visible side of the horizon (h ≥ 0). While the ring is hidden,
- * the cut follows the limb by the ring's signed turn about the nadir axis, so that a polygon which
- * continues beyond the horizon fills the view up to the limb. A ring that is hidden everywhere fills the
- * whole Earth disc if it winds once around the nadir with the nadir on its inside: counter-clockwise for
- * an exterior ring, clockwise for a hole (orientation set by scripts/build-map.mjs).
+ * Clip a closed ring of 4-vectors to the visible side of the horizon (h ≥ 0); returns a list of rings
+ * for even-odd filling. While the ring is hidden, the cut follows the limb by the ring's signed turn
+ * about the nadir axis, so a polygon that continues beyond the horizon fills the view up to the limb.
+ * That clipped ring winds around a visible point p as often as the original ring winds around p minus
+ * around the antipode A of the sub-satellite point, so when the ring contains A (seen from high orbits,
+ * e.g. Afro-Eurasia from 1500 km) one full Earth disc is added to restore the parity. A ring hidden
+ * everywhere fills the whole disc exactly when it contains the sub-satellite point.
+ * ll: the same ring in lon/lat degrees, for the containment tests.
  */
-export function clipHorizon(ring, cam, hole = false) {
+export function clipHorizon(ring, cam, ll) {
   const n = ring.length; if (!n) return [];
+  const disc = () => limbArc(cam, 0, TAU + 4 * D2R).slice(0, 180);
   const s = ring.findIndex(p => p[3] >= 0);
-  if (s < 0) {
-    let w = 0; for (let i = 0; i < n; i++) w += wrap(azim(cam, ring[(i + 1) % n]) - azim(cam, ring[i]));
-    const k = Math.round(w / TAU);
-    return k === (hole ? -1 : 1) ? limbArc(cam, 0, k * (TAU + 4 * D2R)).slice(0, 180) : [];
-  }
+  if (s < 0) return inRingLL(ll, cam.nadirLL) ? [disc()] : [];
   const res = []; let acc = 0, prev = 0, f0 = 0;
   for (let k = 1; k <= n; k++) {
     const S = ring[(s + k - 1) % n], E = ring[(s + k) % n], fs = S[3], fe = E[3];
@@ -156,7 +166,7 @@ export function clipHorizon(ring, cam, hole = false) {
       const a = azim(cam, E); acc += wrap(a - prev); prev = a;
     }
   }
-  return res;
+  return inRingLL(ll, cam.antiLL) ? [res, disc()] : [res];
 }
 
 /** Sutherland–Hodgman: clip a closed ring of 4-vectors against f ≥ 0 (a plane through the camera). */
@@ -192,10 +202,9 @@ export function clipLine(pts, F) {
 const flat = pts => { const o = new Float64Array(2 * pts.length); pts.forEach((p, i) => { o[2 * i] = p[0] / p[2]; o[2 * i + 1] = p[1] / p[2]; }); return o; };
 const pts4 = (cam, u) => { const o = []; for (let i = 0; i < u.length; i += 3) o.push(cam.P(u, i)); return o; };
 
-function clipPoly(cam, rings) {
+function clipPoly(cam, poly) {
   const out = [];
-  for (let j = 0; j < rings.length; j++) {
-    let r = clipHorizon(pts4(cam, rings[j]), cam, j > 0);
+  for (let j = 0; j < poly.rings.length; j++) for (let r of clipHorizon(pts4(cam, poly.rings[j]), cam, poly.ll[j])) {
     for (let k = 1; k < 5 && r.length; k++) r = clipRing(r, cam.F[k]);
     if (r.length >= 3) out.push(flat(r));
   }
@@ -217,8 +226,8 @@ export function mapView(CCI, r, date, halfX, halfY, opts = {}) {
   const out = { earth: d.length >= 3 ? flat(d) : null, land: [], lakes: [], coast: [], shore: [], borders: [], provinces: [], rivers: [], cities: [] };
   if (!out.earth) return out;
   const lines = (list, dst) => { for (const ch of list) if (cam.maybe(ch)) for (const run of clipLine(pts4(cam, ch.u), cam.F)) if (run.length > 1) dst.push(flat(run)); };
-  for (const p of pm.land) if (cam.maybe(p)) { const c = clipPoly(cam, p.rings); if (c.length) out.land.push(c); }
-  for (const p of pm.lakes) if (cam.maybe(p)) { const c = clipPoly(cam, p.rings); if (c.length) out.lakes.push(c); }
+  for (const p of pm.land) if (cam.maybe(p)) { const c = clipPoly(cam, p); if (c.length) out.land.push(c); }
+  for (const p of pm.lakes) if (cam.maybe(p)) { const c = clipPoly(cam, p); if (c.length) out.lakes.push(c); }
   lines(pm.coast, out.coast); lines(pm.lakeShore, out.shore);
   if (opts.borders !== false) lines(pm.borders, out.borders);
   if (opts.provinces !== false) lines(pm.provinces, out.provinces);

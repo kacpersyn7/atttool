@@ -62,6 +62,8 @@ test('map data: cities at their known coordinates (within 0.1°)', () => {
 test('map data: land covers ~29 % of the Earth; exterior rings counter-clockwise, holes clockwise', () => {
   let land = 0, all = 0;
   for (let la = -89; la < 90; la += 2) for (let lo = -179; lo < 180; lo += 2) { const w = Math.cos(la * D2R); all += w; if (onLand(lo, la)) land += w; }
+  // Land (incl. Antarctica, lakes counted as land: they are holes only in the lakes layer) is 148.9 of
+  // 510.1 million km² = 0.292 of the Earth. The 2° sampling grid itself scatters by ~±0.005.
   close(land / all, 0.292, 0.01, 'land fraction');
   const area = r => { let a = 0; const n = r.length / 2; for (let i = 0; i < n; i++) { const j = (i + 1) % n; a += r[2 * i] * r[2 * j + 1] - r[2 * j] * r[2 * i + 1]; } return a; };
   for (const p of [...W.land, ...W.lakes]) p.forEach((r, k) => assert.equal(area(r) > 0, k === 0));
@@ -76,15 +78,18 @@ test('coastlines drop the artificial ±180° and South Pole edges', () => {
 
 /* ---------- clipping and projection ---------- */
 
-test('payload map: a ring wholly beyond the horizon fills the disc only if it winds around the nadir with the nadir inside', () => {
-  const { CCI, r } = camera(0, 0, 550), cam = mapCamera(CCI, r, date, 1, 1);
-  const ringAt = (ang, ccw) => { const ll = []; for (let k = 0; k < 72; k++) { const a = (ccw ? 1 : -1) * k * 5 * D2R; ll.push([Math.cos(a), Math.sin(a)]); }
-    return ll.map(([c, s]) => { const la = Math.asin(s * Math.sin(ang * D2R)), lo = Math.atan2(c * Math.sin(ang * D2R), Math.cos(ang * D2R)); const e = ENV.llh2ecef(la, lo); return cam.P(v.unit(e)); }); };
-  // a circle of 40° radius around the sub-satellite point: all hidden (horizon ≈ 22.6°)
-  const ccw = ringAt(40, true); assert.ok(ccw.every(p => p[3] < 0));
-  assert.ok(clipHorizon(ccw, cam).length > 100, 'exterior CCW around nadir → full disc');
-  assert.equal(clipHorizon(ringAt(40, false), cam).length, 0, 'exterior CW → nadir outside');
-  assert.ok(clipHorizon(ringAt(40, false), cam, true).length > 100, 'hole CW around nadir → full disc (cancels by even-odd)');
+test('payload map: a ring wholly beyond the horizon fills the disc exactly when it contains the sub-satellite point', () => {
+  const cam0 = camera(0, 0, 550), cam = mapCamera(cam0.CCI, cam0.r, date, 1, 1);
+  // a lon/lat square ring, all of it beyond the horizon (≈ 22.6° from the sub-satellite point at 550 km)
+  const ring = (lo0, la0, d, ccw) => { const pts = []; const side = (a, b) => { for (let k = 0; k < 40; k++) pts.push([a[0] + (b[0] - a[0]) * k / 40, a[1] + (b[1] - a[1]) * k / 40]); };
+    let c = [[lo0 - d, la0 - d], [lo0 + d, la0 - d], [lo0 + d, la0 + d], [lo0 - d, la0 + d]]; if (!ccw) c = c.reverse(); c.forEach((a, i) => side(a, c[(i + 1) % 4]));
+    return { ll: Float64Array.from(pts.flat()), p4: pts.map(([lo, la]) => cam.P(v.unit(ENV.llh2ecef(la * D2R, lo * D2R)))) }; };
+  for (const ccw of [true, false]) {
+    const around = ring(0, 0, 40, ccw); assert.ok(around.p4.every(p => p[3] < 0));
+    const r = clipHorizon(around.p4, cam, around.ll); assert.equal(r.length, 1); assert.ok(r[0].length > 100, 'around the nadir → full disc');
+    const away = ring(120, 0, 30, ccw); assert.ok(away.p4.every(p => p[3] < 0));
+    assert.equal(clipHorizon(away.p4, cam, away.ll).length, 0, 'not around the nadir → nothing');
+  }
 });
 
 test('payload map: a line is clipped exactly at the view edge', () => {
@@ -103,8 +108,13 @@ test('payload map: target mode on Warsaw puts the Warsaw city dot at the image c
   assert.ok(M.land.length > 0, 'Warsaw is on land');
 });
 
-test('payload map: land / sea / sky match ray casting (nadir, oblique, limb in view, all-hidden coast, open ocean)', () => {
+test('payload map: land / sea / sky match ray casting (nadir, oblique, limb in view, all-hidden coast, ocean, poles, ±180°, high orbits)', () => {
   const cases = [
+    ['Afro-Eurasia contains the antipode, from 1500 km', camera(-65, -10, 1500), 0.1],
+    ['GEO full disc', camera(0, -150, 35786), 0.17],
+    ['South Pole nadir', camera(-89.9, 0, 550), 0.3],
+    ['Chukotka across ±180°', camera(66, -179.5, 550), 0.3],
+    ['Fiji across ±180°', camera(-17, 179.5, 550), 0.3],
     ['Warsaw nadir', camera(52.2, 21, 550), 0.05],
     ['Strait of Gibraltar, 45° off nadir', camera(30, -5.5, 550, 45), 0.08],
     ['Chad from 200 km: no coast within the horizon', camera(15, 19, 200), 0.3],
@@ -113,9 +123,18 @@ test('payload map: land / sea / sky match ray casting (nadir, oblique, limb in v
   ];
   for (const [name, cam, half] of cases) {
     const { bad, count, M } = compare(cam, half);
-    assert.ok(bad < 0.02, `${name}: ${(100 * bad).toFixed(1)} % of samples differ ${JSON.stringify(count)}`);
+    // ≤ 2 of 400 samples: the reference tests lon/lat polygons in the plane, the map clips 3-D chords,
+    // so a sample right on a coastline can fall either way
+    assert.ok(bad <= 2 / 400, `${name}: ${(100 * bad).toFixed(2)} % of samples differ ${JSON.stringify(count)}`);
     if (name.startsWith('Chad')) assert.equal(count.land, 400, 'all land');
     if (name.startsWith('Pacific')) assert.equal(M.land.length, 0);
+    if (name.startsWith('Afro')) assert.equal(count.land, 0, 'all sea');
+    if (name.startsWith('GEO')) assert.ok(count.sky > 0 && count.land > 0 && count.sea > 0, JSON.stringify(count));
     if (name.startsWith('Norway')) assert.ok(count.sky > 0 && count.land > 0 && count.sea > 0, JSON.stringify(count));
   }
+});
+
+test('payload map: a camera looking away from the Earth sees no map', () => {
+  const { CCI, r } = camera(30, 30, 550, 150), M = mapView(CCI, r, date, 0.3, 0.3);
+  assert.equal(M.earth, null); assert.equal(M.land.length + M.coast.length + M.cities.length, 0);
 });

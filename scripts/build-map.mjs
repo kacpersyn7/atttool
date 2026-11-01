@@ -69,7 +69,7 @@ class Enc {
 function polygons(name) {
   const e = new Enc(), polys = read(name).flatMap(f => parts(f.geometry)).filter(p => p[0].length >= 4);
   // orientation as in RFC 7946 (Natural Earth has it the other way round): exterior counter-clockwise
-  // in (lon, lat), holes clockwise. src/sim/payloadMap.js relies on it at the horizon.
+  // in (lon, lat), holes clockwise. Drawing uses even-odd fill and doesn't depend on it; a test checks it.
   const area = r => { let a = 0; for (let i = 0; i + 1 < r.length; i++) a += r[i][0] * r[i + 1][1] - r[i + 1][0] * r[i][1]; return a; };
   e.u(polys.length); for (const p of polys) { e.u(p.length); p.forEach((r, k) => e.ring((area(r) > 0) === (k === 0) ? r : [...r].reverse())); }
   return { e, n: polys.length };
