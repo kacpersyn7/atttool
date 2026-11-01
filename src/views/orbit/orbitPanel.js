@@ -8,6 +8,7 @@ import { PRESETS, orbitElements, ltanOf, epochDate, parseEpoch, formatEpoch, swi
 import { copyText } from '../../ui/overlay.js';
 import { payloadComp } from '../../sim/guidance.js';
 import { sensorEval } from '../../sim/sensors.js';
+import { pointing } from '../../sim/payload.js';
 
 /** Body-axis choices for pointing modes; optionally include component boresights / normals. */
 function axisOptions(withComps = true) {
@@ -17,7 +18,7 @@ function axisOptions(withComps = true) {
 }
 
 /**
- * @param {object} ctx cur() = current attitudeAt() result, applyPreset(k), zoomSC(), setInset(bool), renderRail()
+ * @param {object} ctx cur() = current attitudeAt() result, applyPreset(k), zoomSC(), setInset(bool), setPlView(bool), renderRail()
  */
 export function orbitPanel(ctx) {
   const o = S.orbit, out = [];
@@ -66,6 +67,17 @@ export function orbitPanel(ctx) {
     selectRow({ id: 'refFrame', label: 'Shown orbital frame', options: Object.entries(ENV.ORBIT_FRAMES).map(([k, f]) => [k, f.label]), get: () => o.refFrame, set: v => { o.refFrame = v; save(); ctx.renderRail(); } }),
     ...modeCtl));
 
+  if (payloadComp(S)) out.push(card('Payload pointing', payloadComp(S).name + ' vs ground target',
+    o.mode === 'target' ? null : h('div', { class: 'grid2' }, numCell('ptlat', 'Target lat °', () => o.tgtLat, x => { o.tgtLat = x; save(); }, .1, 2), numCell('ptlon', 'Target lon °', () => o.tgtLon, x => { o.tgtLon = x; save(); }, .1, 2)),
+    liveText(() => {
+      const cur = ctx.cur(); if (!cur) return ''; const p = pointing(S, cur); if (!p) return '';
+      if (!p.tgtUp) return `<span class="chip dim">Target below horizon · elevation ${deg(p.elev).toFixed(1)}°</span>`;
+      const kmT = x => x === null ? '—' : Math.abs(x) < 1 ? fmt(x * 1000, 0) + ' m' : fmt(x, 2) + ' km';
+      const row = (k, val) => `<div style="display:flex;justify-content:space-between"><span>${k}</span><span style="font-family:var(--f-mono)">${val}</span></div>`;
+      return `<div style="display:flex;flex-direction:column;gap:4px">${row('Angle error', fmt(p.ang, 3) + '°')}${row('along · cross', fmt(p.along, 3) + '° · ' + fmt(p.cross, 3) + '°')}${row('Ground error', kmT(p.gnd))}${row('along · cross', kmT(p.gAlong) + ' · ' + kmT(p.gCross))}${row('Target elevation', deg(p.elev).toFixed(1) + '°')}</div>`;
+    }),
+    tip('Boresight minus target. <b>along</b> > 0: looking ahead of the target along the ground track; <b>cross</b> > 0: looking to the right of it. Ground error is measured from the target to where the boresight hits the Earth. In <b>Ground target tracking</b> mode it is zero by construction (no attitude errors yet).')));
+
   out.push(card('Sensors now', 'live',
     liveText(() => {
       const cur = ctx.cur(); if (!cur) return ''; const rows = [];
@@ -86,7 +98,7 @@ export function orbitPanel(ctx) {
       check('s-track', 'Ground track', () => o.show.track, v => { o.show.track = v; save(); }), check('s-sun', 'Sun vector', () => o.show.sunv, v => { o.show.sunv = v; save(); }), check('s-moon', 'Moon + vector', () => o.show.moonv, v => { o.show.moonv = v; save(); }),
       check('s-b', 'Magnetic field B', () => o.show.bv, v => { o.show.bv = v; save(); }), check('s-cones', 'Sensor FOV cones', () => o.show.cones, v => { o.show.cones = v; save(); }),
       check('s-follow', 'Camera follows S/C', () => o.show.follow, v => { o.show.follow = v; if (v) ctx.zoomSC(); save(); }),
-      check('s-inset', 'Body-frame inset', () => !o.hideInset, v => { o.hideInset = !v; ctx.setInset(v); save(); })),
+      check('s-inset', 'Body-frame inset', () => !o.hideInset, v => { o.hideInset = !v; ctx.setInset(v); save(); }), check('s-plview', 'Payload view', () => o.show.plView, v => { o.show.plView = v; ctx.setPlView(v); save(); })),
     slider({ id: 'scscale', label: 'S/C size (×)', min: .1, max: 4, step: .05, dec: 2, get: () => o.scale, set: x => { o.scale = x; save(); } }),
     tip('The spacecraft is drawn hugely oversized (about 130 km per metre at 1×) so you can see it from orbit distance.')));
   return out;

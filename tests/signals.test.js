@@ -102,3 +102,15 @@ test('signals: CSV at a fixed step, with decimal-comma option', () => {
   const str = s.sc.comps.find(c => c.type === 'str');
   assert.match(columnName(findSignal(s, 'sun:' + str.id), 0), /^sunAngle_STR_1 \[deg\]$/);
 });
+
+test('payload pointing-error signals: zero in target mode while the target is up, gaps while it is below', () => {
+  const s = state(); s.orbit.mode = 'target'; s.orbit.tgtLat = 10; s.orbit.tgtLon = 20;
+  const ids = ['plAng', 'plGnd'];
+  assert.ok(ids.every(id => findSignal(s, id)), 'offered with a payload');
+  const smp = sampleSignals(s, ids, 0, 86400, { N: 400 });
+  const up = smp.series[0].v.filter(v => Number.isFinite(v[2])), down = smp.series[0].v.filter(v => !Number.isFinite(v[2]));
+  assert.ok(up.length > 0 && down.length > 0);
+  assert.ok(up.every(v => v[2] < 1e-5), 'zero error in target mode (acos noise ~1e-6°)');
+  const s2 = state(); s2.sc.comps = s2.sc.comps.filter(c => c.type !== 'payload' && !['str', 'css', 'gnss', 'ant'].includes(c.type));
+  assert.equal(findSignal(s2, 'plAng'), null, 'no payload → no signal');
+});
