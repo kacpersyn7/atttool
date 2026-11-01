@@ -42,10 +42,10 @@ src/
   state/store.js      the single app state object + localStorage persistence
   ui/                 tiny DOM toolkit (widgets, bindings), formatting, modal/toast
   gfx/                three.js helpers: renderer/views, arrows/labels, Earth, spacecraft mesh
-  data/coastlines.js  coarse coastline polygons for the Earth texture
+  data/               Natural Earth 1:50m map (generated) + decoder, for the Earth texture and payload view
   views/              the three workspaces (rotationLab, orbit/*, layout)
 tests/                node:test unit tests (run with `npm test`)
-scripts/              serve.mjs (dev server), build.mjs (single-file build)
+scripts/              serve.mjs (dev server), build.mjs (single-file build), build-map.mjs (regenerate the map data)
 docs/                 ARCHITECTURE.md, CONVENTIONS.md
 legacy/               the original single-file version, kept for reference
 dist/                 build output (git-ignored)

@@ -1,25 +1,31 @@
-/** Earth, stars and Sun-glow graphics (procedural, no image assets). */
+/** Earth, stars and Sun-glow graphics (procedural from vector data, no image assets). */
 import * as THREE from 'three';
-import { LAND, WATER } from '../data/coastlines.js';
+import { worldMap } from '../data/worldMap.js';
 
-/** Equirectangular Earth texture drawn from coarse coastline polygons, with graticule. */
+/**
+ * Equirectangular Earth texture drawn from the Natural Earth 1:50m map (data/worldMap.js): land,
+ * lakes, country borders, graticule.
+ */
 export function earthTexture() {
-  const W = 2048, H = 1024, c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+  const W = 4096, H = 2048, c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+  const map = worldMap();
   const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#1d3f63'); g.addColorStop(.5, '#16507a'); g.addColorStop(1, '#1d3f63');
   x.fillStyle = g; x.fillRect(0, 0, W, H);
   const P = ([lo, la]) => [(lo + 180) / 360 * W, (90 - la) / 180 * H];
-  const poly = (pts, fill) => { x.beginPath(); pts.forEach((p, i) => { const [a, b] = P(p); i ? x.lineTo(a, b) : x.moveTo(a, b); }); x.closePath(); x.fillStyle = fill; x.fill(); };
-  LAND.forEach(p => poly(p, '#5f7f4e'));
+  const ring = r => { for (let i = 0; i < r.length; i += 2) { const a = (r[i] + 180) / 360 * W, b = (90 - r[i + 1]) / 180 * H; i ? x.lineTo(a, b) : x.moveTo(a, b); } };
+  const polys = (P, fill) => { x.fillStyle = fill; for (const p of P) { x.beginPath(); p.forEach(r => { ring(r); x.closePath(); }); x.fill('evenodd'); } };
+  polys(map.land, '#5f7f4e');
   // subtle relief tint by latitude
   x.globalCompositeOperation = 'source-atop';
   const lg = x.createLinearGradient(0, 0, 0, H); lg.addColorStop(0, 'rgba(235,240,245,.85)'); lg.addColorStop(.12, 'rgba(235,240,245,0)'); lg.addColorStop(.35, 'rgba(160,140,90,.25)'); lg.addColorStop(.5, 'rgba(60,110,50,.25)'); lg.addColorStop(.65, 'rgba(160,140,90,.25)'); lg.addColorStop(.86, 'rgba(235,240,245,0)'); lg.addColorStop(.92, 'rgba(235,240,245,.9)');
   x.fillStyle = lg; x.fillRect(0, 0, W, H); x.globalCompositeOperation = 'source-over';
-  WATER.forEach((p, i) => { if (i !== 1) poly(p, '#17507a'); });
+  polys(map.lakes, '#17507a');
+  x.strokeStyle = 'rgba(240,226,180,.45)'; x.lineWidth = 1.6; x.beginPath(); map.borders.forEach(ring); x.stroke();
   // graticule
-  x.strokeStyle = 'rgba(200,225,255,.16)'; x.lineWidth = 1.2;
+  x.strokeStyle = 'rgba(200,225,255,.16)'; x.lineWidth = 2.4;
   for (let lo = -180; lo <= 180; lo += 30) { const [a] = P([lo, 0]); x.beginPath(); x.moveTo(a, 0); x.lineTo(a, H); x.stroke(); }
   for (let la = -60; la <= 60; la += 30) { const [, b] = P([0, la]); x.beginPath(); x.moveTo(0, b); x.lineTo(W, b); x.stroke(); }
-  x.strokeStyle = 'rgba(242,169,59,.55)'; x.lineWidth = 2; { const [, b] = P([0, 0]); x.beginPath(); x.moveTo(0, b); x.lineTo(W, b); x.stroke(); }
+  x.strokeStyle = 'rgba(242,169,59,.55)'; x.lineWidth = 4; { const [, b] = P([0, 0]); x.beginPath(); x.moveTo(0, b); x.lineTo(W, b); x.stroke(); }
   x.strokeStyle = 'rgba(255,97,97,.5)'; { const [a] = P([0, 0]); x.beginPath(); x.moveTo(a, 0); x.lineTo(a, H); x.stroke(); }
   const t = new THREE.CanvasTexture(c); t.anisotropy = 4; return t;
 }
