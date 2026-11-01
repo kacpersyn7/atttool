@@ -98,9 +98,10 @@ export function orbitPanel(ctx) {
       check('s-track', 'Ground track', () => o.show.track, v => { o.show.track = v; save(); }), check('s-sun', 'Sun vector', () => o.show.sunv, v => { o.show.sunv = v; save(); }), check('s-moon', 'Moon + vector', () => o.show.moonv, v => { o.show.moonv = v; save(); }),
       check('s-b', 'Magnetic field B', () => o.show.bv, v => { o.show.bv = v; save(); }), check('s-cones', 'Sensor FOV cones', () => o.show.cones, v => { o.show.cones = v; save(); }),
       check('s-follow', 'Camera follows S/C', () => o.show.follow, v => { o.show.follow = v; if (v) ctx.zoomSC(); save(); }),
-      check('s-inset', 'Body-frame inset', () => !o.hideInset, v => { o.hideInset = !v; ctx.setInset(v); save(); }), check('s-plview', 'Payload view', () => o.show.plView, v => { o.show.plView = v; ctx.setPlView(v); save(); })),
+      check('s-inset', 'Body-frame inset', () => !o.hideInset, v => { o.hideInset = !v; ctx.setInset(v); save(); }), check('s-plview', 'Payload view', () => o.show.plView, v => { o.show.plView = v; ctx.setPlView(v); save(); }),
+      check('s-plbord', 'Map borders', () => o.show.plBorders, v => { o.show.plBorders = v; save(); }), check('s-plcity', 'Map cities', () => o.show.plCities, v => { o.show.plCities = v; save(); })),
     slider({ id: 'scscale', label: 'S/C size (×)', min: .1, max: 4, step: .05, dec: 2, get: () => o.scale, set: x => { o.scale = x; save(); } }),
-    tip('The spacecraft is drawn hugely oversized (about 130 km per metre at 1×) so you can see it from orbit distance.')));
+    tip('The spacecraft is drawn hugely oversized (about 130 km per metre at 1×) so you can see it from orbit distance. The map in the payload view and on the Earth is Natural Earth 1:50m (public domain): schematic, good to a few km, so use it for orientation, not to measure pointing errors.')));
   return out;
 }
 
