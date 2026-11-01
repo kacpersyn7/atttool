@@ -2,7 +2,7 @@
  * Workspace 2 — Orbit & Frames.
  * Earth (ECEF texture, rotating by GMST), orbit line coloured by eclipse, ground track,
  * the spacecraft with ECI / orbital (VVLH, LVLH, VNC) / body frames, Sun, Moon & B-field vectors, payload footprint,
- * a body-frame inset, signal plots and a one-orbit sensor timeline.
+ * a body-frame inset, a payload view, signal plots and a one-orbit sensor timeline.
  *
  * Scene unit = 1000 km. Physics lives in sim/ and env/; this file only draws.
  */
@@ -20,6 +20,7 @@ import { compAxis } from '../../spacecraft/component.js';
 import { epochDate, orbitElements, applyPreset } from '../../sim/scenario.js';
 import { attitudeAt, bodyRate, payloadComp } from '../../sim/guidance.js';
 import { createBodyInset } from './bodyInset.js';
+import { createPayloadInset } from './payloadInset.js';
 import { createTimelineView } from './timelineView.js';
 import { createPlotView } from './plotView.js';
 import { orbitPanel } from './orbitPanel.js';
@@ -75,6 +76,7 @@ export function createOrbitView({ renderRail }) {
   /* ---------- sub-views ---------- */
   const insetEl = $('#inset');
   const inset = createBodyInset(insetEl, earthMesh.material.map);
+  const plEl = $('#plInset'), plInset = createPayloadInset(plEl);
   const timeline = createTimelineView($('#tlc'));
   const plots = createPlotView($('#timeline'));
 
@@ -146,14 +148,14 @@ export function createOrbitView({ renderRail }) {
         foot.scale.setScalar(Math.max(footR, 0.025)); footLbl.position.copy(foot.position).addScaledVector(n, 0.02);
       }
     } else ray.visible = foot.visible = footLbl.visible = false;
-    tgt.visible = o.mode === 'target';
+    tgt.visible = o.mode === 'target' || !!o.show.plView; // the payload view measures the error against it in every mode
     if (tgt.visible) { const p = AM.v.scale(ENV.llh2ecef(o.tgtLat * D2R, o.tgtLon * D2R), U); tgt.position.set(...p); tgt.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), V3(AM.v.unit(p))); }
     V.scene.updateMatrixWorld(); [scModel, orbTriad, sunArrow, moonArrow, bArrow, vArrow].forEach(fixLabels);
     // follow camera
     if (o.show.follow) { if (prevScPos) { const d = pos.clone().sub(prevScPos); V.camera.position.add(d); } V.controls.target.copy(pos); }
     prevScPos = pos.clone();
     V.controls.update();
-    inset.update(A, BI, gm);
+    inset.update(A, BI, gm); plInset.draw(A);
   }
   function render() {
     const { w, h: H } = sizeOf(); const r = gfx.renderer;
@@ -178,7 +180,7 @@ export function createOrbitView({ renderRail }) {
   function doPreset(k) { if (applyPreset(S.orbit, k)) { save(); syncAll(); } }
 
   /* ---------- rail & HUD ---------- */
-  const panelCtx = { cur: () => cur, applyPreset: doPreset, zoomSC, setInset: v => { insetEl.hidden = !v; }, renderRail };
+  const panelCtx = { cur: () => cur, applyPreset: doPreset, zoomSC, setInset: v => { insetEl.hidden = !v; }, setPlView: v => { plEl.hidden = !v; }, renderRail };
   function panel() { return orbitPanel(panelCtx); }
 
   function hud() {
@@ -204,15 +206,18 @@ export function createOrbitView({ renderRail }) {
 
   /* ---------- lifecycle ---------- */
   function init() { if (!S.orbit._init) { doPreset(S.orbit.preset); S.orbit._init = true; } }
-  function enter() { insetEl.hidden = !!S.orbit.hideInset; $('#timeline').hidden = false; }
-  function leave() { insetEl.hidden = true; $('#timeline').hidden = true; }
+  function enter() { insetEl.hidden = !!S.orbit.hideInset; plEl.hidden = !S.orbit.show.plView; $('#timeline').hidden = false; }
+  function leave() { insetEl.hidden = true; plEl.hidden = true; $('#timeline').hidden = true; }
   /** Called ~10×/s: timeline redraw and inset placement above it. */
   function tick() {
     plots.draw(); if (!plots.collapsed()) timeline.draw();
     // body-frame inset: just above the dock, and small enough to fit the 3D area
     const dockH = $('#timeline').offsetHeight, vp = gfx.vp.getBoundingClientRect();
-    insetEl.style.bottom = (dockH + 12) + 'px';
-    insetEl.style.width = Math.max(110, Math.min(290, vp.width * 0.42, vp.height - dockH - 70)) + 'px';
+    // payload view stacked above it (right column: the top-left HUD can reach down to the dock)
+    const both = !insetEl.hidden && !plEl.hidden, avail = vp.height - dockH - 70;
+    const side = Math.max(110, Math.min(290, vp.width * 0.42, both ? (avail - 12) / 2 : avail));
+    insetEl.style.bottom = (dockH + 12) + 'px'; insetEl.style.width = side + 'px';
+    plEl.style.bottom = (dockH + 12 + (insetEl.hidden ? 0 : side + 12)) + 'px'; plEl.style.width = side + 'px'; plEl.style.height = side + 'px';
     if (S.orbit.playing) syncAll();
   }
 

@@ -9,6 +9,7 @@ import { applyPreset, orbitElements, ltanOf, PRESETS } from '../src/sim/scenario
 import { attitudeAt, payloadComp, bodyRate } from '../src/sim/guidance.js';
 import { computeTimeline } from '../src/sim/timeline.js';
 import { close, closeArr } from './helpers.js';
+import { pointing, project, payloadView, gridStep, groundRelVel } from '../src/sim/payload.js';
 
 function state(mode = 'offsets', preset = 'sso1030') {
   const s = {
@@ -191,4 +192,76 @@ test('timeline: a star tracker staring at the Moon is Moon-blind (4) while the M
     const A = attitudeAt(s, tl.W0 + (n + .5) / tl.N * tl.T), e = sensorEval(s.sc.comps[0], A);
     assert.equal(row.v[n] === 4, e.moonUp && e.moonAng < 15);
   }
+});
+
+/* ---------- payload pointing error & view (#10) ---------- */
+
+/** Put the ground target at the sub-satellite point at time t. */
+function targetUnder(s, t) {
+  const A = attitudeAt(s, t), ll = ENV.ecef2ll(ENV.eci2ecef(A.st.r, A.date));
+  s.orbit.tgtLat = ll.lat * AM.R2D; s.orbit.tgtLon = ll.lon * AM.R2D;
+}
+
+test('payload: target mode with the target visible has zero pointing error; the target is at the image centre', () => {
+  const s = state('target'); s.orbit.tgtLat = 10; s.orbit.tgtLon = 20;
+  // find a time when the target is up
+  let t = 0; for (; t < 86400; t += 30) { if (!attitudeAt(s, t).flag.below) break; }
+  const A = attitudeAt(s, t), p = pointing(s, A);
+  assert.equal(p.tgtUp, true);
+  assert.ok(p.ang < 1e-5 && Math.abs(p.along) < 1e-9 && Math.abs(p.cross) < 1e-9, 'angle ' + p.ang); // ang via acos: ~1e-6° noise
+  assert.ok(p.gnd < 1e-3, 'ground km ' + p.gnd);
+  const V = payloadView(s, A); closeArr(V.target, [0, 0], 1e-9);
+});
+
+test('payload: roll offset η gives the spherical-Earth ground error R_E·λ, λ = asin(sin η (R_E+h)/R_E) − η (SMAD), cross-track', () => {
+  for (const eta of [5, 20, 35]) {
+    const s = state('offsets'), t = 900; targetUnder(s, t); s.orbit.roll = eta;
+    const A = attitudeAt(s, t), p = pointing(s, A), h = AM.v.norm(A.st.r) - ENV.RE, e = eta * AM.D2R;
+    const lam = Math.asin(Math.sin(e) * (ENV.RE + h) / ENV.RE) - e;
+    close(p.gnd, ENV.RE * lam, 1e-6 * ENV.RE * lam + 1e-6, 'ground error at η=' + eta);
+    close(p.ang, eta, 1e-9, 'angle error = η');
+    assert.ok(Math.abs(p.gCross) > 5 * Math.abs(p.gAlong), `mostly cross-track at η=${eta}: ${p.gAlong} / ${p.gCross}`);
+    assert.ok(Math.abs(p.cross) > 5 * Math.abs(p.along), 'angular error mostly cross-track');
+    // "right of track" = −orbit normal for a nadir-looking spacecraft: check the sign independently
+    const hN = AM.v.unit(AM.v.cross(A.st.r, A.st.v)), side = AM.v.dot(AM.v.sub(p.hit, p.tgt), AM.v.scale(hN, -1));
+    assert.equal(Math.sign(p.gCross), Math.sign(side)); assert.equal(Math.sign(p.cross), Math.sign(side));
+  }
+});
+
+test('payload: pitch offset gives mostly along-track error, positive when the boresight looks ahead', () => {
+  const s = state('offsets'), t = 900; targetUnder(s, t); s.orbit.pitch = 10;
+  const A = attitudeAt(s, t), p = pointing(s, A);
+  assert.ok(Math.abs(p.gAlong) > 5 * Math.abs(p.gCross));
+  const ahead = AM.v.dot(AM.v.sub(p.hit, p.tgt), AM.v.unit(groundRelVel(A.st.r, A.st.v))) > 0;
+  assert.equal(p.gAlong > 0, ahead); assert.equal(p.along > 0, ahead);
+});
+
+test('payload: errors are null when the target is below the horizon or the boresight misses the Earth', () => {
+  const s = state('offsets'), t = 900; targetUnder(s, t); s.orbit.tgtLon += 180; s.orbit.tgtLat = -s.orbit.tgtLat;
+  const p = pointing(s, attitudeAt(s, t)); assert.equal(p.tgtUp, false); assert.equal(p.ang, null); assert.equal(p.gnd, null);
+  const s2 = state('offsets'); targetUnder(s2, t); s2.orbit.roll = 80; // boresight above the limb (ρ ≈ 67°)
+  const p2 = pointing(s2, attitudeAt(s2, t)); assert.equal(p2.hit, null); assert.equal(p2.gnd, null); assert.ok(p2.ang > 79);
+  assert.equal(pointing({ ...s, sc: { ...s.sc, comps: [] } }, attitudeAt(s, t)), null);
+});
+
+test('payload view: a direction α off the boresight projects to radius tan α; far side and behind are culled', () => {
+  const r = [7000, 0, 0], CCI = [[0, 1, 0], [0, 0, 1], [-1, 0, 0]]; // looking at −X (nadir), image x = +Y_I, y = +Z_I
+  const a = 3 * AM.D2R, P = AM.v.add(r, AM.v.scale([-Math.cos(a), Math.sin(a), 0], 100));
+  closeArr(project(CCI, r, P, false), [Math.tan(a), 0], 1e-12);
+  assert.equal(project(CCI, r, [8000, 0, 0], false), null, 'behind the camera');
+  assert.equal(project(CCI, r, [-ENV.RE, 0, 0]), null, 'far side of the Earth');
+  assert.ok(project(CCI, r, [ENV.RE, 0, 0]), 'sub-satellite point visible');
+  assert.equal(gridStep(1.2), 0.5); assert.equal(gridStep(0.09), 0.02); assert.equal(gridStep(400), 30);
+});
+
+test('payload view: grid, track and target land inside a sensible image; the track passes the image centre at nadir', () => {
+  const s = state('offsets'), t = 900; targetUnder(s, t);
+  const V = payloadView(s, attitudeAt(s, t));
+  closeArr(V.target, [0, 0], 1e-6);
+  assert.ok(V.grid.length >= 4, 'grid lines ' + V.grid.length);
+  const tr = V.track.filter(Boolean), dmin = Math.min(...tr.map(q => Math.hypot(q[0], q[1])));
+  assert.ok(dmin < 0.05 * V.viewTan, 'track passes near the centre: ' + dmin);
+  closeArr(V.nadir, [0, 0], 1e-9);
+  // along-track arrow ⟂ right arrow in the image (nadir view)
+  close(V.alongDir[0] * V.rightDir[0] + V.alongDir[1] * V.rightDir[1], 0, 1e-3);
 });

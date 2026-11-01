@@ -13,8 +13,9 @@ import * as AM from '../core/attitude.js';
 import * as ENV from '../env/index.js';
 import { compAxis } from '../spacecraft/component.js';
 import { orbitElements } from './scenario.js';
-import { attitudeAt } from './guidance.js';
+import { attitudeAt, payloadComp } from './guidance.js';
 import { sensorEval } from './sensors.js';
+import { pointing } from './payload.js';
 
 const R2D = AM.R2D;
 const qArr = C => { const q = AM.C2q(C); return [q.w, q.x, q.y, q.z]; };
@@ -49,6 +50,11 @@ export function signalCatalog(state) {
     { id: 'beta', group: 'Environment', label: 'β angle', unit: '°', comps: ['β'], cols: [''], kind: 'value', f: A => [ENV.betaAngle(A.st.r, A.st.v, A.sun) * R2D] },
     { id: 'alt', group: 'Environment', label: 'Altitude', unit: 'km', comps: ['h'], cols: [''], kind: 'value', f: A => [AM.v.norm(A.st.r) - ENV.RE] },
   ];
+  if (payloadComp(state)) {
+    const pe = A => { const p = pointing(state, A); return p && p.tgtUp ? p : null; };
+    list.push({ id: 'plAng', group: 'Payload', label: 'Pointing error vs target', unit: '°', comps: ['along', 'cross', 'total'], kind: 'value', f: A => { const p = pe(A); return p ? [p.along, p.cross, p.ang] : [NaN, NaN, NaN]; } });
+    list.push({ id: 'plGnd', group: 'Payload', label: 'Ground error vs target', unit: 'km', comps: ['along', 'cross', 'total'], kind: 'value', f: A => { const p = pe(A); return p && p.gnd !== null ? [p.gAlong, p.gCross, p.gnd] : [NaN, NaN, NaN]; } });
+  }
   for (const c of state.sc.comps.filter(c => POINTED.includes(c.type))) {
     list.push({ id: 'sun:' + c.id, group: 'Parts', label: `${c.name} · Sun angle`, unit: '°', comps: ['∠Sun'], cols: [''], csv: 'sunAngle_' + codeOf(c), kind: 'value', range: [0, 180], f: A => [sensorEval(c, A).sunAng] });
     if (c.type === 'str') list.push({ id: 'moon:' + c.id, group: 'Parts', label: `${c.name} · Moon angle`, unit: '°', comps: ['∠Moon'], cols: [''], csv: 'moonAngle_' + codeOf(c), kind: 'value', range: [0, 180], f: A => { const e = sensorEval(c, A); return [e.moonUp ? e.moonAng : NaN]; } });
