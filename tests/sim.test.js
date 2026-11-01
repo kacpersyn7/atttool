@@ -220,7 +220,9 @@ test('payload: roll offset η gives the spherical-Earth ground error R_E·λ, λ
     const lam = Math.asin(Math.sin(e) * (ENV.RE + h) / ENV.RE) - e;
     close(p.gnd, ENV.RE * lam, 1e-6 * ENV.RE * lam + 1e-6, 'ground error at η=' + eta);
     close(p.ang, eta, 1e-9, 'angle error = η');
+    // not purely cross-track: the along axis follows the ground-relative velocity, a few degrees off the inertial one
     assert.ok(Math.abs(p.gCross) > 5 * Math.abs(p.gAlong), `mostly cross-track at η=${eta}: ${p.gAlong} / ${p.gCross}`);
+    close(Math.hypot(p.gAlong, p.gCross), p.gnd, 1e-9, 'components add up to the great-circle distance');
     assert.ok(Math.abs(p.cross) > 5 * Math.abs(p.along), 'angular error mostly cross-track');
     // "right of track" = −orbit normal for a nadir-looking spacecraft: check the sign independently
     const hN = AM.v.unit(AM.v.cross(A.st.r, A.st.v)), side = AM.v.dot(AM.v.sub(p.hit, p.tgt), AM.v.scale(hN, -1));
@@ -264,4 +266,18 @@ test('payload view: grid, track and target land inside a sensible image; the tra
   closeArr(V.nadir, [0, 0], 1e-9);
   // along-track arrow ⟂ right arrow in the image (nadir view)
   close(V.alongDir[0] * V.rightDir[0] + V.alongDir[1] * V.rightDir[1], 0, 1e-3);
+  // handedness: image y is down, so "right of track" is clockwise from "along" (along × right > 0)
+  assert.ok(V.alongDir[0] * V.rightDir[1] - V.alongDir[1] * V.rightDir[0] > 0.99);
+  // map-like, not mirrored: north × east > 0 in the y-down image (east is clockwise from north, as on a map)
+  const A = attitudeAt(s, t), hitE = ENV.eci2ecef(V.p.hit, A.date), ll = ENV.ecef2ll(hitE), d = 1e-4;
+  const at = (la, lo) => project(V.p.CCI, A.st.r, ENV.ecef2eci(ENV.llh2ecef(la, lo), A.date));
+  const c0 = at(ll.lat, ll.lon), n = at(ll.lat + d, ll.lon), e = at(ll.lat, ll.lon + d);
+  const N = [n[0] - c0[0], n[1] - c0[1]], Ev = [e[0] - c0[0], e[1] - c0[1]];
+  assert.ok(N[0] * Ev[1] - N[1] * Ev[0] > 0, 'image is not mirrored');
+});
+
+test('ground-relative velocity: equatorial prograde circular orbit loses ω_E·r', () => {
+  const r = [7000, 0, 0], vc = Math.sqrt(ENV.MU / 7000), vr = groundRelVel(r, [0, vc, 0]);
+  closeArr(vr, [0, vc - ENV.WE * 7000, 0], 1e-12);
+  close(ENV.WE * 86164.0905, 2 * Math.PI, 1e-6, 'ω_E = 2π per sidereal day');
 });

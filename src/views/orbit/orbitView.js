@@ -148,7 +148,8 @@ export function createOrbitView({ renderRail }) {
         foot.scale.setScalar(Math.max(footR, 0.025)); footLbl.position.copy(foot.position).addScaledVector(n, 0.02);
       }
     } else ray.visible = foot.visible = footLbl.visible = false;
-    tgt.visible = o.mode === 'target' || !!o.show.plView; // the payload view measures the error against it in every mode
+    tgt.visible = o.mode === 'target' || (!!o.show.plView && !!pc); // the payload view measures the error against it in every mode
+    plEl.hidden = !(o.show.plView && pc);
     if (tgt.visible) { const p = AM.v.scale(ENV.llh2ecef(o.tgtLat * D2R, o.tgtLon * D2R), U); tgt.position.set(...p); tgt.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), V3(AM.v.unit(p))); }
     V.scene.updateMatrixWorld(); [scModel, orbTriad, sunArrow, moonArrow, bArrow, vArrow].forEach(fixLabels);
     // follow camera
@@ -206,7 +207,7 @@ export function createOrbitView({ renderRail }) {
 
   /* ---------- lifecycle ---------- */
   function init() { if (!S.orbit._init) { doPreset(S.orbit.preset); S.orbit._init = true; } }
-  function enter() { insetEl.hidden = !!S.orbit.hideInset; plEl.hidden = !S.orbit.show.plView; $('#timeline').hidden = false; }
+  function enter() { insetEl.hidden = !!S.orbit.hideInset; plEl.hidden = !(S.orbit.show.plView && payloadComp(S)); $('#timeline').hidden = false; }
   function leave() { insetEl.hidden = true; plEl.hidden = true; $('#timeline').hidden = true; }
   /** Called ~10×/s: timeline redraw and inset placement above it. */
   function tick() {

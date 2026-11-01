@@ -34,8 +34,10 @@ export function payloadCI(c, CBI) { return m.mul(AM.q2C(c.q), CBI); }
  * @returns null without a payload, else {
  *   c, CCI, bore (ECI unit), hit (ECI km | null: boresight misses the Earth), slant (km to hit | null),
  *   tgt (ECI km), tgtUp (target above the spacecraft's horizon), elev (rad),
- *   ang, along, cross (deg; null if the target is below the horizon),
- *   gnd, gAlong, gCross (km on the ground, hit − target; null if no hit or target below horizon) }
+ *   ang, along, cross (deg; null if the target is below the horizon; along/cross are separate tangent-plane
+ *     angles — they add up to ang only for small errors),
+ *   gnd, gAlong, gCross (km on the ground, hit − target: great-circle distance and its split along the
+ *     initial azimuth at the target, so hypot(gAlong, gCross) = gnd; null if no hit or target below horizon) }
  */
 export function pointing(state, A, CBI = A.CBI) {
   const c = payloadComp(state); if (!c) return null;
@@ -53,8 +55,12 @@ export function pointing(state, A, CBI = A.CBI) {
   res.along = -Math.atan2(v.dot(u, x), v.dot(u, z)) * R2D;
   res.cross = -Math.atan2(v.dot(u, y), v.dot(u, z)) * R2D;
   if (hit) {
+    // great-circle distance split by the initial azimuth at the target (the direction of hit − target
+    // projected on the local horizontal), so that hypot(gAlong, gCross) = gnd exactly
     const n = v.unit(tgt), xa = v.unit(v.sub(vr, v.scale(n, v.dot(vr, n)))), ya = v.cross(xa, n), d = v.sub(hit, tgt);
-    res.gnd = ENV.RE * v.angle(hit, tgt); res.gAlong = v.dot(d, xa); res.gCross = v.dot(d, ya);
+    res.gnd = ENV.RE * v.angle(hit, tgt);
+    const dh = v.sub(d, v.scale(n, v.dot(d, n))), dl = v.norm(dh);
+    res.gAlong = dl > 0 ? res.gnd * v.dot(dh, xa) / dl : 0; res.gCross = dl > 0 ? res.gnd * v.dot(dh, ya) / dl : 0;
   }
   return res;
 }

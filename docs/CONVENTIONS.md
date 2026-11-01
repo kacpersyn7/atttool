@@ -78,8 +78,8 @@ Component orientation `c.q` is q_BC: `q2C(c.q) = C_CB`.
 - **Reference:** the ground target (`orbit.tgtLat`, `tgtLon`, geocentric, on the sphere) in every guidance mode, while it is above the spacecraft's horizon. In *Ground target tracking* it is zero by construction.
 - **Sign:** errors are *boresight minus target*.
 - **Axes:** *along* = ground-relative velocity `v − ω_E × r` (the direction the ground track moves), *cross* = along × up, i.e. **right of the track** looking forward (−orbit normal for a nadir-looking spacecraft).
-  - Angular error: in the frame z = boresight, x = along ⊥ z, y = z × x. `along = −atan2(los·x, los·z)`, `cross = −atan2(los·y, los·z)`; total = angle(boresight, line of sight).
-  - Ground error: from the target to the boresight's hit on the Earth; *along* / *cross* are its components in the target's local horizontal plane; total = great-circle distance.
+  - Angular error: in the frame z = boresight, x = along ⊥ z, y = z × x. `along = −atan2(los·x, los·z)`, `cross = −atan2(los·y, los·z)`; total = angle(boresight, line of sight). *along* and *cross* are separate tangent-plane angles: they add up (√(along² + cross²) = total) only for small errors, and lose their meaning beyond 90°.
+  - Ground error: from the target to the boresight's hit on the Earth. Total = great-circle distance; *along* / *cross* split it by the initial azimuth at the target (in the target's local horizontal plane), so √(along² + cross²) = total exactly.
 - **Payload view image:** gnomonic projection in the payload component frame C, looking along +Z_C: point → (x/z, y/z), +X_C drawn right, +Y_C down. Points beyond the spacecraft's horizon are culled. The ground track is the sub-satellite path ± a few minutes, drawn at the current Earth orientation. Scale bar = slant range × tan (no obliquity correction).
 
 ## Units

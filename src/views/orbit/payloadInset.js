@@ -12,6 +12,7 @@ const C = { bg: '#070c13', grid: '#2a3a52', gridTxt: '#5d6e86', track: '#f2a93b'
 const FONT = '500 10.5px "JetBrains Mono", monospace';
 
 /** Format a ground distance (km) with a sensible unit. */
+const skm = x => (x < 0 ? '−' : '+') + km(Math.abs(x));
 const km = x => Math.abs(x) < 1 ? fmt(x * 1000, 0) + ' m' : Math.abs(x) < 100 ? fmt(x, 2) + ' km' : fmt(x, 0) + ' km';
 
 export function createPayloadInset(el) {
@@ -80,7 +81,7 @@ export function createPayloadInset(el) {
     else {
       rows.push(['err', p.ang.toFixed(3) + '°']);
       rows.push(['al/cr', fmtS(p.along) + '° ' + fmtS(p.cross) + '°']);
-      if (p.gnd !== null) { rows.push(['gnd', km(p.gnd)]); rows.push(['al/cr', km(p.gAlong) + ' ' + km(p.gCross)]); }
+      if (p.gnd !== null) { rows.push(['gnd', km(p.gnd)]); rows.push(['al/cr', skm(p.gAlong) + ' ' + skm(p.gCross)]); }
     }
     x.textAlign = 'right'; rows.forEach(([k, val], i) => { x.fillStyle = C.muted; x.fillText(k, W - 6 - x.measureText(val).width - 6, 12 + i * 13); x.fillStyle = i === 0 && !p.tgtUp ? C.muted : C.txt; x.fillText(val, W - 6, 12 + i * 13); });
     x.textAlign = 'left'; x.fillStyle = C.muted; x.fillText(`${p.c.name} · view ${(2 * Math.atan(V.viewTan) * 180 / Math.PI).toFixed(1)}°`, 8, H - 26);

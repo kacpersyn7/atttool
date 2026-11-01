@@ -75,7 +75,8 @@ S.orbit ──orbitElements()──► elements ──propagate()──► r, v
                               │
                               ├──► orbitView.update(): moves S/C, frames, vectors, footprint
                               ├──► bodyInset.update(): Sun/Earth/B seen from the body frame
-                              ├──► orbitPanel / HUD readouts (sensorEval, bodyRate)
+                              ├──► payloadView() ──► payloadInset.draw(): boresight camera image, pointing error
+                              ├──► orbitPanel / HUD readouts (sensorEval, bodyRate, pointing)
                               └──► computeTimeline(): one orbit of samples, cached by key
 ```
 

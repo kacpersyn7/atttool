@@ -67,7 +67,7 @@ export function orbitPanel(ctx) {
     selectRow({ id: 'refFrame', label: 'Shown orbital frame', options: Object.entries(ENV.ORBIT_FRAMES).map(([k, f]) => [k, f.label]), get: () => o.refFrame, set: v => { o.refFrame = v; save(); ctx.renderRail(); } }),
     ...modeCtl));
 
-  if (payloadComp(S)) out.push(card('Payload pointing', 'vs ground target',
+  if (payloadComp(S)) out.push(card('Payload pointing', payloadComp(S).name + ' vs ground target',
     o.mode === 'target' ? null : h('div', { class: 'grid2' }, numCell('ptlat', 'Target lat °', () => o.tgtLat, x => { o.tgtLat = x; save(); }, .1, 2), numCell('ptlon', 'Target lon °', () => o.tgtLon, x => { o.tgtLon = x; save(); }, .1, 2)),
     liveText(() => {
       const cur = ctx.cur(); if (!cur) return ''; const p = pointing(S, cur); if (!p) return '';
