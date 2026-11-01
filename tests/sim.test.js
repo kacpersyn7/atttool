@@ -2,7 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as AM from '../src/core/attitude.js';
 import { defaultSC } from '../src/spacecraft/exampleSpacecraft.js';
-import { compAxis } from '../src/spacecraft/component.js';
+import { compAxis, mkComp, fillParams, sanitizeSpacecraft } from '../src/spacecraft/component.js';
+import { sensorEval } from '../src/sim/sensors.js';
+import * as ENV from '../src/env/index.js';
 import { applyPreset, orbitElements, ltanOf, PRESETS } from '../src/sim/scenario.js';
 import { attitudeAt, payloadComp, bodyRate } from '../src/sim/guidance.js';
 import { computeTimeline } from '../src/sim/timeline.js';
@@ -147,4 +149,46 @@ test('epochs with seconds; definition errors', () => {
   assert.equal(formatEpoch(new Date('2026-10-05T10:00:00Z')), '2026-10-05T10:00');
   const o = { def: 'rv', r: [7000, 0, 0], v: [0, 12, 0] }; assert.match(definitionError(o), /escape/);
   o.v = [0, 5, 0]; assert.match(definitionError(o), /below the surface/);
+});
+
+test('Moon direction is seen from the spacecraft (parallax up to ~1° in LEO)', () => {
+  const A = attitudeAt(state(), 1234);
+  close(AM.v.norm(A.moon), 1, 1e-12);
+  const geo = AM.v.unit(ENV.moonECI(A.date)), par = AM.v.angle(A.moon, geo) * AM.R2D;
+  assert.ok(par > 0 && par < 1.2, 'parallax ' + par); // max asin(r / d_Moon) ≈ 1.1° at 550 km
+});
+
+/** Hand-made geometry: body = ECI, spacecraft on +X at 7000 km, Sun along +Y. */
+const geom = moon => ({ CBI: AM.m.I(), st: { r: [7000, 0, 0] }, sun: [0, 1, 0], moon: AM.v.unit(moon), moonUp: !ENV.behindEarth([7000, 0, 0], AM.v.unit(moon)), ecl: false });
+
+test('star tracker: Moon inside the exclusion blinds it, unless the Moon is behind the Earth', () => {
+  const up = [0, 0, 1], str = mkComp('str', 'S', [0, 0, 0], up);
+  const a = sensorEval(str, geom(up));
+  assert.equal(a.moonBlind, true); assert.equal(a.sunBlind, false); assert.equal(a.earthBlind, false); assert.equal(a.ok, false);
+  const b = sensorEval(str, geom([0.3, 0, 1])); // 16.7° off the boresight, exclusion 15°
+  assert.equal(b.moonBlind, false); assert.equal(b.ok, true);
+  // Moon 16.7° from nadir, inside the Earth disc (ρ = 65.7°): occulted, so not blinding
+  const hid = [-1, 0, 0.3], str2 = mkComp('str', 'S2', [0, 0, 0], hid); str2.earthExcl = -90; // ignore the Earth rule here
+  const c = sensorEval(str2, geom(hid));
+  assert.equal(c.moonUp, false); assert.equal(c.moonBlind, false);
+});
+
+test('parts saved before moonExcl existed get the default', () => {
+  const c = mkComp('str', 'S', [0, 0, 0], [0, 0, 1]); delete c.moonExcl;
+  assert.equal(fillParams(c).moonExcl, 15);
+  const sc = defaultSC(); sc.comps.forEach(c => delete c.moonExcl);
+  assert.ok(sanitizeSpacecraft(JSON.parse(JSON.stringify(sc))).comps.filter(c => c.type === 'str').every(c => c.moonExcl === 15));
+  const custom = mkComp('str', 'S', [0, 0, 0], [0, 0, 1]); custom.moonExcl = 7; assert.equal(fillParams(custom).moonExcl, 7);
+});
+
+test('timeline: a star tracker staring at the Moon is Moon-blind (4) while the Moon is up', () => {
+  const s = state('inertial'); const A0 = attitudeAt(s, 0);
+  s.sc.comps = [mkComp('str', 'STR-M', [0, 0, 0], AM.m.mulv(A0.CBI, A0.moon))];
+  s.sc.comps[0].sunExcl = 0; s.sc.comps[0].earthExcl = -90; // isolate the Moon rule
+  const tl = computeTimeline(s, 1, null, 120), row = tl.rows.find(r => r.kind === 'str');
+  assert.ok(row.v.includes(4), 'some Moon-blind samples');
+  for (let n = 0; n < tl.N; n++) {
+    const A = attitudeAt(s, tl.W0 + (n + .5) / tl.N * tl.T), e = sensorEval(s.sc.comps[0], A);
+    assert.equal(row.v[n] === 4, e.moonUp && e.moonAng < 15);
+  }
 });

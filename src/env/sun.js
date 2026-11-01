@@ -23,5 +23,11 @@ export function eclipse(r, sun) {
   return v.norm(perp) < RE;
 }
 
+/** True if direction `dir` (unit, ECI) seen from position r (km, ECI) points into the Earth disc. */
+export function behindEarth(r, dir) {
+  const rho = Math.asin(Math.min(1, RE / v.norm(r)));
+  return v.angle(dir, v.scale(r, -1)) < rho;
+}
+
 /** Beta angle (rad): elevation of the Sun above the orbit plane. */
 export function betaAngle(r, vel, sun) { const h = v.unit(v.cross(r, vel)); return Math.asin(v.dot(h, sun)); }

@@ -137,7 +137,7 @@ export function createLayoutView({ renderRail }) {
     const param = (key, label, step, dec, min = 0) => numCell('p-' + key, label, () => c[key], x => { c[key] = Math.max(min, x); scChanged(); refreshMass(); }, step, dec);
     const params = [param('mass', 'Mass kg', .05, 2)];
     if (c.fov !== undefined) params.push(param('fov', 'FOV full °', .5, 1));
-    if (c.type === 'str') params.push(param('sunExcl', 'Sun excl. °', 1, 0), param('earthExcl', 'Earth excl. °', 1, 0));
+    if (c.type === 'str') params.push(param('sunExcl', 'Sun excl. °', 1, 0), param('earthExcl', 'Earth excl. °', 1, 0), param('moonExcl', 'Moon excl. °', 1, 0));
     if (c.type === 'mtq') params.push(param('dipole', 'Dipole A·m²', 1, 1), param('len', 'Length m', .01, 2));
     if (c.type === 'rw') params.push(param('hmax', 'H max N·m·s', .05, 2));
     if (c.type === 'sa') params.push(param('w', 'Width m', .05, 2), param('h', 'Height m', .05, 2));

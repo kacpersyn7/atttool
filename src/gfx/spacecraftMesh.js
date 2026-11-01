@@ -67,6 +67,7 @@ export function buildSC(sc, opts = {}) {
       rim.userData.isCone = true; g.add(rim);
       if (opts.excl && c.type === 'str') {
         const ex = new THREE.Mesh(coneGeom(c.sunExcl, 0.7, 32), new THREE.MeshBasicMaterial({ color: COL.sun, wireframe: true, transparent: true, opacity: .25 })); ex.userData.noPick = true; ex.userData.isCone = true; g.add(ex);
+        if (c.moonExcl > 0) { const mx = new THREE.Mesh(coneGeom(c.moonExcl, 0.6, 24), new THREE.MeshBasicMaterial({ color: COL.moon, wireframe: true, transparent: true, opacity: .25 })); mx.userData.noPick = true; mx.userData.isCone = true; g.add(mx); }
       }
     }
     if (c.type === 'mtq' && opts.dipoles) { const a = new Arrow(0xff9b5e, (c.len || .36) / 2 + 0.12, 0.007); a.setDir([0, 0, 1]); g.add(a); }

@@ -23,7 +23,7 @@ export function createTimelineView(tlc) {
       for (let n = 0; n < tl.N; n++) {
         const val = r.v[n]; let col = null;
         if (r.kind === 'ecl') col = val ? '#33496b' : null;
-        else if (r.kind === 'str') col = val === 0 ? '#2f8f5f' : val === 2 ? '#f2a93b' : '#d65050';
+        else if (r.kind === 'str') col = val === 0 ? '#2f8f5f' : val === 2 ? '#f2a93b' : val === 4 ? '#a99fe0' : '#d65050';
         else if (r.kind === 'css') col = val ? '#d8b23e' : null;
         else if (r.kind === 'sa') col = `rgba(79,140,255,${0.15 + 0.85 * val})`;
         else if (r.kind === 'pl') col = val ? '#9fb0c8' : null;

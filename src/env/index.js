@@ -5,6 +5,7 @@
 export * from './constants.js';
 export * from './time.js';
 export * from './sun.js';
+export * from './moon.js';
 export * from './orbit.js';
 export * from './frames.js';
 export * from './magfield.js';

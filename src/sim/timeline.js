@@ -25,7 +25,7 @@ export function timelineKey(state, scVersion, W0) {
 
 /**
  * Sample the orbit that contains state.orbit.t at N points.
- * Row values: ecl 0/1 · str 0 ok / 2 Sun-blind / 3 Earth-blind · css 0/1 · sa 0..1 · pl 0/1.
+ * Row values: ecl 0/1 · str 0 ok / 2 Sun-blind / 3 Earth-blind / 4 Moon-blind (first cause that applies) · css 0/1 · sa 0..1 · pl 0/1.
  * Returns the previous result unchanged if nothing relevant changed.
  */
 export function computeTimeline(state, scVersion, prev, N = 360) {
@@ -39,7 +39,7 @@ export function computeTimeline(state, scVersion, prev, N = 360) {
     const A = attitudeAt(state, W0 + (n + .5) / N * T, E);
     for (const r of tl.rows) {
       if (r.kind === 'ecl') r.v[n] = A.ecl ? 1 : 0;
-      else if (r.kind === 'str') { const s = sensorEval(r.c, A); r.v[n] = s.sunBlind ? 2 : s.earthBlind ? 3 : 0; }
+      else if (r.kind === 'str') { const s = sensorEval(r.c, A); r.v[n] = s.sunBlind ? 2 : s.earthBlind ? 3 : s.moonBlind ? 4 : 0; }
       else if (r.kind === 'css') r.v[n] = css.some(c => sensorEval(c, A).sees) ? 1 : 0;
       else if (r.kind === 'sa') r.v[n] = r.cs.reduce((s, c) => s + sensorEval(c, A).cosInc * c.w * c.h, 0) / r.cs.reduce((s, c) => s + c.w * c.h, 0);
       else if (r.kind === 'pl') r.v[n] = sensorEval(r.c, A).onGround ? 1 : 0;

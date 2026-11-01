@@ -151,7 +151,7 @@ export function createPlotView(dock) {
       s.sig.comps.forEach((c, k) => {
         const step = Math.min(14, (ph - 2) / s.sig.comps.length), yy = top + 7 + k * step + (4 - s.sig.comps.length) * 3;
         x.fillStyle = cols[k]; x.fillRect(0, yy - 1, 8, 3);
-        x.fillStyle = '#c8d3e2'; x.fillText((c.split(' ')[0] + '    ').slice(0, 5) + fmtVal(val[k], s.sig), 12, yy);
+        x.fillStyle = '#c8d3e2'; x.fillText(c.split(' ')[0].padEnd(5) + ' ' + fmtVal(val[k], s.sig), 12, yy);
       });
     });
     // now cursor (white) and hover cursor (dashed)

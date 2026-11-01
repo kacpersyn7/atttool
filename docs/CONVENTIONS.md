@@ -91,6 +91,7 @@ Component orientation `c.q` is q_BC: `q2C(c.q) = C_CB`.
 - **TLE:** the mean elements are flown with the same Keplerian + J2 model, **not SGP4** (no drag, no Kozai/Brouwer correction, TEME treated as ECI). Good near the TLE epoch, drifting by kilometres per day.
 - **ECI** ignores precession and nutation, so it is J2000 ≈ GCRF to well under a degree over decades.
 - **Sun:** low-precision almanac formula (~0.01°). **Eclipse:** cylindrical shadow (no penumbra).
+- **Moon:** low-precision Astronomical Almanac series (Vallado Alg. 31; ~0.3°, ~0.5 % in distance). The direction used everywhere is seen from the spacecraft (`A.moon`, includes the ~1° parallax in LEO). Phase and brightness are ignored.
 - **Magnetic field:** tilted dipole, pole at 80.8°N 72.7°W, B₀ = 29 900 nT. Real IGRF differs by up to ~20 %.
 - **Earth:** sphere, R = 6378.137 km. GMST from the IAU-82 polynomial; UT1 ≈ UTC.
-- **Star tracker availability:** blinded if the Sun is inside the Sun-exclusion angle (outside eclipse) or the Earth limb is closer than the Earth-exclusion angle. The Moon is ignored.
+- **Star tracker availability:** blinded if the Sun is inside the Sun-exclusion angle (outside eclipse), the Earth limb is closer than the Earth-exclusion angle, or the Moon is inside the Moon-exclusion angle and not hidden behind the Earth (any phase). Timeline priority: Sun, then Earth, then Moon.

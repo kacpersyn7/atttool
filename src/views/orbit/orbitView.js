@@ -1,7 +1,7 @@
 /**
  * Workspace 2 — Orbit & Frames.
  * Earth (ECEF texture, rotating by GMST), orbit line coloured by eclipse, ground track,
- * the spacecraft with ECI / orbital (VVLH, LVLH, VNC) / body frames, Sun & B-field vectors, payload footprint,
+ * the spacecraft with ECI / orbital (VVLH, LVLH, VNC) / body frames, Sun, Moon & B-field vectors, payload footprint,
  * a body-frame inset, signal plots and a one-orbit sensor timeline.
  *
  * Scene unit = 1000 km. Physics lives in sim/ and env/; this file only draws.
@@ -36,6 +36,8 @@ export function createOrbitView({ renderRail }) {
   V.scene.add(new THREE.AmbientLight(0x6d7f99, 0.28));
   const sunLight = new THREE.DirectionalLight(0xfff3dc, 1.25); V.scene.add(sunLight); V.scene.add(sunLight.target);
   const sunGlow = glowSprite('#ffd27a', 60); V.scene.add(sunGlow);
+  // Moon at its true distance and size; lit by sunLight, so it shows the right phase
+  const moonMesh = new THREE.Mesh(new THREE.SphereGeometry(ENV.RMOON * U, 48, 24), new THREE.MeshPhongMaterial({ color: 0xc9c6c0, shininess: 2 })); V.scene.add(moonMesh);
 
   /* ---------- Earth & frames ---------- */
   const RE = ENV.RE * U;
@@ -60,6 +62,7 @@ export function createOrbitView({ renderRail }) {
   let scModel = null, scVer = -1;
   let orbTriad = null, orbTriadFrame = null; // rebuilt when the selected orbital frame changes (labels differ)
   const sunArrow = new Arrow(COL.sun, 1, 0.008, { label: 'Sun' }); V.scene.add(sunArrow);
+  const moonArrow = new Arrow(COL.moon, 1, 0.006, { label: 'Moon' }); V.scene.add(moonArrow);
   const bArrow = new Arrow(COL.teal, 1, 0.008, { label: 'B' }); V.scene.add(bArrow);
   const vArrow = new Arrow(COL.cyan, 1, 0.008, { label: 'v' }); V.scene.add(vArrow);
   const ray = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(1, 0, 0)]), new THREE.LineBasicMaterial({ color: 0xe8ecf2, transparent: true, opacity: .8 })); V.scene.add(ray);
@@ -126,6 +129,8 @@ export function createOrbitView({ renderRail }) {
     // vectors at the spacecraft (thickness scales with S/C size, length kept in scene units)
     const L = k * 2.6, vs = Math.max(.4, k * 6);
     sunArrow.visible = o.show.sunv; sunArrow.position.copy(pos); sunArrow.setDir(A.sun); sunArrow.mat.opacity = A.ecl ? .35 : 1; sunArrow.mat.transparent = true; sunArrow.scale.setScalar(vs); sunArrow.setLength(L / vs);
+    moonMesh.visible = o.show.moonv; moonMesh.position.set(...AM.v.scale(ENV.moonECI(A.date), U));
+    moonArrow.visible = o.show.moonv; moonArrow.position.copy(pos); moonArrow.setDir(A.moon); moonArrow.mat.transparent = true; moonArrow.mat.opacity = A.moonUp ? 1 : .3; moonArrow.scale.setScalar(vs); moonArrow.setLength(L * .75 / vs);
     const BI = ENV.bfieldECI(A.st.r, A.date);
     bArrow.visible = o.show.bv; bArrow.position.copy(pos); bArrow.setDir(BI); bArrow.scale.setScalar(vs); bArrow.setLength(L * .8 / vs);
     vArrow.visible = o.show.orbFrame; vArrow.position.copy(pos); vArrow.setDir(A.st.v); vArrow.scale.setScalar(vs); vArrow.setLength(L * .9 / vs);
@@ -143,7 +148,7 @@ export function createOrbitView({ renderRail }) {
     } else ray.visible = foot.visible = footLbl.visible = false;
     tgt.visible = o.mode === 'target';
     if (tgt.visible) { const p = AM.v.scale(ENV.llh2ecef(o.tgtLat * D2R, o.tgtLon * D2R), U); tgt.position.set(...p); tgt.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), V3(AM.v.unit(p))); }
-    V.scene.updateMatrixWorld(); [scModel, orbTriad, sunArrow, bArrow, vArrow].forEach(fixLabels);
+    V.scene.updateMatrixWorld(); [scModel, orbTriad, sunArrow, moonArrow, bArrow, vArrow].forEach(fixLabels);
     // follow camera
     if (o.show.follow) { if (prevScPos) { const d = pos.clone().sub(prevScPos); V.camera.position.add(d); } V.controls.target.copy(pos); }
     prevScPos = pos.clone();
@@ -162,6 +167,14 @@ export function createOrbitView({ renderRail }) {
     const off = p.clone().normalize().multiplyScalar(0.9).add(new THREE.Vector3(0.4, -0.5, 0.35));
     V.camera.position.copy(p).add(off); prevScPos = p.clone(); V.controls.update();
   }
+  /** Camera next to the Moon (Earth side, slightly off-axis): the Moon fills ~8° and its phase is visible. */
+  function moonView() {
+    if (!cur) return; S.orbit.show.follow = false; S.orbit.show.moonv = true;
+    const m = AM.v.scale(ENV.moonECI(cur.date), U), toEarth = AM.v.unit(AM.v.scale(m, -1));
+    let side = AM.v.cross(toEarth, [0, 0, 1]); side = AM.v.norm(side) < 1e-6 ? [1, 0, 0] : AM.v.unit(side);
+    V.controls.target.set(...m); V.camera.position.set(...AM.v.add(m, AM.v.add(AM.v.scale(toEarth, 11), AM.v.scale(side, 4))));
+    prevScPos = null; V.controls.update(); save(); syncAll();
+  }
   function doPreset(k) { if (applyPreset(S.orbit, k)) { save(); syncAll(); } }
 
   /* ---------- rail & HUD ---------- */
@@ -179,12 +192,14 @@ export function createOrbitView({ renderRail }) {
         h('dt', null, 'B vs ' + S.orbit.refFrame.toUpperCase() + ' (φ θ ψ)'), h('dd', null, liveText(() => { if (!cur) return ''; const e = AM.C2euler('321', AM.m.mul(cur.CBI, AM.m.T(cur.CRI))).map(deg); return [e[2], e[1], e[0]].map(x => x.toFixed(1) + '°').join(' '); })),
         h('dt', null, 'Body rate |ω|'), h('dd', null, liveText(() => cur ? (deg(AM.v.norm(bodyRate(S, cur.t)))).toFixed(3) + ' °/s' : '')),
         h('dt', null, 'Sun in body'), h('dd', null, liveText(() => cur ? '[' + AM.m.mulv(cur.CBI, cur.sun).map(x => fmt(x, 2)).join(' ') + ']' : '')),
+        h('dt', null, 'Moon in body'), h('dd', null, liveText(() => cur ? '[' + AM.m.mulv(cur.CBI, cur.moon).map(x => fmt(x, 2)).join(' ') + ']' : '')),
         h('dt', null, 'B in body (nT)'), h('dd', null, liveText(() => cur ? '[' + AM.m.mulv(cur.CBI, ENV.bfieldECI(cur.st.r, cur.date)).map(x => x.toFixed(0)).join(' ') + ']' : ''))),
-      h('div', { class: 'legend', style: 'margin-top:6px' }, h('span', null, h('i', { style: 'background:var(--sun)' }), 'Sun'), h('span', null, h('i', { style: 'background:#57c7b8' }), 'B (dipole)'), h('span', null, h('i', { style: 'background:var(--cyan)' }), 'v'), h('span', null, h('i', { style: 'background:#38506f' }), 'orbit in eclipse'))));
+      h('div', { class: 'legend', style: 'margin-top:6px' }, h('span', null, h('i', { style: 'background:var(--sun)' }), 'Sun'), h('span', null, h('i', { style: 'background:var(--moon)' }), 'Moon'), h('span', null, h('i', { style: 'background:#57c7b8' }), 'B (dipole)'), h('span', null, h('i', { style: 'background:var(--cyan)' }), 'v'), h('span', null, h('i', { style: 'background:#38506f' }), 'orbit in eclipse'))));
     $('#hudTR').append(
       h('button', { class: 'vbtn', onclick: () => { S.orbit.show.follow = false; V.controls.target.set(0, 0, 0); viewPreset(V, [1, -.9, .5], 28); syncAll(); } }, 'Earth view'),
       h('button', { class: 'vbtn', onclick: () => { S.orbit.show.follow = true; zoomSC(); syncAll(); } }, 'Zoom to S/C'),
-      h('button', { class: 'vbtn', onclick: () => { if (!cur) return; S.orbit.show.follow = false; V.controls.target.set(0, 0, 0); const hI = AM.v.unit(AM.v.cross(cur.st.r, cur.st.v)); viewPreset(V, hI, AM.v.norm(cur.st.r) * U * 3.2); syncAll(); } }, 'Orbit-normal view'));
+      h('button', { class: 'vbtn', onclick: () => { if (!cur) return; S.orbit.show.follow = false; V.controls.target.set(0, 0, 0); const hI = AM.v.unit(AM.v.cross(cur.st.r, cur.st.v)); viewPreset(V, hI, AM.v.norm(cur.st.r) * U * 3.2); syncAll(); } }, 'Orbit-normal view'),
+      h('button', { class: 'vbtn', onclick: moonView }, 'Moon view'));
   }
 
   /* ---------- lifecycle ---------- */

@@ -4,6 +4,7 @@
  *   fov       full field of view (deg)          — sensors / antennas (drawn as a cone if `cone`)
  *   sunExcl   Sun exclusion half-angle (deg)    — star tracker
  *   earthExcl Earth-limb exclusion (deg)        — star tracker
+ *   moonExcl  Moon exclusion half-angle (deg)   — star tracker
  *   dipole    max magnetic dipole (A·m²)        — magnetorquer
  *   hmax      max wheel momentum (N·m·s)        — reaction wheel
  *   w, h      panel size (m)                    — solar array
@@ -13,7 +14,7 @@
  */
 export const TYPES = {
   payload: { label: 'Payload camera', color: '#e8ecf2', fov: 2.5, mass: 15, cone: true },
-  str: { label: 'Star tracker', color: '#9db8e0', fov: 20, sunExcl: 30, earthExcl: 20, mass: 0.4, cone: true },
+  str: { label: 'Star tracker', color: '#9db8e0', fov: 20, sunExcl: 30, earthExcl: 20, moonExcl: 15, mass: 0.4, cone: true },
   css: { label: 'Sun sensor', color: '#f0c64a', fov: 120, mass: 0.05, cone: true },
   mtq: { label: 'Magnetorquer', color: '#cf7e43', dipole: 15, mass: 0.6, len: 0.36 },
   rw: { label: 'Reaction wheel', color: '#8a9ab3', hmax: 0.4, mass: 1.1 },
@@ -26,18 +27,18 @@ export const TYPES = {
 };
 
 /** Parameter keys copied from the type onto a new component. */
-export const PARAM_KEYS = ['fov', 'sunExcl', 'earthExcl', 'dipole', 'hmax', 'w', 'h', 'len'];
+export const PARAM_KEYS = ['fov', 'sunExcl', 'earthExcl', 'moonExcl', 'dipole', 'hmax', 'w', 'h', 'len'];
 
 /** Human name of a component's +Z axis. */
 export function axisName(type) {
   return type === 'mtq' ? 'dipole axis' : type === 'rw' ? 'spin axis' : type === 'sa' ? 'panel normal' : type === 'thr' ? 'nozzle axis' : 'boresight';
 }
 
-/** Type-specific parameters as short text, e.g. "FOV 20° · Sun excl. 30° · Earth excl. 20°". */
+/** Type-specific parameters as short text, e.g. "FOV 20° · Sun excl. 30° · Earth excl. 20° · Moon excl. 15°". */
 export function paramText(c) {
   const p = [];
   if (c.fov !== undefined) p.push(`FOV ${+c.fov.toFixed(1)}°`);
-  if (c.type === 'str') p.push(`Sun excl. ${c.sunExcl}°`, `Earth excl. ${c.earthExcl}°`);
+  if (c.type === 'str') p.push(`Sun excl. ${c.sunExcl}°`, `Earth excl. ${c.earthExcl}°`, `Moon excl. ${c.moonExcl}°`);
   if (c.type === 'mtq') p.push(`${c.dipole} A·m²`, `L ${c.len} m`);
   if (c.type === 'rw') p.push(`H ${c.hmax} N·m·s`);
   if (c.type === 'sa') p.push(`${c.w} × ${c.h} m`);
