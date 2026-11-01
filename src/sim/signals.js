@@ -43,6 +43,7 @@ export function signalCatalog(state) {
     { id: 'eulN', group: 'Attitude', label: 'Euler 3-2-1 vs nominal', unit: '°', comps: E, cols: EC, kind: 'angle', range: [-180, 180], f: A => eul(AM.m.mul(A.CBI, AM.m.T(A.CNI))) },
     { id: 'rate', group: 'Attitude', label: 'Body rate ω_B', unit: '°/s', comps: XYZ, kind: 'value', needsNext: true, f: (A, A1) => rateFrom(A.CBI, A1.CBI, A1.t - A.t) },
     { id: 'sunB', group: 'Environment', label: 'Sun direction in body', unit: '', comps: XYZ, kind: 'value', range: [-1, 1], f: A => AM.m.mulv(A.CBI, A.sun) },
+    { id: 'moonB', group: 'Environment', label: 'Moon direction in body', unit: '', comps: XYZ, kind: 'value', range: [-1, 1], f: A => AM.m.mulv(A.CBI, A.moon) },
     { id: 'nadB', group: 'Environment', label: 'Nadir direction in body', unit: '', comps: XYZ, kind: 'value', range: [-1, 1], f: A => AM.m.mulv(A.CBI, AM.v.unit(AM.v.scale(A.st.r, -1))) },
     { id: 'bB', group: 'Environment', label: 'B-field in body', unit: 'nT', comps: XYZ, kind: 'value', f: A => AM.m.mulv(A.CBI, ENV.bfieldECI(A.st.r, A.date)) },
     { id: 'beta', group: 'Environment', label: 'β angle', unit: '°', comps: ['β'], cols: [''], kind: 'value', f: A => [ENV.betaAngle(A.st.r, A.st.v, A.sun) * R2D] },
@@ -50,6 +51,7 @@ export function signalCatalog(state) {
   ];
   for (const c of state.sc.comps.filter(c => POINTED.includes(c.type))) {
     list.push({ id: 'sun:' + c.id, group: 'Parts', label: `${c.name} · Sun angle`, unit: '°', comps: ['∠Sun'], cols: [''], csv: 'sunAngle_' + codeOf(c), kind: 'value', range: [0, 180], f: A => [sensorEval(c, A).sunAng] });
+    if (c.type === 'str') list.push({ id: 'moon:' + c.id, group: 'Parts', label: `${c.name} · Moon angle`, unit: '°', comps: ['∠Moon'], cols: [''], csv: 'moonAngle_' + codeOf(c), kind: 'value', range: [0, 180], f: A => [sensorEval(c, A).moonAng] });
     if (LIMB.includes(c.type)) list.push({ id: 'limb:' + c.id, group: 'Parts', label: `${c.name} · above Earth limb`, unit: '°', comps: ['∠limb'], cols: [''], csv: 'limbAngle_' + codeOf(c), kind: 'value', f: A => [sensorEval(c, A).limb] });
   }
   return list;

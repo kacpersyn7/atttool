@@ -33,7 +33,8 @@ export function payloadComp(state) {
 
 /**
  * Full geometric state at t seconds after epoch.
- * @returns {{t, date, st, sun, CRI, CVI, CNI, CBI, ecl, flag}} st = propagated orbit state (ECI km, km/s),
+ * @returns {{t, date, st, sun, moon, CRI, CVI, CNI, CBI, ecl, flag}} st = propagated orbit state (ECI km, km/s),
+ *   sun = unit Sun vector (ECI), moon = unit vector from the spacecraft to the Moon (ECI, includes parallax),
  *   CRI = C_ref←ECI for the displayed orbital frame (o.refFrame), CVI = C_VVLH←ECI,
  *   CNI = nominal attitude C_SCF←ECI, CBI = C_Body←ECI, ecl = in eclipse, flag = mode-specific info (target elevation).
  */
@@ -64,7 +65,8 @@ export function attitudeAt(state, t, E = orbitElements(state.orbit)) {
     else { CBI = CNI; flag = { elev, below: true }; } // hold the nominal attitude
   }
   const ecl = ENV.eclipse(st.r, sun);
-  return { t, date, st, sun, CRI, CVI, CNI, CBI, ecl, flag };
+  const moon = AM.v.unit(AM.v.sub(ENV.moonECI(date), st.r));
+  return { t, date, st, sun, moon, CRI, CVI, CNI, CBI, ecl, flag };
 }
 
 /** Body angular rate (rad/s, body axes) by finite difference over 1 s. */

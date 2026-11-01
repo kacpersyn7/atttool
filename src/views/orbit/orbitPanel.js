@@ -72,18 +72,18 @@ export function orbitPanel(ctx) {
       for (const c of S.sc.comps) {
         if (c.type !== 'str') continue;
         const s = sensorEval(c, cur);
-        rows.push(`<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span>${c.name}</span><span class="lbl" style="font-family:var(--f-mono);font-size:11.5px">☉ ${s.sunAng.toFixed(0)}° · limb ${s.limb.toFixed(0)}°</span>${s.ok ? '<span class="chip ok">Tracking</span>' : s.sunBlind ? '<span class="chip warn">Sun-blinded</span>' : '<span class="chip bad">Earth in FOV</span>'}</div>`);
+        rows.push(`<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span>${c.name}</span><span class="lbl" style="font-family:var(--f-mono);font-size:11.5px">☉ ${s.sunAng.toFixed(0)}° · ☾ ${s.moonUp ? s.moonAng.toFixed(0) + '°' : '–'} · limb ${s.limb.toFixed(0)}°</span>${s.ok ? '<span class="chip ok">Tracking</span>' : s.sunBlind ? '<span class="chip warn">Sun-blinded</span>' : s.earthBlind ? '<span class="chip bad">Earth in FOV</span>' : '<span class="chip moon">Moon-blinded</span>'}</div>`);
       }
       const css = S.sc.comps.filter(c => c.type === 'css'); if (css.length) { const n = css.filter(c => sensorEval(c, cur).sees).length; rows.push(`<div style="display:flex;justify-content:space-between"><span>Sun sensors seeing Sun</span><span class="chip ${n ? 'ok' : 'dim'}">${n}/${css.length}</span></div>`); }
       const pc = payloadComp(S); if (pc) { const s = sensorEval(pc, cur); rows.push(`<div style="display:flex;justify-content:space-between"><span>${pc.name} off-nadir</span><span style="font-family:var(--f-mono)">${s.nadAng.toFixed(1)}°</span></div>`); }
       return `<div style="display:flex;flex-direction:column;gap:6px">${rows.join('')}</div>`;
     }),
-    tip('Star tracker is blinded if the Sun is inside its exclusion angle, or the Earth limb is closer than its Earth exclusion. Edit the angles in <b>Spacecraft Layout</b>.')));
+    tip('Star tracker is blinded if the Sun is inside its exclusion angle, the Earth limb is closer than its Earth exclusion, or the Moon (when not behind the Earth) is inside its Moon exclusion. ☾ – = Moon behind the Earth. Edit the angles in <b>Spacecraft Layout</b>.')));
 
   out.push(card('Display', null,
     h('div', { class: 'checks' },
       check('s-eci', 'ECI frame', () => o.show.eci, v => { o.show.eci = v; save(); }), check('s-orb', 'Orbital frame + v', () => o.show.orbFrame, v => { o.show.orbFrame = v; save(); }),
-      check('s-track', 'Ground track', () => o.show.track, v => { o.show.track = v; save(); }), check('s-sun', 'Sun vector', () => o.show.sunv, v => { o.show.sunv = v; save(); }),
+      check('s-track', 'Ground track', () => o.show.track, v => { o.show.track = v; save(); }), check('s-sun', 'Sun vector', () => o.show.sunv, v => { o.show.sunv = v; save(); }), check('s-moon', 'Moon vector', () => o.show.moonv, v => { o.show.moonv = v; save(); }),
       check('s-b', 'Magnetic field B', () => o.show.bv, v => { o.show.bv = v; save(); }), check('s-cones', 'Sensor FOV cones', () => o.show.cones, v => { o.show.cones = v; save(); }),
       check('s-follow', 'Camera follows S/C', () => o.show.follow, v => { o.show.follow = v; if (v) ctx.zoomSC(); save(); }),
       check('s-inset', 'Body-frame inset', () => !o.hideInset, v => { o.hideInset = !v; ctx.setInset(v); save(); })),

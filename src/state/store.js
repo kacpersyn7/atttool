@@ -14,6 +14,7 @@ import * as AM from '../core/attitude.js';
 import { defaultSC } from '../spacecraft/exampleSpacecraft.js';
 import { normalizeBus, convertLegacyFrame } from '../spacecraft/bus.js';
 import { defaultAlign } from '../spacecraft/alignment.js';
+import { fillParams } from '../spacecraft/component.js';
 import { EPOCH0 } from '../sim/scenario.js';
 
 export const STORAGE_KEY = 'atttool.v1';
@@ -26,7 +27,7 @@ export function defaultState() {
     orbit: {
       preset: 'sso1030', def: 'elements', r: null, v: null, tle: '', epoch: EPOCH0, hp: 550, ha: 550, i: 97.59, raan: 0, argp: 0, nu0: 0, j2: true, t: 0, playing: true, speed: 60,
       mode: 'offsets', refFrame: 'vvlh', roll: 0, pitch: 0, yaw: 0, sunAxis: '-Z', sunSec: 'nadir', tgtLat: 52.23, tgtLon: 21.01, tgtComp: '',
-      show: { eci: true, orbFrame: true, track: true, sunv: true, bv: true, cones: true, follow: false }, scale: 1.0,
+      show: { eci: true, orbFrame: true, track: true, sunv: true, moonv: true, bv: true, cones: true, follow: false }, scale: 1.0,
       plot: { sigs: [], win: 'orbit', comma: null, dockH: null, collapsed: false },
     },
     layout: { sel: null, gizmo: 'translate', oriTab: 'ypr', dcmDir: 0, alignDcmDir: 0, imp: { dir: 'CS', order: 'first', fix: true }, view: '3d', table: { sort: '', dir: 1, type: 'all', q: '', comma: null }, show: { cones: true, excl: false, labels: true, bus: 0.55, principal: false, com: true, orbitDirs: true } },
@@ -55,6 +56,8 @@ function migrate(s) {
   // the spacecraft. The old offsets mode flew SCF = selected orbital frame, so start from that.
   normalizeBus(s.sc.bus); convertLegacyFrame(s.sc);
   if (!s.sc.align) s.sc.align = defaultAlign(s.orbit.refFrame || 'vvlh');
+  // v0.6: new type parameters (e.g. the star tracker's moonExcl) for parts saved before they existed
+  (s.sc.comps || []).forEach(fillParams);
   if ('lvlh' in s.orbit.show) { s.orbit.show.orbFrame = s.orbit.show.lvlh; delete s.orbit.show.lvlh; }
 }
 

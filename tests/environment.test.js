@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as ENV from '../src/env/index.js';
 import { v } from '../src/core/linalg.js';
-import { close } from './helpers.js';
+import { close, closeArr } from './helpers.js';
 
 const D2R = Math.PI / 180;
 const leo = { a: ENV.RE + 550, e: 0, i: 97.6 * D2R, raan: 0, argp: 0, nu0: 0 };
@@ -91,6 +91,20 @@ test('Sun direction at the 2026 March equinox is near +X', () => {
 test('Sun declination at June solstice ≈ +23.44°', () => {
   const s = ENV.sunECI(new Date('2026-06-21T08:24:00Z'));
   close(Math.asin(s[2]) / D2R, 23.44, 0.02);
+});
+
+test('Moon position matches Vallado Example 5-3 (1994-04-28 0h UTC)', () => {
+  // Vallado, Fundamentals of Astrodynamics, Example 5-3 (same low-precision series)
+  closeArr(ENV.moonECI(new Date('1994-04-28T00:00:00Z')), [-134240.626, -311571.590, -126693.785], 1);
+});
+
+test('Moon matches Meeus Example 47.a within the low-precision accuracy', () => {
+  // Meeus, Astronomical Algorithms, Ex. 47.a: 1992-04-12 0h TD → λ 133.162655°, β −3.229126°, Δ 368409.7 km
+  const m = ENV.moonECI(new Date(Date.UTC(1992, 3, 12) - 59e3)), d = v.norm(m), eps = 23.440636 * D2R;
+  const y = Math.cos(eps) * m[1] + Math.sin(eps) * m[2], z = -Math.sin(eps) * m[1] + Math.cos(eps) * m[2];
+  close(Math.atan2(y, m[0]) / D2R, 133.162655, 0.3);
+  close(Math.asin(z / d) / D2R, -3.229126, 0.2);
+  close(d, 368409.7, 0.005 * 368409.7);
 });
 
 test('GMST at J2000 epoch is 280.46°', () => {

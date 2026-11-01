@@ -29,6 +29,13 @@ export function mkComp(type, name, pos, dir, hint, extra = {}) {
   return Object.assign(c, extra);
 }
 
+/** Give a component any type parameter it lacks (parts saved before that parameter existed). */
+export function fillParams(c) {
+  const T = TYPES[c.type]; if (!T) return c;
+  for (const k of PARAM_KEYS) if (T[k] !== undefined && c[k] === undefined) c[k] = T[k];
+  return c;
+}
+
 /** C_BC: columns = component axes expressed in body. */
 export function compCBC(c) { return AM.m.T(AM.q2C(c.q)); }
 /** +Z_C expressed in body. */
@@ -52,7 +59,7 @@ export function sanitizeSpacecraft(json) {
   sc.align = checkAlign(sc.align);
   sc.comps.forEach(c => {
     if (!TYPES[c.type]) throw new Error('Unknown component type "' + c.type + '".');
-    c.id = c.id || newId(); c.q = AM.q.unit(c.q); delete c.eul;
+    c.id = c.id || newId(); c.q = AM.q.unit(c.q); delete c.eul; fillParams(c);
   });
   return sc;
 }

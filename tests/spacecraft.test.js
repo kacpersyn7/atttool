@@ -144,7 +144,7 @@ test('parts table: bus first, one row per component, nominal angles', () => {
   const sa = rows.find(r => r.name === 'SA +Y'); close(sa.toEarth, 180, 1e-9);               // arrays face zenith
   const css = rows.find(r => r.name === 'CSS-+X'); close(css.toAlong, 0, 1e-9);
   closeArr(rows.find(r => r.name === 'MTQ-X').ypr.map(Math.round), AM.C2euler('321', AM.q2C(sc.comps.find(c => c.name === 'MTQ-X').q)).map(x => Math.round(x * AM.R2D)));
-  assert.equal(paramText(sc.comps.find(c => c.type === 'str')), 'FOV 20° · Sun excl. 30° · Earth excl. 20°');
+  assert.equal(paramText(sc.comps.find(c => c.type === 'str')), 'FOV 20° · Sun excl. 30° · Earth excl. 20° · Moon excl. 15°');
   // a different nominal alignment changes the angles
   sc.align = { ref: 'lvlh', mode: 'axes', x: '+Z', y: '+X' }; // radial out = SCF +Z → payload looks away from Earth
   close(partRows(sc).find(r => r.name === 'PL cam').toEarth, 180, 1e-9);
