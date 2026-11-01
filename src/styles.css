@@ -12,6 +12,7 @@
   --muted:#8697ae;
   --faint:#5d6e86;
   --sun:#f2a93b;       /* accent = sunlight */
+  --moon:#a99fe0;      /* Moon vector, Moon-blind (same as COL.moon) */
   --sun-soft:rgba(242,169,59,.14);
   --ax-x:#ff6161; --ax-y:#46d38a; --ax-z:#4f8cff;
   --eig:#c48bff; --probe:#ff7bd5; --cyan:#4fd6e8;
@@ -83,7 +84,7 @@ textarea{font-family:var(--f-mono);font-size:11.5px;min-height:90px;resize:verti
 .kv dd{margin:0;font-family:var(--f-mono);font-size:12.5px;text-align:right;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid var(--line);white-space:nowrap}
 .chip::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
-.chip.ok{color:var(--ok)} .chip.warn{color:var(--warn)} .chip.bad{color:var(--bad)} .chip.dim{color:var(--muted)} .chip.moon{color:#9a8fd0}
+.chip.ok{color:var(--ok)} .chip.warn{color:var(--warn)} .chip.bad{color:var(--bad)} .chip.dim{color:var(--muted)} .chip.moon{color:var(--moon)}
 .chk{display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer;color:var(--text)}
 .chk input{accent-color:var(--sun)}
 .checks{display:grid;grid-template-columns:1fr 1fr;gap:4px 10px}

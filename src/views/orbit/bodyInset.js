@@ -48,7 +48,7 @@ export function createBodyInset(insetEl, earthMap) {
     iSun.position.set(...AM.v.scale(sunB, 10)); iSun.intensity = A.ecl ? 0.05 : 1.1;
     iSunA.setDir(sunB); iSunA.mat.transparent = true; iSunA.mat.opacity = A.ecl ? .3 : 1; iSunGlow.position.set(...AM.v.scale(sunB, 2.1)); iSunGlow.visible = !A.ecl;
     // Moon: dimmed while it is hidden behind the Earth (it cannot blind a star tracker then)
-    const moonB = AM.m.mulv(A.CBI, A.moon); iMoon.visible = S.orbit.show.moonv; iMoon.setDir(moonB); iMoon.mat.transparent = true; iMoon.mat.opacity = AM.v.angle(moonB, nadB) > rho ? 1 : .3;
+    const moonB = AM.m.mulv(A.CBI, A.moon); iMoon.visible = S.orbit.show.moonv; iMoon.setDir(moonB); iMoon.mat.transparent = true; iMoon.mat.opacity = A.moonUp ? 1 : .3;
     iB.setDir(BB); iPlane.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), V3(AM.v.unit(BB))); iV.setDir(vB);
     I.controls.update();
   }

@@ -127,7 +127,7 @@ export function createOrbitView({ renderRail }) {
     // vectors at the spacecraft (thickness scales with S/C size, length kept in scene units)
     const L = k * 2.6, vs = Math.max(.4, k * 6);
     sunArrow.visible = o.show.sunv; sunArrow.position.copy(pos); sunArrow.setDir(A.sun); sunArrow.mat.opacity = A.ecl ? .35 : 1; sunArrow.mat.transparent = true; sunArrow.scale.setScalar(vs); sunArrow.setLength(L / vs);
-    moonArrow.visible = o.show.moonv; moonArrow.position.copy(pos); moonArrow.setDir(A.moon); moonArrow.scale.setScalar(vs); moonArrow.setLength(L * .75 / vs);
+    moonArrow.visible = o.show.moonv; moonArrow.position.copy(pos); moonArrow.setDir(A.moon); moonArrow.mat.transparent = true; moonArrow.mat.opacity = A.moonUp ? 1 : .3; moonArrow.scale.setScalar(vs); moonArrow.setLength(L * .75 / vs);
     const BI = ENV.bfieldECI(A.st.r, A.date);
     bArrow.visible = o.show.bv; bArrow.position.copy(pos); bArrow.setDir(BI); bArrow.scale.setScalar(vs); bArrow.setLength(L * .8 / vs);
     vArrow.visible = o.show.orbFrame; vArrow.position.copy(pos); vArrow.setDir(A.st.v); vArrow.scale.setScalar(vs); vArrow.setLength(L * .9 / vs);
@@ -183,7 +183,7 @@ export function createOrbitView({ renderRail }) {
         h('dt', null, 'Sun in body'), h('dd', null, liveText(() => cur ? '[' + AM.m.mulv(cur.CBI, cur.sun).map(x => fmt(x, 2)).join(' ') + ']' : '')),
         h('dt', null, 'Moon in body'), h('dd', null, liveText(() => cur ? '[' + AM.m.mulv(cur.CBI, cur.moon).map(x => fmt(x, 2)).join(' ') + ']' : '')),
         h('dt', null, 'B in body (nT)'), h('dd', null, liveText(() => cur ? '[' + AM.m.mulv(cur.CBI, ENV.bfieldECI(cur.st.r, cur.date)).map(x => x.toFixed(0)).join(' ') + ']' : ''))),
-      h('div', { class: 'legend', style: 'margin-top:6px' }, h('span', null, h('i', { style: 'background:var(--sun)' }), 'Sun'), h('span', null, h('i', { style: 'background:#b7b2dd' }), 'Moon'), h('span', null, h('i', { style: 'background:#57c7b8' }), 'B (dipole)'), h('span', null, h('i', { style: 'background:var(--cyan)' }), 'v'), h('span', null, h('i', { style: 'background:#38506f' }), 'orbit in eclipse'))));
+      h('div', { class: 'legend', style: 'margin-top:6px' }, h('span', null, h('i', { style: 'background:var(--sun)' }), 'Sun'), h('span', null, h('i', { style: 'background:var(--moon)' }), 'Moon'), h('span', null, h('i', { style: 'background:#57c7b8' }), 'B (dipole)'), h('span', null, h('i', { style: 'background:var(--cyan)' }), 'v'), h('span', null, h('i', { style: 'background:#38506f' }), 'orbit in eclipse'))));
     $('#hudTR').append(
       h('button', { class: 'vbtn', onclick: () => { S.orbit.show.follow = false; V.controls.target.set(0, 0, 0); viewPreset(V, [1, -.9, .5], 28); syncAll(); } }, 'Earth view'),
       h('button', { class: 'vbtn', onclick: () => { S.orbit.show.follow = true; zoomSC(); syncAll(); } }, 'Zoom to S/C'),

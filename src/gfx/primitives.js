@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import * as AM from '../core/attitude.js';
 
 /** Palette shared with CSS variables in styles.css. */
-export const COL = { x: 0xff6161, y: 0x46d38a, z: 0x4f8cff, sun: 0xf2a93b, eig: 0xc48bff, probe: 0xff7bd5, cyan: 0x4fd6e8, teal: 0x57c7b8, muted: 0x8697ae, moon: 0xb7b2dd };
+export const COL = { x: 0xff6161, y: 0x46d38a, z: 0x4f8cff, sun: 0xf2a93b, eig: 0xc48bff, probe: 0xff7bd5, cyan: 0x4fd6e8, teal: 0x57c7b8, muted: 0x8697ae, moon: 0xa99fe0 };
 
 export function V3(a) { return new THREE.Vector3(a[0], a[1], a[2]); }
 

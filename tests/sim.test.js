@@ -155,11 +155,11 @@ test('Moon direction is seen from the spacecraft (parallax up to ~1° in LEO)', 
   const A = attitudeAt(state(), 1234);
   close(AM.v.norm(A.moon), 1, 1e-12);
   const geo = AM.v.unit(ENV.moonECI(A.date)), par = AM.v.angle(A.moon, geo) * AM.R2D;
-  assert.ok(par > 0 && par < 1.1, 'parallax ' + par);
+  assert.ok(par > 0 && par < 1.2, 'parallax ' + par); // max asin(r / d_Moon) ≈ 1.1° at 550 km
 });
 
 /** Hand-made geometry: body = ECI, spacecraft on +X at 7000 km, Sun along +Y. */
-const geom = moon => ({ CBI: AM.m.I(), st: { r: [7000, 0, 0] }, sun: [0, 1, 0], moon: AM.v.unit(moon), ecl: false });
+const geom = moon => ({ CBI: AM.m.I(), st: { r: [7000, 0, 0] }, sun: [0, 1, 0], moon: AM.v.unit(moon), moonUp: !ENV.behindEarth([7000, 0, 0], AM.v.unit(moon)), ecl: false });
 
 test('star tracker: Moon inside the exclusion blinds it, unless the Moon is behind the Earth', () => {
   const up = [0, 0, 1], str = mkComp('str', 'S', [0, 0, 0], up);

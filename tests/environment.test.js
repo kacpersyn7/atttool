@@ -94,8 +94,9 @@ test('Sun declination at June solstice ≈ +23.44°', () => {
 });
 
 test('Moon position matches Vallado Example 5-3 (1994-04-28 0h UTC)', () => {
-  // Vallado, Fundamentals of Astrodynamics, Example 5-3 (same low-precision series)
-  closeArr(ENV.moonECI(new Date('1994-04-28T00:00:00Z')), [-134240.626, -311571.590, -126693.785], 1);
+  // Vallado, Fundamentals of Astrodynamics, Example 5-3 — same algorithm, so this checks the transcription (to 1 m);
+  // the Meeus test below is the independent accuracy check
+  closeArr(ENV.moonECI(new Date('1994-04-28T00:00:00Z')), [-134240.626, -311571.590, -126693.785], 1e-3);
 });
 
 test('Moon matches Meeus Example 47.a within the low-precision accuracy', () => {
@@ -109,6 +110,14 @@ test('Moon matches Meeus Example 47.a within the low-precision accuracy', () => 
 
 test('GMST at J2000 epoch is 280.46°', () => {
   close(ENV.gmst(new Date('2000-01-01T12:00:00Z')) / D2R, 280.46061837, 1e-6);
+});
+
+test('behindEarth: nadir-ish directions are inside the Earth disc, horizontal ones are not', () => {
+  const r = [7000, 0, 0]; // Earth angular radius asin(6378.137/7000) = 65.7°
+  assert.equal(ENV.behindEarth(r, [-1, 0, 0]), true);
+  assert.equal(ENV.behindEarth(r, v.unit([-Math.cos(60 * D2R), Math.sin(60 * D2R), 0])), true);
+  assert.equal(ENV.behindEarth(r, v.unit([-Math.cos(70 * D2R), Math.sin(70 * D2R), 0])), false);
+  assert.equal(ENV.behindEarth(r, [0, 0, 1]), false);
 });
 
 test('eclipse: behind Earth yes, beside Earth no', () => {

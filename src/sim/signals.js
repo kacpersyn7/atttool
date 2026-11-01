@@ -51,7 +51,7 @@ export function signalCatalog(state) {
   ];
   for (const c of state.sc.comps.filter(c => POINTED.includes(c.type))) {
     list.push({ id: 'sun:' + c.id, group: 'Parts', label: `${c.name} · Sun angle`, unit: '°', comps: ['∠Sun'], cols: [''], csv: 'sunAngle_' + codeOf(c), kind: 'value', range: [0, 180], f: A => [sensorEval(c, A).sunAng] });
-    if (c.type === 'str') list.push({ id: 'moon:' + c.id, group: 'Parts', label: `${c.name} · Moon angle`, unit: '°', comps: ['∠Moon'], cols: [''], csv: 'moonAngle_' + codeOf(c), kind: 'value', range: [0, 180], f: A => [sensorEval(c, A).moonAng] });
+    if (c.type === 'str') list.push({ id: 'moon:' + c.id, group: 'Parts', label: `${c.name} · Moon angle`, unit: '°', comps: ['∠Moon'], cols: [''], csv: 'moonAngle_' + codeOf(c), kind: 'value', range: [0, 180], f: A => { const e = sensorEval(c, A); return [e.moonUp ? e.moonAng : NaN]; } });
     if (LIMB.includes(c.type)) list.push({ id: 'limb:' + c.id, group: 'Parts', label: `${c.name} · above Earth limb`, unit: '°', comps: ['∠limb'], cols: [''], csv: 'limbAngle_' + codeOf(c), kind: 'value', f: A => [sensorEval(c, A).limb] });
   }
   return list;
