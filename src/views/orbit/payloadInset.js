@@ -10,7 +10,7 @@ import { mapView } from '../../sim/payloadMap.js';
 import { fmt, fmtS } from '../../ui/format.js';
 
 const C = { bg: '#070c13', grid: 'rgba(200,225,255,.2)', gridTxt: '#9fb2cc', halo: 'rgba(7,12,19,.82)',
-  sea: '#123c5e', land: '#46613d', coast: 'rgba(196,220,170,.75)', river: 'rgba(110,170,230,.8)', border: 'rgba(240,226,180,.9)', prov: 'rgba(240,226,180,.4)', city: '#f2f2f2', track: '#f2a93b', fov: '#e8ecf2', tgt: '#ff7bd5', err: '#ff7bd5', along: '#4fd6e8', txt: '#c8d3e2', muted: '#8697ae' };
+  sea: '#123c5e', land: '#46613d', coast: 'rgba(196,220,170,.75)', river: 'rgba(110,170,230,.8)', border: 'rgba(240,226,180,.9)', prov: 'rgba(240,226,180,.4)', city: '#f2f2f2', panel: 'rgba(7,12,19,.62)', track: '#f2a93b', fov: '#e8ecf2', tgt: '#ff7bd5', err: '#ff7bd5', along: '#4fd6e8', txt: '#c8d3e2', muted: '#8697ae' };
 const FONT = '500 10.5px "JetBrains Mono", monospace';
 const MAP_NOTE = 'Map: Natural Earth 1:50m (public domain). Schematic, good to a few km: for orientation, not for measuring pointing errors.';
 /** Text with a dark halo so it reads over the map. */
@@ -51,7 +51,20 @@ export function createPayloadInset(el) {
     if (!V.p.hit) msg(x, W, H, 'Boresight not on the Earth');
     // grid; each line labelled where it enters the view, skipping labels that would collide with
     // another label or with the readouts (top right) and the caption / scale bar (bottom left)
-    const placed = [[W - 150, 0, 150, 62], [0, H - 48, 170, 48]], M = 4;
+    const p = V.p, rows = [];
+    if (!p.tgtUp) rows.push(['Target below horizon', '']);
+    else {
+      rows.push(['err', p.ang.toFixed(3) + '°']);
+      rows.push(['al/cr', fmtS(p.along) + '° ' + fmtS(p.cross) + '°']);
+      if (p.gnd !== null) { rows.push(['gnd', km(p.gnd)]); rows.push(['al/cr', skm(p.gAlong) + ' ' + skm(p.gCross)]); }
+    }
+    const caption = `${p.c.name} · view ${(2 * Math.atan(V.viewTan) * 180 / Math.PI).toFixed(1)}°`;
+    const rw = Math.max(...rows.map(([k, val]) => x.measureText(k).width + x.measureText(val).width + 6)) + 12;
+    const boxR = [W - rw - 4, 0, rw + 4, rows.length * 13 + 6], boxL = [0, H - 36, Math.max(x.measureText(caption).width, W * 0.25 + 50) + 14, 36];
+    // reserved: readouts (top right), caption + scale bar (bottom left), the along / right arrow labels
+    const placed = [boxR, boxL], M = 4;
+    const arrows = V.alongDir ? [[V.alongDir, 26, C.along, 'along'], [V.rightDir, 18, C.muted, 'right']].map(([d, L, col, label]) => ({ d, L, col, label, at: arrowLabel(x, cx, cy, d, L, label) })) : [];
+    for (const a of arrows) placed.push([a.at[0] - a.at[2] / 2 - 2, a.at[1] - 7, a.at[2] + 4, 14]);
     const free = rc => !placed.some(o => rc[0] < o[0] + o[2] && o[0] < rc[0] + rc[2] && rc[1] < o[1] + o[3] && o[1] < rc[1] + rc[3]);
     x.textAlign = 'left';
     for (const g of V.grid) line(g.pts, C.grid);
@@ -62,7 +75,7 @@ export function createPayloadInset(el) {
       if (cap) x.fillRect(a - 2.5, b - 2.5, 5, 5); else { x.beginPath(); x.arc(a, b, 2, 0, 2 * Math.PI); x.fill(); }
       if (nLab >= maxLab) continue;
       const tw = x.measureText(c.name).width, lx = a + 5 + tw + M < W ? a + 5 : a - 5 - tw, rc = [lx - 2, b - 7, tw + 4, 14];
-      if (lx < M || b < 8 || b > H - 8 || !free(rc)) continue;
+      if (lx < M || b < 9 || b > H - 9 || !free(rc)) continue;
       placed.push(rc); T(x, c.name, lx, b, cap ? C.city : C.txt); nLab++;
     }
     for (const g of V.grid) {
@@ -78,7 +91,7 @@ export function createPayloadInset(el) {
     x.strokeStyle = C.fov; x.lineWidth = 1.2; x.setLineDash([4, 3]); x.beginPath(); x.arc(cx, cy, V.fovTan * sc, 0, 2 * Math.PI); x.stroke(); x.setLineDash([]);
     x.beginPath(); x.moveTo(cx - 7, cy); x.lineTo(cx + 7, cy); x.moveTo(cx, cy - 7); x.lineTo(cx, cy + 7); x.stroke();
     // along-track / right-of-track arrows
-    if (V.alongDir) { arrow(x, cx, cy, V.alongDir, 26, C.along, 'along'); arrow(x, cx, cy, V.rightDir, 18, C.muted, 'right'); }
+    for (const a of arrows) arrow(x, cx, cy, a.d, a.L, a.col, a.label, a.at);
     // target and error vector (boresight − target)
     if (V.target) {
       const [a, b] = P(V.target);
@@ -92,6 +105,8 @@ export function createPayloadInset(el) {
       }
     }
     x.restore();
+    // readouts and caption sit on a translucent backdrop so the map under them doesn't clutter the text
+    x.fillStyle = C.panel; x.fillRect(...boxR); x.fillRect(...boxL);
     // scale bar (ground km at the boresight hit, ignoring obliquity)
     if (V.kmPerTan) {
       const want = V.kmPerTan * V.viewTan * 0.5, nice = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000].reverse().find(s => s <= want) || 0.1;
@@ -99,15 +114,8 @@ export function createPayloadInset(el) {
       x.textAlign = 'left'; T(x, km(nice), 12 + L, H - 10, C.txt);
     }
     // readouts
-    const p = V.p, rows = [];
-    if (!p.tgtUp) rows.push(['Target below horizon', '']);
-    else {
-      rows.push(['err', p.ang.toFixed(3) + '°']);
-      rows.push(['al/cr', fmtS(p.along) + '° ' + fmtS(p.cross) + '°']);
-      if (p.gnd !== null) { rows.push(['gnd', km(p.gnd)]); rows.push(['al/cr', skm(p.gAlong) + ' ' + skm(p.gCross)]); }
-    }
     x.textAlign = 'right'; rows.forEach(([k, val], i) => { T(x, k, W - 6 - x.measureText(val).width - 6, 12 + i * 13, C.muted); T(x, val, W - 6, 12 + i * 13, i === 0 && !p.tgtUp ? C.muted : C.txt); });
-    x.textAlign = 'left'; T(x, `${p.c.name} · view ${(2 * Math.atan(V.viewTan) * 180 / Math.PI).toFixed(1)}°`, 8, H - 26, C.muted);
+    x.textAlign = 'left'; T(x, caption, 8, H - 26, C.muted);
   }
 
   return { draw };
@@ -115,10 +123,14 @@ export function createPayloadInset(el) {
 
 function msg(x, W, H, text) { x.textAlign = 'center'; T(x, text, W / 2, H / 2 + 22, C.muted); x.textAlign = 'left'; }
 function fmtDeg(d, kind) { const a = Math.abs(d), s = +a.toFixed(3) + '°'; return kind === 'lat' ? s + (d >= 0 ? 'N' : 'S') : s + (d >= 0 ? 'E' : 'W'); }
-function arrow(x, cx, cy, d, L, col, label) {
+/** Centre and width of an arrow's label, clear of the arrow head in any direction. */
+function arrowLabel(x, cx, cy, d, L, label) {
+  const tw = x.measureText(label).width, off = tw / 2 * Math.abs(d[0]) + 7 * Math.abs(d[1]) + 5;
+  return [cx + d[0] * (L + off), cy + d[1] * (L + off), tw];
+}
+function arrow(x, cx, cy, d, L, col, label, at) {
   const ex = cx + d[0] * L, ey = cy + d[1] * L; x.strokeStyle = col; x.fillStyle = col; x.lineWidth = 1.2;
   x.beginPath(); x.moveTo(cx + d[0] * 9, cy + d[1] * 9); x.lineTo(ex, ey); x.stroke();
   const a = Math.atan2(d[1], d[0]); x.beginPath(); x.moveTo(ex, ey); x.lineTo(ex - 5 * Math.cos(a - .4), ey - 5 * Math.sin(a - .4)); x.lineTo(ex - 5 * Math.cos(a + .4), ey - 5 * Math.sin(a + .4)); x.fill();
-  const off = x.measureText(label).width / 2 * Math.abs(d[0]) + 7 * Math.abs(d[1]) + 5; // clear of the head in any direction
-  x.textAlign = 'center'; T(x, label, ex + d[0] * off, ey + d[1] * off, col); x.textAlign = 'left';
+  x.textAlign = 'center'; T(x, label, at[0], at[1], col); x.textAlign = 'left';
 }
