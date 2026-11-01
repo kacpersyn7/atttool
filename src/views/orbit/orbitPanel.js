@@ -72,9 +72,9 @@ export function orbitPanel(ctx) {
     liveText(() => {
       const cur = ctx.cur(); if (!cur) return ''; const p = pointing(S, cur); if (!p) return '';
       if (!p.tgtUp) return `<span class="chip dim">Target below horizon · elevation ${deg(p.elev).toFixed(1)}°</span>`;
-      const kmT = x => x === null ? '—' : Math.abs(x) < 1 ? (x * 1000).toFixed(0) + ' m' : x.toFixed(2) + ' km';
+      const kmT = x => x === null ? '—' : Math.abs(x) < 1 ? fmt(x * 1000, 0) + ' m' : fmt(x, 2) + ' km';
       const row = (k, val) => `<div style="display:flex;justify-content:space-between"><span>${k}</span><span style="font-family:var(--f-mono)">${val}</span></div>`;
-      return `<div style="display:flex;flex-direction:column;gap:4px">${row('Angle error', p.ang.toFixed(3) + '°')}${row('along · cross', p.along.toFixed(3) + '° · ' + p.cross.toFixed(3) + '°')}${row('Ground error', kmT(p.gnd))}${row('along · cross', kmT(p.gAlong) + ' · ' + kmT(p.gCross))}${row('Target elevation', deg(p.elev).toFixed(1) + '°')}</div>`;
+      return `<div style="display:flex;flex-direction:column;gap:4px">${row('Angle error', fmt(p.ang, 3) + '°')}${row('along · cross', fmt(p.along, 3) + '° · ' + fmt(p.cross, 3) + '°')}${row('Ground error', kmT(p.gnd))}${row('along · cross', kmT(p.gAlong) + ' · ' + kmT(p.gCross))}${row('Target elevation', deg(p.elev).toFixed(1) + '°')}</div>`;
     }),
     tip('Boresight minus target. <b>along</b> > 0: looking ahead of the target along the ground track; <b>cross</b> > 0: looking to the right of it. Ground error is measured from the target to where the boresight hits the Earth. In <b>Ground target tracking</b> mode it is zero by construction (no attitude errors yet).')));
 

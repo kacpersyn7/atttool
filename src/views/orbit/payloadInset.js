@@ -6,13 +6,13 @@
  */
 import { S } from '../../state/store.js';
 import { payloadView } from '../../sim/payload.js';
+import { fmt, fmtS } from '../../ui/format.js';
 
 const C = { bg: '#070c13', grid: '#2a3a52', gridTxt: '#5d6e86', track: '#f2a93b', fov: '#e8ecf2', tgt: '#ff7bd5', err: '#ff7bd5', along: '#4fd6e8', txt: '#c8d3e2', muted: '#8697ae' };
 const FONT = '500 10.5px "JetBrains Mono", monospace';
 
 /** Format a ground distance (km) with a sensible unit. */
-const km = x => Math.abs(x) < 1 ? (x * 1000).toFixed(0) + ' m' : Math.abs(x) < 100 ? x.toFixed(2) + ' km' : x.toFixed(0) + ' km';
-const sgn = (x, d = 3) => (x >= 0 ? '+' : '−') + Math.abs(x).toFixed(d);
+const km = x => Math.abs(x) < 1 ? fmt(x * 1000, 0) + ' m' : Math.abs(x) < 100 ? fmt(x, 2) + ' km' : fmt(x, 0) + ' km';
 
 export function createPayloadInset(el) {
   const cv = el.querySelector('canvas');
@@ -35,11 +35,19 @@ export function createPayloadInset(el) {
     };
     x.save(); x.beginPath(); x.rect(0, 0, W, H); x.clip();
     if (!V.p.hit) msg(x, W, H, 'Boresight not on the Earth');
-    // grid with labels where a line crosses the left / top edge
+    // grid; each line labelled where it enters the view, skipping labels that would collide with
+    // another label or with the readouts (top right) and the caption / scale bar (bottom left)
+    const placed = [[W - 150, 0, 150, 62], [0, H - 48, 170, 48]], M = 4;
+    const free = rc => !placed.some(o => rc[0] < o[0] + o[2] && o[0] < rc[0] + rc[2] && rc[1] < o[1] + o[3] && o[1] < rc[1] + rc[3]);
+    x.textAlign = 'left';
     for (const g of V.grid) {
       line(g.pts, C.grid);
-      const q = g.pts.find(q => q && (g.kind === 'lat' ? P(q)[0] >= 2 : P(q)[1] >= 2) && Math.abs(P(q)[0] - cx) < W / 2 && Math.abs(P(q)[1] - cy) < H / 2);
-      if (q) { const [a, b] = P(q); x.fillStyle = C.gridTxt; x.textAlign = 'left'; x.fillText(fmtDeg(g.deg, g.kind), g.kind === 'lat' ? 3 : a + 3, g.kind === 'lat' ? b - 6 : 26); }
+      const inView = q => { if (!q) return false; const [a, b] = P(q); return a > M && a < W - M && b > M && b < H - M; };
+      const q = g.pts.find(inView) || null; if (!q) continue;
+      const t = fmtDeg(g.deg, g.kind), tw = x.measureText(t).width;
+      let [a, b] = P(q); a = Math.min(Math.max(a + 3, M), W - tw - M); b = Math.min(Math.max(b, 10), H - 10);
+      const rc = [a - 2, b - 7, tw + 4, 14]; if (!free(rc)) continue;
+      placed.push(rc); x.fillStyle = C.gridTxt; x.fillText(t, a, b);
     }
     line(V.track, C.track, 1.5);
     // payload FOV circle and boresight cross
@@ -53,6 +61,11 @@ export function createPayloadInset(el) {
       if (Math.hypot(a - cx, b - cy) > 2) { x.strokeStyle = C.err; x.lineWidth = 1; x.beginPath(); x.moveTo(a, b); x.lineTo(cx, cy); x.stroke(); }
       x.fillStyle = C.tgt; x.beginPath(); x.arc(a, b, 3.5, 0, 2 * Math.PI); x.fill();
       x.strokeStyle = C.tgt; x.beginPath(); x.arc(a, b, 7, 0, 2 * Math.PI); x.stroke();
+      if (a < 0 || a > W || b < 0 || b > H) { // off-screen: arrowhead at the edge toward the target
+        const d = [a - cx, b - cy], s = Math.min((W / 2 - 12) / Math.abs(d[0] || 1e-9), (H / 2 - 12) / Math.abs(d[1] || 1e-9)), ex = cx + d[0] * s, ey = cy + d[1] * s, ang = Math.atan2(d[1], d[0]);
+        x.fillStyle = C.tgt; x.beginPath(); x.moveTo(ex + 7 * Math.cos(ang), ey + 7 * Math.sin(ang)); x.lineTo(ex + 7 * Math.cos(ang + 2.4), ey + 7 * Math.sin(ang + 2.4)); x.lineTo(ex + 7 * Math.cos(ang - 2.4), ey + 7 * Math.sin(ang - 2.4)); x.fill();
+        x.textAlign = 'center'; x.fillText('target', Math.min(Math.max(ex - 18 * Math.cos(ang), 22), W - 22), Math.min(Math.max(ey - 14 * Math.sin(ang), 10), H - 10)); x.textAlign = 'left';
+      }
     }
     x.restore();
     // scale bar (ground km at the boresight hit, ignoring obliquity)
@@ -66,7 +79,7 @@ export function createPayloadInset(el) {
     if (!p.tgtUp) rows.push(['Target below horizon', '']);
     else {
       rows.push(['err', p.ang.toFixed(3) + '°']);
-      rows.push(['al/cr', sgn(p.along) + '° ' + sgn(p.cross) + '°']);
+      rows.push(['al/cr', fmtS(p.along) + '° ' + fmtS(p.cross) + '°']);
       if (p.gnd !== null) { rows.push(['gnd', km(p.gnd)]); rows.push(['al/cr', km(p.gAlong) + ' ' + km(p.gCross)]); }
     }
     x.textAlign = 'right'; rows.forEach(([k, val], i) => { x.fillStyle = C.muted; x.fillText(k, W - 6 - x.measureText(val).width - 6, 12 + i * 13); x.fillStyle = i === 0 && !p.tgtUp ? C.muted : C.txt; x.fillText(val, W - 6, 12 + i * 13); });
@@ -82,5 +95,6 @@ function arrow(x, cx, cy, d, L, col, label) {
   const ex = cx + d[0] * L, ey = cy + d[1] * L; x.strokeStyle = col; x.fillStyle = col; x.lineWidth = 1.2;
   x.beginPath(); x.moveTo(cx + d[0] * 9, cy + d[1] * 9); x.lineTo(ex, ey); x.stroke();
   const a = Math.atan2(d[1], d[0]); x.beginPath(); x.moveTo(ex, ey); x.lineTo(ex - 5 * Math.cos(a - .4), ey - 5 * Math.sin(a - .4)); x.lineTo(ex - 5 * Math.cos(a + .4), ey - 5 * Math.sin(a + .4)); x.fill();
-  x.textAlign = 'center'; x.fillText(label, ex + d[0] * 10, ey + d[1] * 10); x.textAlign = 'left';
+  const off = x.measureText(label).width / 2 * Math.abs(d[0]) + 7 * Math.abs(d[1]) + 5; // clear of the head in any direction
+  x.textAlign = 'center'; x.fillText(label, ex + d[0] * off, ey + d[1] * off); x.textAlign = 'left';
 }

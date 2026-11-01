@@ -38,7 +38,7 @@ export function createPlotView(dock) {
     const cat = signalCatalog(S), active = sigs();
     const add = h('select', { title: 'Add a signal to plot (up to ' + MAX_SIGS + ')', 'aria-label': 'Add signal', style: active.length ? 'max-width:96px' : null },
       h('option', { value: '' }, active.length ? '+ Add…' : '+ Plot a signal (quaternion, rates, angles…)'),
-      ...['Attitude', 'Environment', 'Parts'].map(g => h('optgroup', { label: g }, cat.filter(s => s.group === g && !P().sigs.includes(s.id)).map(s => h('option', { value: s.id }, s.label + (s.unit ? ` [${s.unit}]` : ''))))));
+      ...[...new Set(cat.map(s => s.group))].map(g => h('optgroup', { label: g }, cat.filter(s => s.group === g && !P().sigs.includes(s.id)).map(s => h('option', { value: s.id }, s.label + (s.unit ? ` [${s.unit}]` : ''))))));
     add.disabled = active.length >= MAX_SIGS;
     add.addEventListener('change', () => { if (add.value) set(p => p.sigs = [...p.sigs.filter(id => findSignal(S, id)), add.value]); });
     const winSel = h('select', { title: 'Time window', 'aria-label': 'Time window' }, WINDOWS.map(([v, l]) => h('option', { value: v }, l)));
