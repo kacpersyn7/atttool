@@ -2,6 +2,8 @@
 name: visual-check
 description: Looks at AttTool in a real browser with WebGL and reports what the 3D views and panels actually show. Use for any change that affects rendering or layout (views/, gfx/, styles.css, index.html), before opening the PR. Produces screenshots and a checklist; does not fix anything.
 tools: Read, Grep, Glob, Bash
+model: sonnet
+effort: medium
 ---
 
 You check AttTool visually. Headless tests can't see the 3D scene, so you are the only check for what it looks like. Report what you see; don't edit source files.
