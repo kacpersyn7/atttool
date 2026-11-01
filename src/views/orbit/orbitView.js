@@ -167,6 +167,14 @@ export function createOrbitView({ renderRail }) {
     const off = p.clone().normalize().multiplyScalar(0.9).add(new THREE.Vector3(0.4, -0.5, 0.35));
     V.camera.position.copy(p).add(off); prevScPos = p.clone(); V.controls.update();
   }
+  /** Camera next to the Moon (Earth side, slightly off-axis): the Moon fills ~8° and its phase is visible. */
+  function moonView() {
+    if (!cur) return; S.orbit.show.follow = false; S.orbit.show.moonv = true;
+    const m = AM.v.scale(ENV.moonECI(cur.date), U), toEarth = AM.v.unit(AM.v.scale(m, -1));
+    let side = AM.v.cross(toEarth, [0, 0, 1]); side = AM.v.norm(side) < 1e-6 ? [1, 0, 0] : AM.v.unit(side);
+    V.controls.target.set(...m); V.camera.position.set(...AM.v.add(m, AM.v.add(AM.v.scale(toEarth, 11), AM.v.scale(side, 4))));
+    prevScPos = null; V.controls.update(); save(); syncAll();
+  }
   function doPreset(k) { if (applyPreset(S.orbit, k)) { save(); syncAll(); } }
 
   /* ---------- rail & HUD ---------- */
@@ -190,7 +198,8 @@ export function createOrbitView({ renderRail }) {
     $('#hudTR').append(
       h('button', { class: 'vbtn', onclick: () => { S.orbit.show.follow = false; V.controls.target.set(0, 0, 0); viewPreset(V, [1, -.9, .5], 28); syncAll(); } }, 'Earth view'),
       h('button', { class: 'vbtn', onclick: () => { S.orbit.show.follow = true; zoomSC(); syncAll(); } }, 'Zoom to S/C'),
-      h('button', { class: 'vbtn', onclick: () => { if (!cur) return; S.orbit.show.follow = false; V.controls.target.set(0, 0, 0); const hI = AM.v.unit(AM.v.cross(cur.st.r, cur.st.v)); viewPreset(V, hI, AM.v.norm(cur.st.r) * U * 3.2); syncAll(); } }, 'Orbit-normal view'));
+      h('button', { class: 'vbtn', onclick: () => { if (!cur) return; S.orbit.show.follow = false; V.controls.target.set(0, 0, 0); const hI = AM.v.unit(AM.v.cross(cur.st.r, cur.st.v)); viewPreset(V, hI, AM.v.norm(cur.st.r) * U * 3.2); syncAll(); } }, 'Orbit-normal view'),
+      h('button', { class: 'vbtn', onclick: moonView }, 'Moon view'));
   }
 
   /* ---------- lifecycle ---------- */
