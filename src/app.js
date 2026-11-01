@@ -7,7 +7,7 @@ import { $, resetBindings, syncAll, tickLive } from './ui/dom.js';
 import { closeModal } from './ui/overlay.js';
 import { showConventions } from './ui/conventions.js';
 import { VERSION } from './version.js';
-import { gfx, initRenderer, sizeOf } from './gfx/renderer.js';
+import { gfx, initRenderer, sizeOf, dockHeight } from './gfx/renderer.js';
 import { createRotationLab } from './views/rotationLab.js';
 import { createOrbitView } from './views/orbit/orbitView.js';
 import { createLayoutView } from './views/layout.js';
@@ -38,12 +38,12 @@ export function startApp() {
   }
 
   function resize() {
-    const { w, h } = sizeOf(); gfx.renderer.setSize(w, h, false);
+    const { w, h } = sizeOf(); gfx.renderer.setSize(w, h, false); gfx.vp.style.setProperty('--dock', dockHeight() + 'px');
     for (const v of Object.values(VIEWS)) { v.V.camera.aspect = w / h; v.V.camera.updateProjectionMatrix(); }
   }
 
   document.querySelectorAll('nav.tabs button').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
-  new ResizeObserver(resize).observe(gfx.vp);
+  const ro = new ResizeObserver(resize); ro.observe(gfx.vp); document.querySelectorAll('[data-dock]').forEach(e => ro.observe(e));
   window.addEventListener('keydown', e => {
     if (e.key === 'Escape' && !$('#modal').hidden) { closeModal(); return; } // also while typing in a dialog
     if (/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;

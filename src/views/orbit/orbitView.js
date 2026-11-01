@@ -73,7 +73,7 @@ export function createOrbitView({ renderRail }) {
   const insetEl = $('#inset');
   const inset = createBodyInset(insetEl, earthMesh.material.map);
   const timeline = createTimelineView($('#tlc'));
-  const plots = createPlotView($('#timeline .hud'));
+  const plots = createPlotView($('#timeline'));
 
   /* ---------- geometry refresh (cached) ---------- */
   let lastOrbitKey = '', lastOrbitT = 0, lastTrackT = -1e9, lastTrackKey = '';
@@ -193,8 +193,11 @@ export function createOrbitView({ renderRail }) {
   function leave() { insetEl.hidden = true; $('#timeline').hidden = true; }
   /** Called ~10×/s: timeline redraw and inset placement above it. */
   function tick() {
-    plots.draw(); timeline.draw();
-    const tlH = $('#timeline').getBoundingClientRect().height; insetEl.style.bottom = (tlH + 22) + 'px';
+    plots.draw(); if (!plots.collapsed()) timeline.draw();
+    // body-frame inset: just above the dock, and small enough to fit the 3D area
+    const dockH = $('#timeline').offsetHeight, vp = gfx.vp.getBoundingClientRect();
+    insetEl.style.bottom = (dockH + 12) + 'px';
+    insetEl.style.width = Math.max(110, Math.min(290, vp.width * 0.42, vp.height - dockH - 70)) + 'px';
     if (S.orbit.playing) syncAll();
   }
 

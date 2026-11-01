@@ -2,6 +2,9 @@
  * Signal plots above the availability timeline: one strip chart per selected signal
  * (sim/signals.js), sharing the time axis. With the "One orbit" window the time axis is the
  * timeline's, so cursors line up. Hover reads values, click seeks, "CSV" downloads the window at 1 s.
+ *
+ * Owns the bottom dock (#timeline): the 3D view gets the space above it (gfx/renderer.js sizeOf).
+ * The grip on top sets the dock height (rows share it, ROW_MIN..ROW_MAX each); ▾ collapses the dock.
  */
 import { S, save, scVersion } from '../../state/store.js';
 import { h, syncAll } from '../../ui/dom.js';
@@ -12,17 +15,19 @@ import { timelineKey } from '../../sim/timeline.js';
 import { signalCatalog, findSignal, plotWindow, sampleSignals, valueAt, signalsToCSV } from '../../sim/signals.js';
 
 const LEFT = 112, RIGHT = 52;   // same margins as the timeline → same time axis
-const ROW_H = 74, N = 300, MAX_SIGS = 4;
+const ROW_DEF = 74, ROW_MIN = 58, ROW_MAX = 220, N = 300, MAX_SIGS = 4;
+const MIN_3D = 140; // px of 3D view the dock always leaves
 const WINDOWS = [['orbit', 'One orbit'], ['last:5', 'Last 5 min'], ['last:15', 'Last 15 min'], ['last:30', 'Last 30 min'], ['last:90', 'Last 90 min']];
 const COLORS = { 1: ['#f2a93b'], 3: ['#ff6161', '#46d38a', '#4f8cff'], 4: ['#e8ecf2', '#ff6161', '#46d38a', '#4f8cff'] };
 const localeComma = (() => { try { return new Intl.NumberFormat(navigator.language).format(1.5).includes(','); } catch { return false; } })();
 
-export function createPlotView(host) {
+export function createPlotView(dock) {
   const P = () => S.orbit.plot;
+  const body = dock.querySelector('.dockbody'), grip = dock.querySelector('.dock-grip'), tlc = dock.querySelector('#tlc');
   const bar = h('div', { class: 'plotbar' });
   const cv = h('canvas', { class: 'plots' });
-  host.prepend(bar, cv);
-  let data = null, hoverX = null, barKey = '';
+  body.prepend(bar, cv);
+  let data = null, hoverX = null, barKey = '', rowH = ROW_DEF;
 
   const win = () => { const [kind, min] = P().win.split(':'); return { kind, min: +min || 30 }; };
   const sigs = () => P().sigs.map(id => findSignal(S, id)).filter(Boolean);
@@ -31,8 +36,8 @@ export function createPlotView(host) {
   function renderBar() {
     barKey = scVersion() + '|' + S.orbit.refFrame + '|' + P().sigs.join() + '|' + P().win;
     const cat = signalCatalog(S), active = sigs();
-    const add = h('select', { title: 'Add a signal to plot (up to ' + MAX_SIGS + ')', 'aria-label': 'Add signal' },
-      h('option', { value: '' }, active.length ? '+ Add signal…' : '+ Plot a signal (quaternion, rates, angles…)'),
+    const add = h('select', { title: 'Add a signal to plot (up to ' + MAX_SIGS + ')', 'aria-label': 'Add signal', style: active.length ? 'max-width:96px' : null },
+      h('option', { value: '' }, active.length ? '+ Add…' : '+ Plot a signal (quaternion, rates, angles…)'),
       ...['Attitude', 'Environment', 'Parts'].map(g => h('optgroup', { label: g }, cat.filter(s => s.group === g && !P().sigs.includes(s.id)).map(s => h('option', { value: s.id }, s.label + (s.unit ? ` [${s.unit}]` : ''))))));
     add.disabled = active.length >= MAX_SIGS;
     add.addEventListener('change', () => { if (add.value) set(p => p.sigs = [...p.sigs.filter(id => findSignal(S, id)), add.value]); });
@@ -40,17 +45,41 @@ export function createPlotView(host) {
     winSel.value = P().win; winSel.addEventListener('change', () => set(p => p.win = winSel.value));
     const comma = h('input', { type: 'checkbox' }); comma.checked = P().comma ?? localeComma;
     comma.addEventListener('change', () => { P().comma = comma.checked; save(); });
+    const col = P().collapsed;
     bar.replaceChildren(...[ // (replaceChildren would print null as text)
-      h('span', { class: 'lbl' }, 'Plots'),
-      ...active.map(s => h('span', { class: 'pchip', title: s.label }, s.label,
+      h('button', { class: 'vbtn dockbtn', title: col ? 'Show plots and timeline' : 'Collapse plots and timeline (more room for the 3D view)', 'aria-expanded': String(!col), onclick: () => set(p => p.collapsed = !p.collapsed) }, col ? '▸' : '▾'),
+      h('span', { class: 'lbl' }, col ? 'Plots & timeline' : 'Plots'),
+      col ? h('span', { class: 'muted' }, active.length ? active.map(s => s.label).join(' · ') : 'availability timeline') : null,
+      ...(col ? [] : active).map(s => h('span', { class: 'pchip', title: s.label }, h('span', null, s.label),
         h('button', { title: 'Remove', 'aria-label': 'Remove ' + s.label, onclick: () => set(p => p.sigs = p.sigs.filter(id => id !== s.id)) }, '×'))),
-      add,
-      active.length ? h('span', { class: 'sp' }) : null,
-      active.length ? winSel : null,
-      active.length ? h('label', { class: 'chk', title: 'Decimal commas and ; separators (Polish / German Excel)' }, comma, 'dec ,') : null,
-      active.length ? h('button', { class: 'vbtn', title: 'Download the plotted signals over this window at a 1 s step (UTC time stamps)', onclick: exportCSV }, 'CSV') : null].filter(Boolean));
-    cv.hidden = !active.length;
+      col ? null : add,
+      active.length && !col ? h('span', { class: 'sp' }) : null,
+      active.length && !col ? winSel : null,
+      active.length && !col ? h('label', { class: 'chk', title: 'Decimal commas and ; separators (Polish / German Excel)' }, comma, 'dec ,') : null,
+      active.length && !col ? h('button', { class: 'vbtn', title: 'Download the plotted signals over this window at a 1 s step (UTC time stamps)', onclick: exportCSV }, 'CSV') : null].filter(Boolean));
+    cv.hidden = !active.length || col; tlc.hidden = col; dock.classList.toggle('collapsed', col);
+    grip.hidden = !active.length;
   }
+
+  /** Row height: default, or shared out of the dock height the user dragged to. */
+  function layoutRows(n) {
+    if (!n) return ROW_DEF;
+    const fixed = dock.offsetHeight - (cv.hidden ? 0 : cv.offsetHeight);
+    const dh = P().dockH, vpH = dock.parentElement.clientHeight;
+    if (!dh) return Math.max(ROW_MIN, Math.min(ROW_DEF, Math.floor((vpH * 0.5 - fixed) / n))); // default: at most half the view
+    return Math.max(ROW_MIN, Math.min(ROW_MAX, Math.floor((dh - fixed) / n)));
+  }
+
+  // drag the grip to resize; double-click for the default height
+  grip.addEventListener('pointerdown', e => {
+    const n = sigs().length; if (!n || P().collapsed) return;
+    e.preventDefault(); grip.setPointerCapture(e.pointerId); grip.classList.add('drag');
+    const vp = dock.parentElement.getBoundingClientRect(), fixed = dock.offsetHeight - cv.offsetHeight;
+    const move = ev => { P().dockH = Math.round(Math.max(fixed + n * ROW_MIN, Math.min(vp.height - MIN_3D, vp.bottom - ev.clientY))); draw(); };
+    const up = () => { grip.classList.remove('drag'); grip.removeEventListener('pointermove', move); save(); };
+    grip.addEventListener('pointermove', move); grip.addEventListener('pointerup', up, { once: true }); grip.addEventListener('pointercancel', up, { once: true });
+  });
+  grip.addEventListener('dblclick', () => { P().dockH = null; save(); draw(); });
 
   function exportCSV() {
     const ids = sigs().map(s => s.id); if (!ids.length) return;
@@ -82,7 +111,8 @@ export function createPlotView(host) {
     if (barKey !== scVersion() + '|' + S.orbit.refFrame + '|' + P().sigs.join() + '|' + P().win) renderBar();
     if (cv.hidden) return;
     const d = compute(), { t0, t1 } = d.w;
-    const dpr = Math.min(2, devicePixelRatio || 1), W = cv.clientWidth, Hh = d.series.length * ROW_H;
+    rowH = layoutRows(d.series.length);
+    const ROW_H = rowH, dpr = Math.min(2, devicePixelRatio || 1), W = cv.clientWidth, Hh = d.series.length * ROW_H;
     if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(Hh * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(Hh * dpr); cv.style.height = Hh + 'px'; }
     const x = cv.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0); x.clearRect(0, 0, W, Hh);
     const L = LEFT, w = W - LEFT - RIGHT, X = t => L + (t - t0) / (t1 - t0) * w;
@@ -119,7 +149,7 @@ export function createPlotView(host) {
       const nearN = Math.max(0, Math.min(d.t.length - 1, Math.round((tRead - t0) / (t1 - t0) * (d.t.length - 1))));
       const val = valueAt(S, s.sig, tRead, s.v[nearN]);
       s.sig.comps.forEach((c, k) => {
-        const yy = top + 7 + k * 14 + (4 - s.sig.comps.length) * 3;
+        const step = Math.min(14, (ph - 2) / s.sig.comps.length), yy = top + 7 + k * step + (4 - s.sig.comps.length) * 3;
         x.fillStyle = cols[k]; x.fillRect(0, yy - 1, 8, 3);
         x.fillStyle = '#c8d3e2'; x.fillText((c.split(' ')[0] + '    ').slice(0, 5) + fmtVal(val[k], s.sig), 12, yy);
       });
@@ -143,5 +173,5 @@ export function createPlotView(host) {
   });
 
   renderBar();
-  return { draw };
+  return { draw, collapsed: () => P().collapsed };
 }

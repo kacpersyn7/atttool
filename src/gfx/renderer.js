@@ -22,7 +22,10 @@ export function initRenderer(vp) {
 }
 
 /** Viewport size in CSS px. */
-export function sizeOf() { const r = gfx.vp.getBoundingClientRect(); return { w: Math.max(1, r.width), h: Math.max(1, r.height) }; }
+/** Height (px) of the panels docked at the bottom of the viewport ([data-dock], e.g. the Orbit plots). */
+export function dockHeight() { let d = 0; for (const e of gfx.vp.querySelectorAll('[data-dock]')) if (!e.hidden) d += e.offsetHeight; return d; }
+/** Size of the 3D area: the viewport minus docked panels. */
+export function sizeOf() { const r = gfx.vp.getBoundingClientRect(); return { w: Math.max(1, r.width), h: Math.max(1, r.height - dockHeight()) }; }
 
 /** Scene + perspective camera + damped OrbitControls (disabled until the view is active). */
 export function mkView({ up = [0, 0, 1], pos, target = [0, 0, 0], fov = 40, near = 0.01, far = 200 }) {
