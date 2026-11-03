@@ -26,6 +26,7 @@ test('presets apply and SSO LTAN matches the preset', () => {
   for (const k of Object.keys(PRESETS)) { const s = state('offsets', k); assert.equal(s.orbit.preset, k); }
   close(ltanOf(state('offsets', 'sso1030').orbit), 10.5, 0.02);
   close(ltanOf(state('offsets', 'ssodd').orbit), 6, 0.02);
+  for (const [k, h] of [['sso1100', 11], ['sso1200', 12], ['sso1330', 13.5], ['sso2230', 22.5], ['ssodn', 18]]) close(ltanOf(state('offsets', k).orbit), h, 0.02, k);
 });
 
 test('orbitElements: altitudes -> a, e', () => {
@@ -54,6 +55,15 @@ test('alignment = LVLH identity: zero offsets put body X radial out and Z on the
 test('target mode below the horizon holds the nominal attitude', () => {
   const s = state('target'); s.orbit.refFrame = 'lvlh'; s.orbit.tgtLat = -60; s.orbit.tgtLon = 150;
   const A = attitudeAt(s, 0); assert.ok(A.flag.below); closeArr(A.CBI, A.CNI, 1e-15); closeArr(A.CBI, A.CVI, 1e-15); // default = VVLH
+});
+
+test('orbit presets match published values', () => {
+  const E = k => orbitElements(state('offsets', k).orbit), period = e => 2 * Math.PI * Math.sqrt(e.a ** 3 / ENV.MU);
+  close(state('offsets', 'sso2230').orbit.i, 98.6, 0.1, 'Sentinel-2 inclination 98.62°');
+  close(period(E('meo')) / 60, 717.98, 0.5, 'half a sidereal day (GPS): 11 h 58 min');
+  close(period(E('gto')) / 3600, 10.5, 0.2, 'GTO period about 10.5 h');
+  close(E('gto').e, 0.73, 0.01, 'GTO eccentricity');
+  close(period(E('geo')) / 60, 1436.07, 0.5, 'GEO: one sidereal day');
 });
 
 test('nominal attitude from the alignment table flies the payload at nadir', () => {

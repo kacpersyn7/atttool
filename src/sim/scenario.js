@@ -105,8 +105,18 @@ export function restartFromState(o, t) {
 /** Orbit presets. `ltan` presets get a sun-synchronous inclination and RAAN computed at the epoch. */
 export const PRESETS = {
   sso1030: { label: 'SSO 550 km · LTAN 10:30 (EO)', hp: 550, ha: 550, ltan: 10.5, argp: 0, nu0: 0 },
+  sso1100: { label: 'SSO 550 km · LTAN 11:00', hp: 550, ha: 550, ltan: 11, argp: 0, nu0: 0 },
+  sso1200: { label: 'SSO 550 km · LTAN 12:00 (noon–midnight)', hp: 550, ha: 550, ltan: 12, argp: 0, nu0: 0 },
+  sso1330: { label: 'SSO 700 km · LTAN 13:30 (afternoon)', hp: 700, ha: 700, ltan: 13.5, argp: 0, nu0: 0 },
+  sso2230: { label: 'SSO 786 km · LTAN 22:30 (Sentinel-2-like)', hp: 786, ha: 786, ltan: 22.5, argp: 0, nu0: 0 },
   ssodd: { label: 'SSO 600 km · dawn–dusk 06:00', hp: 600, ha: 600, ltan: 6, argp: 0, nu0: 0 },
+  ssodn: { label: 'SSO 600 km · dusk–dawn 18:00', hp: 600, ha: 600, ltan: 18, argp: 0, nu0: 0 },
+  polar: { label: 'Polar 800 km · 90°', hp: 800, ha: 800, i: 90, raan: 0, argp: 0, nu0: 0 },
+  leo53: { label: 'LEO 550 km · 53° (constellation-like)', hp: 550, ha: 550, i: 53, raan: 0, argp: 0, nu0: 0 },
+  equat: { label: 'Equatorial LEO 600 km', hp: 600, ha: 600, i: 0.05, raan: 0, argp: 0, nu0: 0 },
   iss: { label: 'ISS-like 420 km · 51.6°', hp: 418, ha: 422, i: 51.64, raan: 120, argp: 0, nu0: 0 },
+  meo: { label: 'GPS-like MEO 20 180 km · 55°', hp: 20180, ha: 20180, i: 55, raan: 0, argp: 0, nu0: 0 },
+  gto: { label: 'GTO 250 × 35 786 km · 27°', hp: 250, ha: 35786, i: 27, raan: 0, argp: 178, nu0: 0 },
   molniya: { label: 'Molniya 600 × 39 800 km · 63.4°', hp: 600, ha: 39800, i: 63.4, raan: 60, argp: 270, nu0: 0 },
   geo: { label: 'GEO 35 786 km', hp: 35786, ha: 35786, i: 0.05, raan: 0, argp: 0, nu0: 0 },
 };

@@ -5,6 +5,9 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 
 ## [Unreleased]
 
+### Added
+- **More orbit presets** (#44): SSO at LTAN 11:00, 12:00, 13:30, 18:00 and 22:30 (Sentinel-2-like), polar, 53° and equatorial LEO, GPS-like MEO and GTO.
+
 ## [0.7.0] - 2026-11-03
 
 ### Added
