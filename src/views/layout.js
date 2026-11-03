@@ -22,6 +22,7 @@ import { buildSC } from '../gfx/spacecraftMesh.js';
 import { TYPES, axisName } from '../spacecraft/componentTypes.js';
 import { newId, mkComp, qFromBoresight, compAxis, envelope, sanitizeSpacecraft } from '../spacecraft/component.js';
 import { defaultSC } from '../spacecraft/exampleSpacecraft.js';
+import { activeItem, addSpacecraft, deleteSpacecraft, duplicateSpacecraft, renameSpacecraft, replaceActive, selectSpacecraft } from '../spacecraft/library.js';
 import { massProps, maxPrincipalTilt } from '../spacecraft/massProperties.js';
 import { exportPython } from '../spacecraft/exportPython.js';
 import { exportMatlab } from '../spacecraft/exportMatlab.js';
@@ -101,7 +102,7 @@ export function createLayoutView({ renderRail }) {
   }
 
   /* ---------- mass properties ---------- */
-  let MP = massProps(S.sc);
+  let MP = massProps(S.sc), massVer = scVersion();
   function refreshMass() {
     MP = massProps(S.sc); com.position.set(...MP.com); com.visible = S.layout.show.com;
     principal.clear(); principal.visible = S.layout.show.principal;
@@ -110,6 +111,8 @@ export function createLayoutView({ renderRail }) {
   }
 
   function update() {
+    // mass properties follow every change, in both views (the rail and the exports read MP)
+    if (massVer !== scVersion() && !dragging) { massVer = scVersion(); refreshMass(); syncAll(); }
     if (S.layout.view === 'table') { if (tableVer !== scVersion()) { table.render(); tableVer = scVersion(); } return; }
     if (ver !== scVersion() && !dragging) rebuild();
     if (selBox.visible && tc.object) selBox.update();
@@ -241,9 +244,31 @@ export function createLayoutView({ renderRail }) {
   }
   const mean_ = id => ({ vvlh: 'Z nadir, X along-track', lvlh: 'X radial, Z orbit normal', vnc: 'X velocity, Y orbit normal' })[id];
 
+  /* ---------- spacecraft library ---------- */
+  /** After the active spacecraft changed. */
+  function scSwitched() { S.layout.sel = null; scChanged(); refreshMass(); massVer = scVersion(); renderRail(); if (S.layout.view === 'table') table.render(); }
+  function libraryCard() {
+    const items = S.fleet.items, nameIn = h('input', { type: 'text', id: 'scname', value: activeItem(S).name, maxlength: 32, 'aria-label': 'Spacecraft name' });
+    // no rail rebuild here: a click on New or Duplicate that ended the typing must still land
+    nameIn.addEventListener('change', () => {
+      if (renameSpacecraft(S, S.fleet.active, nameIn.value)) { save(); pick.querySelector(`option[value="${S.fleet.active}"]`).textContent = activeItem(S).name; }
+      else { nameIn.value = activeItem(S).name; toast('Enter a name, different from the other spacecraft'); }
+    });
+    const pick = selectRow({ id: 'scPick', label: 'Active', options: items.map(i => [i.id, i.name]), get: () => S.fleet.active, set: id => { if (selectSpacecraft(S, id)) scSwitched(); } });
+    const del = confirmButton('Delete', 'Click again to delete', () => { if (deleteSpacecraft(S, S.fleet.active)) scSwitched(); });
+    del.disabled = items.length < 2; if (del.disabled) del.title = 'The last spacecraft cannot be deleted';
+    return card('Spacecraft', items.length + ' in the library',
+      pick,
+      h('div', { class: 'row two' }, h('label', { for: 'scname' }, 'Name'), nameIn),
+      h('div', { class: 'btns' },
+        h('button', { class: 'btn', onclick: () => { addSpacecraft(S, defaultSC(), 'New spacecraft'); scSwitched(); } }, 'New'),
+        h('button', { class: 'btn', onclick: () => { duplicateSpacecraft(S); scSwitched(); } }, 'Duplicate'), del),
+      tip('The Orbit tab flies the active spacecraft; you can switch there too. <b>New</b> starts from the example spacecraft.'));
+  }
+
   /* ---------- control rail ---------- */
   function panel() {
-    const out = [], b = S.sc.bus, sh = S.layout.show;
+    const out = [libraryCard()], b = S.sc.bus, sh = S.layout.show;
     if (S.layout.sel === 'bus') out.push(busEditor()); else { const c = sel(); if (c) out.push(compEditor(c)); }
     const typeSel = h('select', { id: 'addType', 'aria-label': 'Component type' }, Object.entries(TYPES).map(([k, t]) => h('option', { value: k }, t.label)));
     const busItem = h('button', { class: 'comp' + (S.layout.sel === 'bus' ? ' sel' : ''), onclick: () => select('bus') }, h('i', { style: 'background:' + BUS_COLOR }), h('span', null, 'Bus'), h('small', null, [b.x, b.y, b.z].map(x => x.toFixed(2)).join(' × ') + ' m'));
@@ -273,24 +298,26 @@ export function createLayoutView({ renderRail }) {
       slider({ id: 'busop', label: 'Bus opacity', min: .1, max: 1, step: .05, dec: 2, get: () => sh.bus, set: x => { sh.bus = x; scChanged(); } })));
     out.push(card('Save & share', null,
       h('div', { class: 'btns' },
-        h('button', { class: 'btn', onclick: () => copyText(JSON.stringify({ atttool: 1, sc: S.sc }, null, 1), 'Configuration JSON') }, 'Copy config JSON'),
+        h('button', { class: 'btn', onclick: () => copyText(JSON.stringify({ atttool: 1, name: activeItem(S).name, sc: S.sc }, null, 1), 'Configuration JSON') }, 'Copy config JSON'),
         h('button', { class: 'btn', onclick: importDlg }, 'Import JSON…'),
         h('button', { class: 'btn', onclick: () => copyText(exportPython(S.sc, MP), 'Mounting matrices') }, 'Copy mounting matrices (Python)'),
         h('button', { class: 'btn', onclick: () => copyText(exportMatlab(S.sc, MP), 'Mounting matrices') }, 'Copy as MATLAB'),
         h('button', { class: 'btn', onclick: importOrientationsDlg }, 'Import part data…')),
-      h('div', { class: 'btns' }, confirmButton('Reset to example spacecraft', 'Click again to reset', () => { S.sc = defaultSC(); S.layout.sel = null; scChanged(); renderRail(); })),
-      tip('Your layout is kept in this browser automatically. Copy the JSON to keep a file or move it to another computer.')));
+      h('div', { class: 'btns' }, confirmButton('Reset this spacecraft to the example', 'Click again to reset', () => { replaceActive(S, defaultSC()); scSwitched(); })),
+      tip('Your spacecraft are kept in this browser automatically. Copy the JSON of each to keep a file or move it to another computer.')));
     return out;
   }
 
   function importDlg() {
     const ta = h('textarea', { style: 'width:100%;min-height:220px', placeholder: 'Paste a configuration JSON copied from AttTool' });
     const err = h('p', { class: 'tip', style: 'color:var(--bad)' });
-    const doImport = () => {
-      try { S.sc = sanitizeSpacecraft(JSON.parse(ta.value)); S.layout.sel = null; scChanged(); closeModal(); renderRail(); toast('Configuration imported'); }
-      catch (e) { err.textContent = 'Could not import: ' + e.message; }
+    const doImport = asNew => {
+      let json, sc;
+      try { json = JSON.parse(ta.value); sc = sanitizeSpacecraft(json); } catch (e) { err.textContent = 'Could not import: ' + e.message; return; }
+      if (asNew) addSpacecraft(S, sc, json.name || 'Imported spacecraft'); else replaceActive(S, sc);
+      closeModal(); scSwitched(); toast(asNew ? 'Added to the library' : 'Active spacecraft replaced; it keeps its name');
     };
-    showModal(h('div', null, h('h2', null, 'Import configuration'), ta, err, h('div', { class: 'btns', style: 'margin-top:8px' }, h('button', { class: 'btn primary', onclick: doImport }, 'Import'))));
+    showModal(h('div', null, h('h2', null, 'Import configuration'), ta, err, h('div', { class: 'btns', style: 'margin-top:8px' }, h('button', { class: 'btn primary', onclick: () => doImport(true) }, 'Add as new spacecraft'), h('button', { class: 'btn', onclick: () => doImport(false) }, 'Replace the active one'))));
   }
 
   /* ---------- import orientations by name ---------- */

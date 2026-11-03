@@ -52,6 +52,7 @@ export function createPartsTable(el, { onEdit, viewToggle, onImport }) {
   function render() {
     const t = T(), sc = S.sc, all = partRows(sc), warns = layoutWarnings(sc);
     const warnIds = new Set(warns.filter(w => w.level === 'warn').flatMap(w => w.ids));
+    if (t.type !== 'all' && t.type !== 'bus' && !sc.comps.some(c => c.type === t.type)) t.type = 'all'; // e.g. after switching spacecraft
     const q = t.q.trim().toLowerCase();
     let rows = all.filter(r => (t.type === 'all' || r.type === t.type) && (!q || r.name.toLowerCase().includes(q) || r.typeLabel.toLowerCase().includes(q)));
     const col = COLS.find(c => c.key === t.sort);

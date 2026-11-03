@@ -1,9 +1,10 @@
 /** Control rail for the Orbit & Frames workspace. */
 import * as ENV from '../../env/index.js';
-import { S, save } from '../../state/store.js';
+import { S, save, scChanged } from '../../state/store.js';
 import { h, card, tip, slider, numCell, selectRow, check, seg, liveText, syncAll, onSync } from '../../ui/dom.js';
 import { deg, fmt, hhmm, hms } from '../../ui/format.js';
 import { TYPES } from '../../spacecraft/componentTypes.js';
+import { selectSpacecraft } from '../../spacecraft/library.js';
 import { PRESETS, orbitElements, ltanOf, epochDate, parseEpoch, formatEpoch, switchDefinition, restartFromState, definitionError, tleOf } from '../../sim/scenario.js';
 import { copyText } from '../../ui/overlay.js';
 import { payloadComp } from '../../sim/guidance.js';
@@ -24,6 +25,9 @@ export function orbitPanel(ctx) {
   const o = S.orbit, out = [];
   const sl = (id, label, min, max, step, key, dec = 1) => slider({ id, label, min, max, step, dec, get: () => o[key], set: x => { o[key] = x; o.preset = 'custom'; save(); syncAll(); } });
 
+  out.push(card('Spacecraft', null,
+    selectRow({ id: 'orbScPick', label: 'Flying', options: S.fleet.items.map(i => [i.id, i.name]), get: () => S.fleet.active, set: id => { if (selectSpacecraft(S, id)) { S.layout.sel = null; scChanged(); ctx.renderRail(); } } }),
+    S.fleet.items.length < 2 ? tip('Build more spacecraft in <b>Spacecraft Layout</b>, then choose here which one to fly.') : null));
   out.push(orbitCard(ctx, o, sl));
 
   const epochInput = h('input', { type: 'datetime-local', id: 'epoch', step: '1', disabled: o.def === 'tle', title: o.def === 'tle' ? 'Set by the TLE' : null });

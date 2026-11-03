@@ -57,8 +57,16 @@ export function sanitizeSpacecraft(json) {
   if (!(sc.bus.x > 0 && sc.bus.y > 0 && sc.bus.z > 0)) throw new Error('Bus size x, y, z must be positive numbers.');
   normalizeBus(sc.bus); convertLegacyFrame(sc);
   sc.align = checkAlign(sc.align);
-  sc.comps.forEach(c => {
+  if (!(sc.bus.mass >= 0)) throw new Error('Bus mass must be a number.');
+  const isVec = a => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
+  sc.comps.forEach((c, k) => {
     if (!TYPES[c.type]) throw new Error('Unknown component type "' + c.type + '".');
+    const who = `Part ${k + 1}${c.name ? ' "' + c.name + '"' : ''}`;
+    if (typeof c.name !== 'string' || !c.name) throw new Error(who + ' needs a "name".');
+    if (!isVec(c.pos)) throw new Error(who + ' needs "pos": [x, y, z] in metres.');
+    if (!c.q || ![c.q.w, c.q.x, c.q.y, c.q.z].every(Number.isFinite) || AM.q.norm(c.q) < 1e-9) throw new Error(who + ' needs "q": {w, x, y, z}.');
+    if (c.mass === undefined) c.mass = TYPES[c.type].mass;
+    if (!(c.mass >= 0)) throw new Error(who + ': "mass" must be a number.');
     c.id = c.id || newId(); c.q = AM.q.unit(c.q); delete c.eul; fillParams(c);
   });
   return sc;

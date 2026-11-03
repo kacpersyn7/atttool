@@ -30,7 +30,8 @@ export function createPlotView(dock) {
   let data = null, hoverX = null, barKey = '', rowH = ROW_DEF;
 
   const win = () => { const [kind, min] = P().win.split(':'); return { kind, min: +min || 30 }; };
-  const sigs = () => P().sigs.map(id => findSignal(S, id)).filter(Boolean);
+  // a signal of a part not on the active spacecraft stays in the list, hidden, for when you switch back
+  const sigs = () => P().sigs.map(id => findSignal(S, id)).filter(Boolean).slice(0, MAX_SIGS);
   const set = f => { f(P()); save(); data = null; renderBar(); draw(); };
 
   function renderBar() {
@@ -40,7 +41,7 @@ export function createPlotView(dock) {
       h('option', { value: '' }, active.length ? '+ Add…' : '+ Plot a signal (quaternion, rates, angles…)'),
       ...[...new Set(cat.map(s => s.group))].map(g => h('optgroup', { label: g }, cat.filter(s => s.group === g && !P().sigs.includes(s.id)).map(s => h('option', { value: s.id }, s.label + (s.unit ? ` [${s.unit}]` : ''))))));
     add.disabled = active.length >= MAX_SIGS;
-    add.addEventListener('change', () => { if (add.value) set(p => p.sigs = [...p.sigs.filter(id => findSignal(S, id)), add.value]); });
+    add.addEventListener('change', () => { if (add.value) set(p => p.sigs = [...p.sigs, add.value]); });
     const winSel = h('select', { title: 'Time window', 'aria-label': 'Time window' }, WINDOWS.map(([v, l]) => h('option', { value: v }, l)));
     winSel.value = P().win; winSel.addEventListener('change', () => set(p => p.win = winSel.value));
     const comma = h('input', { type: 'checkbox' }); comma.checked = P().comma ?? localeComma;
