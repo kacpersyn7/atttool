@@ -8,6 +8,7 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 ### Added
 - **Payload view** (#10): a picture-in-picture camera along the payload boresight, stacked above the body-frame view: projected lat/lon grid, ground track, payload FOV circle, ground target, along-track / right-of-track arrows, scale bar and pointing-error readouts. Drawn as a 2D projection (sharp at any scale). A **Payload pointing** card shows the error against the ground target in every guidance mode — angle, along / cross-track (°) and ground distance (km) — and the target can be set outside target mode. New plot signals: pointing error and ground error vs target. Toggle *Payload view*.
 - **Map in the payload view** (#35): Natural Earth 1:50m land, lakes, rivers, country and province borders and labelled cities under the grid, track and target, so you can see what the payload is looking at. Offline, public-domain data built into the file (the single-file build grows from ~0.3 MB to ~0.8 MB). Schematic (good to a few km). Toggles *Map borders* and *Map cities*. The 3D Earth uses the same data: sharper coastlines, lakes and country borders.
+- **Spacecraft library** (#37): keep several spacecraft and choose which one is active, in *Spacecraft Layout* (new, duplicate, rename, delete) and in the Orbit tab. Each remembers its own pointing axis. Import JSON can add a new spacecraft or replace the active one, and the copied JSON now carries the name. Older saves become a library of one.
 
 ## [0.6.0] - 2026-11-01
 
