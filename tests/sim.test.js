@@ -7,6 +7,7 @@ import { sensorEval } from '../src/sim/sensors.js';
 import * as ENV from '../src/env/index.js';
 import { applyPreset, orbitElements, ltanOf, PRESETS, targetHeight } from '../src/sim/scenario.js';
 import { defaultState } from '../src/state/store.js';
+import { hhmm } from '../src/ui/format.js';
 import { attitudeAt, payloadComp, bodyRate } from '../src/sim/guidance.js';
 import { computeTimeline, timelineKey } from '../src/sim/timeline.js';
 import { close, closeArr } from './helpers.js';
@@ -55,6 +56,10 @@ test('alignment = LVLH identity: zero offsets put body X radial out and Z on the
 test('target mode below the horizon holds the nominal attitude', () => {
   const s = state('target'); s.orbit.refFrame = 'lvlh'; s.orbit.tgtLat = -60; s.orbit.tgtLon = 150;
   const A = attitudeAt(s, 0); assert.ok(A.flag.below); closeArr(A.CBI, A.CNI, 1e-15); closeArr(A.CBI, A.CVI, 1e-15); // default = VVLH
+});
+
+test('hhmm rounds across the hour and the day', () => {
+  for (const [h, t] of [[10.5, '10:30'], [10.9999, '11:00'], [5.9999, '06:00'], [11, '11:00'], [10.99, '10:59'], [23.9999, '00:00'], [0, '00:00'], [13.5, '13:30']]) assert.equal(hhmm(h), t, String(h));
 });
 
 test('orbit presets match published values', () => {

@@ -10,6 +10,6 @@ export const fmtS = (x, n = 3) => { const r = +fmt(x, n); return (r >= 0 ? '+' :
 /** 3x3 matrix as 9 grid cells (for a `.mat` container). */
 export const matHTML = (M, n = 4) => M.flat().map(x => `<div>${fmtS(x, n)}</div>`).join('');
 /** Hours -> "HH:MM". */
-export const hhmm = hr => { const h_ = Math.floor(hr), m = Math.round((hr - h_) * 60); return String(h_).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
+export const hhmm = hr => { const t = (Math.round(hr * 60) % 1440 + 1440) % 1440; return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0'); };
 /** Seconds -> "HH:MM:SS". */
 export const hms = s => { s = Math.max(0, Math.floor(s)); return `${String(Math.floor(s / 3600)).padStart(2, '0')}:${String(Math.floor(s % 3600 / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
