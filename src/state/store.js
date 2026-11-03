@@ -7,6 +7,7 @@
  *   S.layout  Spacecraft Layout UI settings (selection, gizmo, display)
  *   S.sc      the active spacecraft: { bus, align, comps[] } — shared by all workspaces (spacecraft/bus.js, alignment.js)
  *   S.fleet   the spacecraft library: names and the parked spacecraft (spacecraft/library.js)
+ *   S.scenarios  the scenario library: names and the parked scenarios (sim/scenarioLibrary.js)
  *
  * Mutate S in place, then call save() (UI settings) or scChanged() (spacecraft geometry —
  * bumps scVersion() so 3D models rebuild). Bump STORAGE_KEY if you make an incompatible change.
@@ -14,6 +15,7 @@
 import * as AM from '../core/attitude.js';
 import { defaultSC } from '../spacecraft/exampleSpacecraft.js';
 import { ensureFleet } from '../spacecraft/library.js';
+import { ensureScenarios, scenarioData } from '../sim/scenarioLibrary.js';
 import { normalizeBus, convertLegacyFrame } from '../spacecraft/bus.js';
 import { defaultAlign } from '../spacecraft/alignment.js';
 import { fillParams } from '../spacecraft/component.js';
@@ -35,7 +37,7 @@ export function defaultState() {
     layout: { sel: null, gizmo: 'translate', oriTab: 'ypr', dcmDir: 0, alignDcmDir: 0, imp: { dir: 'CS', order: 'first', fix: true }, view: '3d', table: { sort: '', dir: 1, type: 'all', q: '', comma: null }, show: { cones: true, excl: false, labels: true, bus: 0.55, principal: false, com: true, orbitDirs: true } },
     sc: defaultSC(),
   };
-  ensureFleet(s);
+  ensureFleet(s); ensureScenarios(s);
   return s;
 }
 
@@ -66,6 +68,10 @@ export function migrate(s) {
     // v0.6: new type parameters (e.g. the star tracker's moonExcl) for parts saved before they existed
     (sc.comps || []).forEach(fillParams);
   }
+  // v0.8: the scenario library; parked scenarios get fields added since they were saved
+  ensureScenarios(s);
+  const d = defaultState().orbit;
+  for (const it of s.scenarios.items) if (it.data) it.data = { ...scenarioData(d), ...it.data };
   if ('lvlh' in s.orbit.show) { s.orbit.show.orbFrame = s.orbit.show.lvlh; delete s.orbit.show.lvlh; }
 }
 

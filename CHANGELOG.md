@@ -5,6 +5,9 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 
 ## [Unreleased]
 
+### Added
+- **Scenario library** (#38): keep named scenarios and switch between them in the Orbit tab (new, duplicate, rename, delete). A scenario keeps the orbit, epoch, time, guidance, target and which spacecraft flies it; display options stay shared. *Copy JSON* and *Import* move a scenario to another computer, with a copy of its spacecraft. Older saves become a library of one.
+
 ## [0.7.0] - 2026-11-03
 
 ### Added

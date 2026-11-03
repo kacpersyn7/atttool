@@ -45,8 +45,13 @@ export function selectSpacecraft(s, id) {
 
 /** Add a spacecraft (taken over, not copied) and make it active. @returns its id. */
 export function addSpacecraft(s, sc, name) {
+  const id = parkSpacecraft(s, sc, name); selectSpacecraft(s, id); return id;
+}
+
+/** Add a spacecraft (taken over) without making it active. @returns its id. */
+export function parkSpacecraft(s, sc, name) {
   const f = s.fleet, it = { id: newId(), name: uniqueName(f, String(name || '').trim() || 'Spacecraft'), sc, axes: null };
-  f.items.push(it); selectSpacecraft(s, it.id); return it.id;
+  f.items.push(it); return it.id;
 }
 
 /** Add a copy of the active spacecraft, with the same pointing axes, and make it active. @returns its id. */
