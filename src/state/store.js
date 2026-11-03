@@ -5,13 +5,15 @@
  *   S.rot     Rotation Lab settings (quaternion, Euler sequence, display toggles)
  *   S.orbit   orbit, time, guidance mode and display toggles
  *   S.layout  Spacecraft Layout UI settings (selection, gizmo, display)
- *   S.sc      the spacecraft: { bus, align, comps[] } — shared by all workspaces (spacecraft/bus.js, alignment.js)
+ *   S.sc      the active spacecraft: { bus, align, comps[] } — shared by all workspaces (spacecraft/bus.js, alignment.js)
+ *   S.fleet   the spacecraft library: names and the parked spacecraft (spacecraft/library.js)
  *
  * Mutate S in place, then call save() (UI settings) or scChanged() (spacecraft geometry —
  * bumps scVersion() so 3D models rebuild). Bump STORAGE_KEY if you make an incompatible change.
  */
 import * as AM from '../core/attitude.js';
 import { defaultSC } from '../spacecraft/exampleSpacecraft.js';
+import { ensureFleet } from '../spacecraft/library.js';
 import { normalizeBus, convertLegacyFrame } from '../spacecraft/bus.js';
 import { defaultAlign } from '../spacecraft/alignment.js';
 import { fillParams } from '../spacecraft/component.js';
@@ -21,7 +23,7 @@ export const STORAGE_KEY = 'atttool.v1';
 const D2R = AM.D2R;
 
 export function defaultState() {
-  return {
+  const s = {
     tab: 'rot',
     rot: { seq: '321', euler: [30, 20, 10], q: AM.C2q(AM.euler2C('321', [30 * D2R, 20 * D2R, 10 * D2R])), scalarFirst: true, dcmView: 'BR', probe: [1, 1, 0], showProbe: true, showGhosts: true, showTrails: true, showSC: true, nudge: 15 },
     orbit: {
@@ -33,6 +35,8 @@ export function defaultState() {
     layout: { sel: null, gizmo: 'translate', oriTab: 'ypr', dcmDir: 0, alignDcmDir: 0, imp: { dir: 'CS', order: 'first', fix: true }, view: '3d', table: { sort: '', dir: 1, type: 'all', q: '', comma: null }, show: { cones: true, excl: false, labels: true, bus: 0.55, principal: false, com: true, orbitDirs: true } },
     sc: defaultSC(),
   };
+  ensureFleet(s);
+  return s;
 }
 
 /** Load from storage and fill any missing keys from defaults (forward-compatible). */
@@ -49,15 +53,19 @@ function load() {
 }
 
 /** Upgrade saves from older versions in place. */
-function migrate(s) {
+export function migrate(s) {
   // v0.2 -> v0.3: the old "LVLH" frame is STK's VVLH; nadir mode became the generic "offsets" mode
   if (s.orbit.mode === 'lvlh') { s.orbit.mode = 'offsets'; s.orbit.refFrame = 'vvlh'; }
   // v0.3 -> v0.4: the bus is a placed part, and the nominal attitude (SCF vs orbital frame) is part of
   // the spacecraft. The old offsets mode flew SCF = selected orbital frame, so start from that.
-  normalizeBus(s.sc.bus); convertLegacyFrame(s.sc);
-  if (!s.sc.align) s.sc.align = defaultAlign(s.orbit.refFrame || 'vvlh');
-  // v0.6: new type parameters (e.g. the star tracker's moonExcl) for parts saved before they existed
-  (s.sc.comps || []).forEach(fillParams);
+  // v0.7: the spacecraft library; a save with one spacecraft becomes a library of one
+  const f = ensureFleet(s);
+  for (const sc of [s.sc, ...f.items.map(i => i.sc).filter(Boolean)]) {
+    normalizeBus(sc.bus); convertLegacyFrame(sc);
+    if (!sc.align) sc.align = defaultAlign(s.orbit.refFrame || 'vvlh');
+    // v0.6: new type parameters (e.g. the star tracker's moonExcl) for parts saved before they existed
+    (sc.comps || []).forEach(fillParams);
+  }
   if ('lvlh' in s.orbit.show) { s.orbit.show.orbFrame = s.orbit.show.lvlh; delete s.orbit.show.lvlh; }
 }
 

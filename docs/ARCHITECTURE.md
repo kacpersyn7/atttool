@@ -34,6 +34,8 @@ Keeping `sim/` independent of the global state is deliberate. Functions such as 
 
 `state/store.js` exports one object `S`, which is plain JSON and is persisted to `localStorage` under `atttool.v1`.
 
+`S.sc` is always the **active** spacecraft, and everything reads that. `S.fleet` is the library (`spacecraft/library.js`): names, plus the other spacecraft parked with their own pointing axis. Changing the active one replaces `S.sc`, then calls `scChanged()`.
+
 - Mutate it in place, then call `save()`, which is debounced.
 - If you change spacecraft geometry (`S.sc`), call `scChanged()` instead. It bumps `scVersion()`, and each view compares that number with the version it last built, then rebuilds its 3D model.
 - New settings: add a default in `defaultState()`. `load()` merges stored state over the defaults, so old saves pick up new keys automatically. Bump `STORAGE_KEY` only for incompatible changes.
