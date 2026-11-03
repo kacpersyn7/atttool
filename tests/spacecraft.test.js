@@ -3,9 +3,8 @@ import assert from 'node:assert/strict';
 import * as AM from '../src/core/attitude.js';
 import { mkComp, compAxis, qFromBoresight, envelope, sanitizeSpacecraft } from '../src/spacecraft/component.js';
 import { defaultSC } from '../src/spacecraft/exampleSpacecraft.js';
-import { ensureFleet, activeItem, selectSpacecraft, addSpacecraft, duplicateSpacecraft, renameSpacecraft, deleteSpacecraft } from '../src/spacecraft/library.js';
+import { ensureFleet, activeItem, selectSpacecraft, addSpacecraft, duplicateSpacecraft, renameSpacecraft, deleteSpacecraft, replaceActive } from '../src/spacecraft/library.js';
 import { defaultState, migrate } from '../src/state/store.js';
-import { payloadComp } from '../src/sim/guidance.js';
 import { massProps } from '../src/spacecraft/massProperties.js';
 import { exportPython } from '../src/spacecraft/exportPython.js';
 import { close, closeArr } from './helpers.js';
@@ -237,8 +236,52 @@ test('library: repairs a damaged library without losing the active spacecraft', 
   s.fleet = 'junk'; ensureFleet(s); assert.equal(s.fleet.items.length, 1);
 });
 
-test('library: the pointing axis falls back to the payload when the part is not on the spacecraft', () => {
-  const s = libState(); s.orbit.tgtComp = 'not-here';
-  assert.equal(payloadComp(s).type, 'payload');
+test('library: Sun-pointing axes stay with their spacecraft; a new or replaced one starts from the defaults', () => {
+  const s = libState(), a = s.fleet.active, arr = 'comp:' + s.sc.comps.find(c => c.type === 'sa').id;
+  Object.assign(s.orbit, { tgtComp: 'pl', sunAxis: arr, sunSecAxis: '-Y' });
+  const b = addSpacecraft(s, defaultSC(), 'B');
+  assert.deepEqual([s.orbit.tgtComp, s.orbit.sunAxis, s.orbit.sunSecAxis], ['', '-Z', '+X']);
+  s.orbit.sunAxis = '+X'; selectSpacecraft(s, a);
+  assert.deepEqual([s.orbit.tgtComp, s.orbit.sunAxis, s.orbit.sunSecAxis], ['pl', arr, '-Y']);
+  duplicateSpacecraft(s); assert.deepEqual([s.orbit.tgtComp, s.orbit.sunAxis, s.orbit.sunSecAxis], ['pl', arr, '-Y']);
+  selectSpacecraft(s, b); assert.equal(s.orbit.sunAxis, '+X');
+  const sc = defaultSC(); selectSpacecraft(s, a); replaceActive(s, sc);
+  assert.equal(s.sc, sc); assert.deepEqual([s.orbit.tgtComp, s.orbit.sunAxis, s.orbit.sunSecAxis], ['', '-Z', '+X']);
+});
+
+test('library: a save from before the library, with older spacecraft shapes, upgrades through migrate()', () => {
+  const s = JSON.parse(JSON.stringify(defaultState())), sc = s.sc;
+  delete s.fleet; delete sc.align; delete sc.bus.pos; delete sc.bus.q; sc.frame = 'vvlh';
+  sc.comps.filter(c => c.type === 'str').forEach(c => delete c.moonExcl);
+  s.orbit.mode = 'lvlh'; s.orbit.show.lvlh = true;
+  const nParts = sc.comps.length; migrate(s);
+  assert.equal(s.fleet.items.length, 1); assert.equal(activeItem(s).sc, null); assert.equal(s.sc, sc); assert.equal(s.sc.comps.length, nParts);
+  assert.equal(s.orbit.mode, 'offsets'); assert.ok(s.sc.align); assert.ok(s.sc.bus.pos.every(x => x === 0));
+  assert.ok(s.sc.comps.filter(c => c.type === 'str').every(c => c.moonExcl === 15));
+  assert.ok(massProps(s.sc).M > 0);
+});
+
+test('library: defaultState() already has a library', () => {
+  const s = defaultState(); assert.equal(activeItem(s).sc, null); assert.equal(s.fleet.items.length, 1);
+});
+
+test('library: a damaged library loses duplicate IDs and gets names', () => {
+  const s = libState(), sc = defaultSC();
+  s.fleet.items.push({ id: 'b', sc }, { id: 'b', name: 'dup', sc });
+  ensureFleet(s);
+  assert.equal(s.fleet.items.length, 2); assert.ok(s.fleet.items.every(i => i.name));
+});
+
+test('import: a part without pos, name, q or valid mass, or a bus without mass, gets a readable error', () => {
+  const bus = () => ({ x: 1, y: 1, z: 1, mass: 10 }), q = { w: 1, x: 0, y: 0, z: 0 }, ok = () => ({ type: 'str', name: 'S', pos: [0, 0, 0], q: { ...q } });
+  const part = over => ({ bus: bus(), comps: [{ ...ok(), ...over }] });
+  assert.throws(() => sanitizeSpacecraft(part({ pos: undefined })), /Part 1 "S" needs "pos"/);
+  assert.throws(() => sanitizeSpacecraft(part({ pos: [0, 'x', 0] })), /needs "pos"/);
+  assert.throws(() => sanitizeSpacecraft(part({ name: undefined })), /Part 1 needs a "name"/);
+  assert.throws(() => sanitizeSpacecraft(part({ q: undefined })), /needs "q"/);
+  assert.throws(() => sanitizeSpacecraft(part({ q: { w: 0, x: 0, y: 0, z: 0 } })), /needs "q"/);
+  assert.throws(() => sanitizeSpacecraft(part({ mass: 'heavy' })), /"mass" must be a number/);
+  assert.throws(() => sanitizeSpacecraft({ bus: { x: 1, y: 1, z: 1 }, comps: [] }), /Bus mass/);
+  const sc = sanitizeSpacecraft(part({})); assert.ok(sc.comps[0].mass > 0, 'missing mass → the type default'); assert.ok(Number.isFinite(massProps(sc).M));
 });
 

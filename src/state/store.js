@@ -23,7 +23,7 @@ export const STORAGE_KEY = 'atttool.v1';
 const D2R = AM.D2R;
 
 export function defaultState() {
-  return {
+  const s = {
     tab: 'rot',
     rot: { seq: '321', euler: [30, 20, 10], q: AM.C2q(AM.euler2C('321', [30 * D2R, 20 * D2R, 10 * D2R])), scalarFirst: true, dcmView: 'BR', probe: [1, 1, 0], showProbe: true, showGhosts: true, showTrails: true, showSC: true, nudge: 15 },
     orbit: {
@@ -35,6 +35,8 @@ export function defaultState() {
     layout: { sel: null, gizmo: 'translate', oriTab: 'ypr', dcmDir: 0, alignDcmDir: 0, imp: { dir: 'CS', order: 'first', fix: true }, view: '3d', table: { sort: '', dir: 1, type: 'all', q: '', comma: null }, show: { cones: true, excl: false, labels: true, bus: 0.55, principal: false, com: true, orbitDirs: true } },
     sc: defaultSC(),
   };
+  ensureFleet(s);
+  return s;
 }
 
 /** Load from storage and fill any missing keys from defaults (forward-compatible). */
