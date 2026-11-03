@@ -13,6 +13,11 @@ import * as ENV from '../env/index.js';
 
 export const EPOCH0 = '2026-10-05T10:00';
 
+/** Height of the ground target above the sphere (km); the state holds metres (o.tgtAlt, older saves: none). */
+export const targetHeight = o => (o.tgtAlt || 0) / 1000;
+/** Ground target in ECEF (km), at its height above the sphere. */
+export const targetECEF = o => ENV.llh2ecef(o.tgtLat * D2R, o.tgtLon * D2R, targetHeight(o));
+
 /** Parse 'YYYY-MM-DDTHH:MM' or 'YYYY-MM-DDTHH:MM:SS(.sss)' (UTC) → Date, or null. */
 export function parseEpoch(str) {
   const t = String(str || '').trim(); if (!/^\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d+)?)?$/.test(t)) return null;

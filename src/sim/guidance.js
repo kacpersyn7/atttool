@@ -15,7 +15,7 @@ import * as AM from '../core/attitude.js';
 import * as ENV from '../env/index.js';
 import { compAxis } from '../spacecraft/component.js';
 import { alignMatrix, defaultAlign } from '../spacecraft/alignment.js';
-import { epochDate, orbitElements } from './scenario.js';
+import { epochDate, orbitElements, targetECEF } from './scenario.js';
 
 const D2R = AM.D2R;
 
@@ -59,7 +59,7 @@ export function attitudeAt(state, t, E = orbitElements(state.orbit)) {
   }
   else if (o.mode === 'inertial') CBI = AM.q2C(AM.q.unit(state.rot.q));
   else if (o.mode === 'target') {
-    const tE = ENV.llh2ecef(o.tgtLat * D2R, o.tgtLon * D2R); const tI = ENV.ecef2eci(tE, date); const los = AM.v.sub(tI, st.r);
+    const tI = ENV.ecef2eci(targetECEF(o), date); const los = AM.v.sub(tI, st.r);
     const elev = Math.PI / 2 - AM.v.angle(tI, AM.v.scale(los, -1));
     const pc = payloadComp(state); const b1 = pc ? compAxis(pc) : [0, 0, 1];
     if (elev > 0) { let b2 = [1, 0, 0]; if (AM.v.norm(AM.v.cross(b1, b2)) < 1e-3) b2 = [0, 1, 0]; CBI = AM.triad(b1, b2, los, st.v); flag = { elev }; }

@@ -17,7 +17,7 @@ import { COL, V3, Arrow, makeTriad, makeLabel, setObjFromCBR, fixLabels, dispose
 import { earthTexture, earthGeometry, atmosphere, starfield, glowSprite } from '../../gfx/earth.js';
 import { buildSC } from '../../gfx/spacecraftMesh.js';
 import { compAxis } from '../../spacecraft/component.js';
-import { epochDate, orbitElements, applyPreset } from '../../sim/scenario.js';
+import { epochDate, orbitElements, applyPreset, targetECEF } from '../../sim/scenario.js';
 import { attitudeAt, bodyRate, payloadComp } from '../../sim/guidance.js';
 import { createBodyInset } from './bodyInset.js';
 import { createPayloadInset } from './payloadInset.js';
@@ -150,7 +150,7 @@ export function createOrbitView({ renderRail }) {
     } else ray.visible = foot.visible = footLbl.visible = false;
     tgt.visible = o.mode === 'target' || (!!o.show.plView && !!pc); // the payload view measures the error against it in every mode
     plEl.hidden = !(o.show.plView && pc);
-    if (tgt.visible) { const p = AM.v.scale(ENV.llh2ecef(o.tgtLat * D2R, o.tgtLon * D2R), U); tgt.position.set(...p); tgt.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), V3(AM.v.unit(p))); }
+    if (tgt.visible) { const p = AM.v.scale(targetECEF(o), U); tgt.position.set(...p); tgt.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), V3(AM.v.unit(p))); }
     V.scene.updateMatrixWorld(); [scModel, orbTriad, sunArrow, moonArrow, bArrow, vArrow].forEach(fixLabels);
     // follow camera
     if (o.show.follow) { if (prevScPos) { const d = pos.clone().sub(prevScPos); V.camera.position.add(d); } V.controls.target.copy(pos); }
