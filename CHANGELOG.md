@@ -5,11 +5,18 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-03
+
 ### Added
 - **Payload view** (#10): a picture-in-picture camera along the payload boresight, stacked above the body-frame view: projected lat/lon grid, ground track, payload FOV circle, ground target, along-track / right-of-track arrows, scale bar and pointing-error readouts. Drawn as a 2D projection (sharp at any scale). A **Payload pointing** card shows the error against the ground target in every guidance mode — angle, along / cross-track (°) and ground distance (km) — and the target can be set outside target mode. New plot signals: pointing error and ground error vs target. Toggle *Payload view*.
 - **Map in the payload view** (#35): Natural Earth 1:50m land, lakes, rivers, country and province borders and labelled cities under the grid, track and target, so you can see what the payload is looking at. Offline, public-domain data built into the file (the single-file build grows from ~0.3 MB to ~0.8 MB). Schematic (good to a few km). Toggles *Map borders* and *Map cities*. The 3D Earth uses the same data: sharper coastlines, lakes and country borders.
 - **Target height** (#34): the ground target has a height above the sphere (*Height m*, −500 to 9000; default 0, older saves unchanged). Guidance and the pointing error use it. The payload view marks the point under the target and the *Payload pointing* card shows the **relief displacement** (≈ h·tan(incidence), e.g. about 1.3 km for 2 km of height seen 30° off nadir).
 - **Spacecraft library** (#37): keep several spacecraft and choose which one is active, in *Spacecraft Layout* (new, duplicate, rename, delete) and in the Orbit tab. Each remembers its own pointing axis. Import JSON can add a new spacecraft or replace the active one, and the copied JSON now carries the name. Older saves become a library of one.
+
+### Fixed
+- Layout: mass properties now update on every change, also after visiting Table view; the rail and the exported mounting matrices could show old values. (#37)
+- Import JSON: a part without a position, name or orientation, or with an invalid mass, now gets a readable error instead of being accepted and stopping the app from starting on the next load. (#37)
+- Layout table: the type filter resets when that type isn't on the spacecraft. (#37)
 
 ## [0.6.0] - 2026-11-01
 
@@ -68,7 +75,8 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 ### Added
 - 40 unit tests (`npm test`), zero-dependency dev server and single-file build, architecture and conventions docs. Original kept in `legacy/`.
 
-[Unreleased]: https://github.com/kacpersyn7/atttool/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/kacpersyn7/atttool/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/kacpersyn7/atttool/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/kacpersyn7/atttool/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/kacpersyn7/atttool/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/kacpersyn7/atttool/compare/v0.3.0...v0.4.0
