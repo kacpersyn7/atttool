@@ -10,11 +10,12 @@
  * switching writes the fields into it in place. Pure functions on the state object; the caller then calls
  * scChanged().
  *
- * The JSON form (exportScenario / importScenario) carries a copy of the spacecraft, so it opens anywhere.
+ * The JSON form (exportScenario / importScenario) holds the scenario only and names its spacecraft; a
+ * spacecraft has its own JSON in Spacecraft Layout. Importing finds that name in the library.
  */
 import * as ENV from '../env/index.js';
-import { newId, sanitizeSpacecraft } from '../spacecraft/component.js';
-import { activeItem as activeSC, parkSpacecraft, selectSpacecraft, uniqueName, validateAxes } from '../spacecraft/library.js';
+import { newId } from '../spacecraft/component.js';
+import { activeItem as activeSC, selectSpacecraft, uniqueName, validateAxes } from '../spacecraft/library.js';
 import * as AM from '../core/attitude.js';
 import { PRESETS, applyPreset, parseEpoch } from './scenario.js';
 
@@ -91,9 +92,9 @@ export function deleteScenario(s, id) {
   f.items.splice(f.items.findIndex(i => i.id === id), 1); return true;
 }
 
-/** The active scenario as plain JSON, with a copy of its spacecraft. */
+/** The active scenario as plain JSON. The spacecraft is only named. */
 export function exportScenario(s) {
-  return copy({ atttool: 1, kind: 'scenario', name: activeScenario(s).name, orbit: parked(s), spacecraft: { name: activeSC(s).name, sc: s.sc } });
+  return copy({ atttool: 1, kind: 'scenario', name: activeScenario(s).name, orbit: parked(s), spacecraft: activeSC(s).name });
 }
 
 const isStr = x => typeof x === 'string', isNum = Number.isFinite;
@@ -121,29 +122,20 @@ export function sanitizeScenario(orbit, defaults) {
   return o;
 }
 
-/** Text of a spacecraft for comparing two: as an import would see it, keys sorted, numbers rounded (normalising isn't exact). */
-function canonical(sc) {
-  const norm = x => Array.isArray(x) ? x.map(norm)
-    : x && typeof x === 'object' ? Object.fromEntries(Object.keys(x).sort().map(k => [k, norm(x[k])]))
-      : typeof x === 'number' ? Math.round(x * 1e9) / 1e9 : x;
-  return JSON.stringify(norm(sanitizeSpacecraft(copy(sc))));
-}
 const cleanName = (x, fallback) => (isStr(x) && x.trim() ? x.trim().slice(0, 32) : fallback);
 
 /**
- * Add a scenario from exportScenario() JSON and make it active. Its spacecraft is added to the library
- * unless an identical one is already there. @param defaults orbit values for missing or invalid fields.
- * @throws Error with a readable message; nothing has changed then. @returns the scenario id.
+ * Add a scenario from exportScenario() JSON and make it active. It flies the spacecraft of that name in
+ * the library, or else the active one. The library itself doesn't change.
+ * @param defaults orbit values for missing or invalid fields.
+ * @throws Error with a readable message; nothing has changed then.
+ * @returns { id, missing }: missing is the name of a spacecraft not in the library, else null.
  */
 export function importScenario(s, json, defaults) {
   if (!json || json.kind !== 'scenario' || !json.orbit || typeof json.orbit !== 'object') throw new Error('Expected a scenario copied from AttTool ("kind": "scenario").');
   if (json.atttool > 1) throw new Error('This scenario comes from a newer version of AttTool.');
-  const orbit = sanitizeScenario(json.orbit, defaults), name = cleanName(json.name, 'Imported scenario');
-  let scId = s.fleet.active;
-  if (json.spacecraft) {
-    const sc = sanitizeSpacecraft(copy(json.spacecraft)), text = canonical(sc);
-    const same = s.fleet.items.find(i => canonical(i.id === s.fleet.active ? s.sc : i.sc) === text);
-    scId = same ? same.id : parkSpacecraft(s, sc, cleanName(json.spacecraft.name, 'Imported spacecraft'));
-  }
-  return addScenario(s, orbit, name, scId);
+  const orbit = sanitizeScenario(json.orbit, defaults), want = isStr(json.spacecraft) ? json.spacecraft : null;
+  const found = want === null ? null : s.fleet.items.find(i => i.name === want);
+  const id = addScenario(s, orbit, cleanName(json.name, 'Imported scenario'), found ? found.id : s.fleet.active);
+  return { id, missing: want !== null && !found ? want : null };
 }

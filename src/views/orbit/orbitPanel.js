@@ -4,7 +4,7 @@ import { S, save, scChanged, defaultState } from '../../state/store.js';
 import { h, card, tip, slider, numCell, selectRow, check, seg, liveText, syncAll, onSync, confirmButton } from '../../ui/dom.js';
 import { deg, esc, fmt, hhmm, hms } from '../../ui/format.js';
 import { TYPES } from '../../spacecraft/componentTypes.js';
-import { selectSpacecraft } from '../../spacecraft/library.js';
+import { activeItem, selectSpacecraft } from '../../spacecraft/library.js';
 import { activeScenario, addScenario, deleteScenario, duplicateScenario, exportScenario, importScenario, newScenarioOrbit, renameScenario, selectScenario } from '../../sim/scenarioLibrary.js';
 import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, PRESETS, orbitElements, ltanOf, epochDate, parseEpoch, formatEpoch, switchDefinition, restartFromState, definitionError, tleOf } from '../../sim/scenario.js';
 import { copyText, showModal, closeModal, toast } from '../../ui/overlay.js';
@@ -126,8 +126,8 @@ function scenarioCard(ctx) {
   const importDlg = () => {
     const ta = h('textarea', { style: 'width:100%;min-height:220px', placeholder: 'Paste a scenario JSON copied from AttTool' }), err = h('p', { class: 'tip', style: 'color:var(--bad)' });
     const doImport = () => {
-      try { importScenario(S, JSON.parse(ta.value), defaults()); } catch (e) { err.textContent = 'Could not import: ' + e.message; return; }
-      closeModal(); switched(); toast('Scenario added');
+      let res; try { res = importScenario(S, JSON.parse(ta.value), defaults()); } catch (e) { err.textContent = 'Could not import: ' + e.message; return; }
+      closeModal(); switched(); toast(res.missing ? `Scenario added. No spacecraft named "${res.missing}" here, so it flies ${activeItem(S).name}` : 'Scenario added');
     };
     showModal(h('div', null, h('h2', null, 'Import scenario'), ta, err, h('div', { class: 'btns', style: 'margin-top:8px' }, h('button', { class: 'btn primary', onclick: doImport }, 'Add scenario'))));
   };
@@ -139,7 +139,7 @@ function scenarioCard(ctx) {
       h('button', { class: 'btn', onclick: () => { duplicateScenario(S); switched(); } }, 'Duplicate'), del,
       h('button', { class: 'btn', onclick: () => copyText(JSON.stringify(exportScenario(S), null, 1), 'Scenario JSON') }, 'Copy JSON'),
       h('button', { class: 'btn', onclick: importDlg }, 'Import…')),
-    tip('A scenario keeps the orbit, epoch, time, guidance and target, and which spacecraft flies it. Display options are shared. Build more spacecraft in <b>Spacecraft Layout</b>.'));
+    tip('A scenario keeps the orbit, epoch, time, guidance and target, and which spacecraft flies it. Display options are shared. <b>Copy JSON</b> holds the scenario and the name of its spacecraft; copy the spacecraft itself in <b>Spacecraft Layout</b>.'));
 }
 
 /* ---------------- Orbit card: elements / r,v / TLE ---------------- */

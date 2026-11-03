@@ -85,26 +85,44 @@ test('scenarios: save round trip, with fields added later filled into parked sce
   selectScenario(back, b); assert.equal(back.orbit.hp, 901);
 });
 
-test('scenarios: export then import on another machine brings the spacecraft along', () => {
-  const s = fresh(); s.orbit.hp = 612; s.orbit.mode = 'target'; s.orbit.tgtComp = s.sc.comps[0].id; s.sc.bus.mass = 77; activeItem(s).name = 'My sat'; activeScenario(s).name = 'Pass over Warsaw';
+test('scenarios: the JSON holds the scenario and names the spacecraft, without its data', () => {
+  const s = fresh(); s.orbit.hp = 612; activeItem(s).name = 'My sat'; activeScenario(s).name = 'Pass';
   const json = JSON.parse(JSON.stringify(exportScenario(s)));
-  const t = fresh(), before = t.sc, n = t.fleet.items.length;
-  importScenario(t, json, scenarioData(defaultState().orbit));
-  assert.equal(activeScenario(t).name, 'Pass over Warsaw'); assert.equal(t.orbit.hp, 612); assert.equal(t.orbit.mode, 'target'); assert.equal(t.orbit.tgtComp, s.sc.comps[0].id);
-  assert.equal(t.fleet.items.length, n + 1); assert.equal(activeItem(t).name, 'My sat'); assert.equal(t.sc.bus.mass, 77); assert.notEqual(t.sc, before);
+  assert.equal(json.spacecraft, 'My sat'); assert.equal(json.name, 'Pass'); assert.equal(json.orbit.hp, 612);
+  assert.deepEqual(Object.keys(json).sort(), ['atttool', 'kind', 'name', 'orbit', 'spacecraft']);
+  assert.ok(!JSON.stringify(json).includes('"comps"'), 'no spacecraft data');
 });
 
-test('scenarios: importing twice reuses the identical spacecraft; names stay unique', () => {
-  const s = fresh(), json = JSON.parse(JSON.stringify(exportScenario(s))), n = s.fleet.items.length, d = scenarioData(defaultState().orbit);
-  importScenario(s, json, d); assert.equal(s.fleet.items.length, n, 'same as the active one');
-  importScenario(s, json, d); assert.equal(s.fleet.items.length, n); assert.equal(activeScenario(s).name, 'Scenario 1 3');
+test('scenarios: import flies the spacecraft of that name; the library doesn\'t change', () => {
+  const s = fresh(), first = s.fleet.active, scA = s.sc; activeItem(s).name = 'Sat A';
+  const part = s.sc.comps[0].id; Object.assign(s.orbit, { mode: 'target', tgtComp: part, hp: 612 });
+  const json = JSON.parse(JSON.stringify(exportScenario(s)));
+  addSpacecraft(s, defaultSC(), 'Sat B'); const n = s.fleet.items.length;
+  const res = importScenario(s, json, D());
+  assert.equal(res.missing, null); assert.equal(s.fleet.active, first); assert.equal(s.sc, scA); assert.equal(s.fleet.items.length, n);
+  assert.equal(s.orbit.hp, 612); assert.equal(s.orbit.tgtComp, part); assert.equal(activeScenario(s).id, res.id);
 });
 
-test('scenarios: import rejects other JSON and bad spacecraft, changing nothing; bad fields take the default', () => {
+test('scenarios: import without that spacecraft flies the active one, reports the name, and drops axes of its parts', () => {
+  const s = fresh(); activeItem(s).name = 'Theirs'; s.orbit.sunAxis = 'comp:' + s.sc.comps[0].id; s.orbit.hp = 612;
+  const json = JSON.parse(JSON.stringify(exportScenario(s)));
+  const t = fresh(), active = t.fleet.active, sc = t.sc, n = t.fleet.items.length;
+  const res = importScenario(t, json, D());
+  assert.equal(res.missing, 'Theirs'); assert.equal(t.fleet.active, active); assert.equal(t.sc, sc); assert.equal(t.fleet.items.length, n);
+  assert.equal(t.orbit.hp, 612); assert.equal(t.orbit.sunAxis, '-Z', 'not a part of the other spacecraft');
+  assert.equal(importScenario(t, { kind: 'scenario', orbit: {} }, D()).missing, null, 'none named');
+  assert.equal(importScenario(t, { kind: 'scenario', orbit: {}, spacecraft: { sc: {} } }, D()).missing, null, 'an old or odd value is ignored');
+});
+
+test('scenarios: importing twice keeps the names unique', () => {
+  const s = fresh(), json = JSON.parse(JSON.stringify(exportScenario(s)));
+  importScenario(s, json, D()); importScenario(s, json, D()); assert.equal(activeScenario(s).name, 'Scenario 1 3');
+});
+
+test('scenarios: import rejects other JSON, changing nothing; bad fields take the default', () => {
   const s = fresh(), d = scenarioData(defaultState().orbit), snap = JSON.stringify(s);
   assert.throws(() => importScenario(s, { atttool: 1, sc: defaultSC() }, d), /Expected a scenario/);
   assert.throws(() => importScenario(s, null, d), /Expected a scenario/);
-  assert.throws(() => importScenario(s, { kind: 'scenario', orbit: {}, spacecraft: { sc: { bus: { x: 1, y: 1, z: 1, mass: 1 }, comps: [{ type: 'str', name: 'S' }] } } }, d), /needs "pos"/);
   assert.equal(JSON.stringify(s), snap);
   const o = sanitizeScenario({ hp: 'high', ha: -5, mode: 'warp', def: 'x', r: [1, 2], epoch: 'soon', t: -1, tgtLat: 200, j2: 1, sunAxis: 'Z', refFrame: 'nope', extra: 1, tgtAlt: 100 }, d);
   for (const k of ['hp', 'ha', 'mode', 'def', 'r', 'epoch', 't', 'tgtLat', 'j2', 'sunAxis', 'refFrame']) assert.deepEqual(o[k], d[k], k);
@@ -127,7 +145,7 @@ test('import: hostile fields never reach the sim; the result runs through guidan
     { t: 1e15 }, { preset: 'nope' }, { preset: 'constructor' }, { hp: 1e308, ha: 1e308 }, { epoch: ['2026-10-05T10:00'] }, { sunSec: 'junk' }, { tle: 7 }, { i: 'x', raan: {}, argp: null, nu0: [] }, { roll: Infinity, pitch: NaN, yaw: '1' }, { tgtLat: 91, tgtLon: 1e9 }, { mode: 'constructor' }, { mode: 'inertial', inertialQ: { w: 0, x: 0, y: 0, z: 0 } }, { mode: 'inertial', inertialQ: 'x' },
   ];
   for (const orbit of bad) {
-    const s = fresh(), id = importScenario(s, { kind: 'scenario', orbit }, D()), label = JSON.stringify(orbit);
+    const s = fresh(), { id } = importScenario(s, { kind: 'scenario', orbit }, D()), label = JSON.stringify(orbit);
     assert.equal(s.scenarios.active, id, label);
     const A = attitudeAt(s, s.orbit.t); assert.ok(A.st.r.every(Number.isFinite), label); assert.ok(A.CBI.flat().every(Number.isFinite), label);
     assert.ok(signalCatalog(s).length > 0, label); assert.ok(computeTimeline(s, 1, null, 12), label);
@@ -138,24 +156,11 @@ test('import: hostile fields never reach the sim; the result runs through guidan
   assert.deepEqual([o.preset, o.def, o.t, o.i, o.raan, o.argp, o.nu0, o.roll, o.pitch, o.yaw, o.sunSec, o.sunAxis, o.sunSecAxis, o.tle, o.tgtComp, o.refFrame], ['iss', 'rv', 100, 51, 10, 1, 2, 1, 2, 3, 'velocity', 'comp:a', '-Y', 'x', 'c', 'lvlh']);
 });
 
-test('import: a failure late in the import changes nothing; odd names are replaced', () => {
-  const s = fresh(), snap = () => JSON.stringify([s.fleet, s.scenarios, s.orbit]), before = snap(), other = defaultSC(); other.bus.mass = 5;
-  for (const j of [{ kind: 'scenario', orbit: 7 }, { kind: 'scenario', atttool: 2, orbit: {} }, { kind: 'scenario', orbit: {}, spacecraft: { sc: { bus: { x: 1, y: 1, z: 1, mass: 1 }, comps: [null] } } }, { kind: 'scenario', orbit: {}, spacecraft: { sc: { bus: { x: 1, y: 1, z: 1, mass: 1 }, comps: [{ type: 'constructor', name: 'S', pos: [0, 0, 0], q: { w: 1, x: 0, y: 0, z: 0 }, mass: 1 }] } } }]) {
-    assert.throws(() => importScenario(s, j, D())); assert.equal(snap(), before, JSON.stringify(j).slice(0, 60));
-  }
-  importScenario(s, { kind: 'scenario', name: { toString: 1 }, orbit: {}, spacecraft: { name: 7, sc: other } }, D());
-  assert.equal(activeScenario(s).name, 'Imported scenario'); assert.equal(activeItem(s).name, 'Imported spacecraft');
+test('import: refused files change nothing; odd names are replaced', () => {
+  const s = fresh(), snap = () => JSON.stringify([s.fleet, s.scenarios, s.orbit]), before = snap();
+  for (const j of [{ kind: 'scenario', orbit: 7 }, { kind: 'scenario', atttool: 2, orbit: {} }]) { assert.throws(() => importScenario(s, j, D())); assert.equal(snap(), before); }
+  importScenario(s, { kind: 'scenario', name: { toString: 1 }, orbit: {} }, D()); assert.equal(activeScenario(s).name, 'Imported scenario');
   importScenario(s, { kind: 'scenario', name: 'x'.repeat(99), orbit: {} }, D()); assert.equal(activeScenario(s).name.length, 32);
-});
-
-test('import: the app\'s own export finds the identical spacecraft, whatever normalising does to its numbers', () => {
-  const s = fresh();
-  // a q.unit() output that q.unit() changes in the last digits
-  s.sc.comps[0].q = { w: 0.9950041652780256, x: 0.059900049988096865, y: 0.07986673331746251, z: 0 }; s.sc.comps[1].eul = [1, 2, 3];
-  const n = s.fleet.items.length, json = JSON.parse(JSON.stringify(exportScenario(s))), keep = JSON.stringify(json);
-  importScenario(s, json, D()); assert.equal(s.fleet.items.length, n, 'no duplicate spacecraft');
-  assert.equal(JSON.stringify(json), keep, 'the caller\'s JSON is not modified');
-  const other = JSON.parse(keep); other.spacecraft.sc.comps[0].pos[0] += 1e-3; importScenario(s, other, D()); assert.equal(s.fleet.items.length, n + 1, 'a real difference counts');
 });
 
 test('scenarios: inertial mode keeps its attitude per scenario and in the export; other modes leave Rotation Lab alone', () => {

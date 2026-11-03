@@ -49,7 +49,7 @@ export function addSpacecraft(s, sc, name) {
 }
 
 /** Add a spacecraft (taken over) without making it active. @returns its id. */
-export function parkSpacecraft(s, sc, name) {
+function parkSpacecraft(s, sc, name) {
   const f = s.fleet, it = { id: newId(), name: uniqueName(f, String(name || '').trim() || 'Spacecraft'), sc, axes: null };
   f.items.push(it); return it.id;
 }
