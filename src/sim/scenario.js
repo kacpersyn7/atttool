@@ -13,8 +13,10 @@ import * as ENV from '../env/index.js';
 
 export const EPOCH0 = '2026-10-05T10:00';
 
-/** Height of the ground target above the sphere (km); the state holds metres (o.tgtAlt, older saves: none). */
-export const targetHeight = o => (o.tgtAlt || 0) / 1000;
+/** Limits of the target height (m): the Dead Sea to above Everest. */
+export const TGT_ALT_MIN = -500, TGT_ALT_MAX = 9000;
+/** Height of the ground target above the sphere (km); the state holds metres (o.tgtAlt; older saves: none, bad values: 0). */
+export const targetHeight = o => { const a = +o.tgtAlt; return Number.isFinite(a) ? Math.max(TGT_ALT_MIN, Math.min(TGT_ALT_MAX, a)) / 1000 : 0; };
 /** Ground target in ECEF (km), at its height above the sphere. */
 export const targetECEF = o => ENV.llh2ecef(o.tgtLat * D2R, o.tgtLon * D2R, targetHeight(o));
 

@@ -32,23 +32,23 @@ export function payloadCI(c, CBI) { return m.mul(AM.q2C(c.q), CBI); }
  * Pointing of the payload against the ground target (state.orbit.tgtLat / tgtLon / tgtAlt) at attitude A.
  * CBI defaults to A.CBI; pass another attitude (e.g. with knowledge / performance errors) to compare.
  * @returns null without a payload, else {
- *   c, CCI, bore (ECI unit), hit (ECI km | null: boresight misses the Earth), slant (km to hit | null);
- *     the hit is on the sphere at the target's height, so a boresight on the target has zero ground error,
- *   tgt (ECI km), tgtUp (target above the spacecraft's horizon), elev (rad),
+ *   c, CCI, bore (ECI unit), hit (ECI km | null: boresight misses the Earth, i.e. the sphere at height 0
+ *     like the map), slant (km to hit | null),
+ *   tgt (ECI km), tgtUp (spacecraft above the target's local horizontal, elev > 0), elev (rad),
  *   h (target height, km), foot (ECI km: the point on the sphere under the target),
  *   relief (km | null, relief displacement: from the foot to where the line of sight through the target
  *     meets the sphere; ≈ h·tan(incidence), sign of h; null if below the horizon or it misses the sphere),
  *   ang, along, cross (deg; null if the target is below the horizon; along/cross are separate tangent-plane
  *     angles — they add up to ang only for small errors),
- *   gnd, gAlong, gCross (km on the ground, hit − target: great-circle distance and its split along the
- *     initial azimuth at the target, so hypot(gAlong, gCross) = gnd; null if no hit or target below horizon) }
+ *   gnd, gAlong, gCross (km, from the target to the boresight's hit on the sphere at the target's height, so
+ *     a boresight on the target gives zero: great-circle distance and its split along the initial azimuth at the target, so hypot(gAlong, gCross) = gnd; null if no hit or target below horizon) }
  */
 export function pointing(state, A, CBI = A.CBI) {
   const c = payloadComp(state); if (!c) return null;
   const o = state.orbit, r = A.st.r;
   const CCI = payloadCI(c, CBI), bore = CCI[2];
   const h = targetHeight(o), Rt = ENV.RE + h;
-  const hit = ENV.rayEarth(r, bore, Rt), slant = hit ? v.norm(v.sub(hit, r)) : null;
+  const hit = ENV.rayEarth(r, bore), slant = hit ? v.norm(v.sub(hit, r)) : null;
   const tgt = ENV.ecef2eci(targetECEF(o), A.date), foot = v.scale(v.unit(tgt), ENV.RE);
   const los = v.sub(tgt, r), elev = Math.PI / 2 - v.angle(tgt, v.scale(los, -1)), tgtUp = elev > 0;
   const vr = groundRelVel(r, A.st.v);
@@ -61,11 +61,12 @@ export function pointing(state, A, CBI = A.CBI) {
   res.ang = v.angle(bore, u) * R2D;
   res.along = -Math.atan2(v.dot(u, x), v.dot(u, z)) * R2D;
   res.cross = -Math.atan2(v.dot(u, y), v.dot(u, z)) * R2D;
-  if (hit) {
+  const hitT = ENV.rayEarth(r, bore, Rt);
+  if (hitT) {
     // great-circle distance split by the initial azimuth at the target (the direction of hit − target
     // projected on the local horizontal), so that hypot(gAlong, gCross) = gnd exactly
-    const n = v.unit(tgt), xa = v.unit(v.sub(vr, v.scale(n, v.dot(vr, n)))), ya = v.cross(xa, n), d = v.sub(hit, tgt);
-    res.gnd = Rt * v.angle(hit, tgt);
+    const n = v.unit(tgt), xa = v.unit(v.sub(vr, v.scale(n, v.dot(vr, n)))), ya = v.cross(xa, n), d = v.sub(hitT, tgt);
+    res.gnd = Rt * v.angle(hitT, tgt);
     const dh = v.sub(d, v.scale(n, v.dot(d, n))), dl = v.norm(dh);
     res.gAlong = dl > 0 ? res.gnd * v.dot(dh, xa) / dl : 0; res.gCross = dl > 0 ? res.gnd * v.dot(dh, ya) / dl : 0;
   }
