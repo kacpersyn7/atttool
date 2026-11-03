@@ -60,7 +60,8 @@ export function sanitizeSpacecraft(json) {
   if (!(sc.bus.mass >= 0)) throw new Error('Bus mass must be a number.');
   const isVec = a => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
   sc.comps.forEach((c, k) => {
-    if (!TYPES[c.type]) throw new Error('Unknown component type "' + c.type + '".');
+    if (!c || typeof c !== 'object') throw new Error(`Part ${k + 1} is not an object.`);
+    if (!Object.hasOwn(TYPES, c.type)) throw new Error('Unknown component type "' + c.type + '".');
     const who = `Part ${k + 1}${c.name ? ' "' + c.name + '"' : ''}`;
     if (typeof c.name !== 'string' || !c.name) throw new Error(who + ' needs a "name".');
     if (!isVec(c.pos)) throw new Error(who + ' needs "pos": [x, y, z] in metres.');

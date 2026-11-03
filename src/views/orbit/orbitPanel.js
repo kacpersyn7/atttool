@@ -2,11 +2,11 @@
 import * as ENV from '../../env/index.js';
 import { S, save, scChanged, defaultState } from '../../state/store.js';
 import { h, card, tip, slider, numCell, selectRow, check, seg, liveText, syncAll, onSync, confirmButton } from '../../ui/dom.js';
-import { deg, fmt, hhmm, hms } from '../../ui/format.js';
+import { deg, esc, fmt, hhmm, hms } from '../../ui/format.js';
 import { TYPES } from '../../spacecraft/componentTypes.js';
 import { selectSpacecraft } from '../../spacecraft/library.js';
-import { activeScenario, addScenario, deleteScenario, duplicateScenario, exportScenario, importScenario, renameScenario, scenarioData, selectScenario } from '../../sim/scenarioLibrary.js';
-import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, applyPreset, PRESETS, orbitElements, ltanOf, epochDate, parseEpoch, formatEpoch, switchDefinition, restartFromState, definitionError, tleOf } from '../../sim/scenario.js';
+import { activeScenario, addScenario, deleteScenario, duplicateScenario, exportScenario, importScenario, newScenarioOrbit, renameScenario, selectScenario } from '../../sim/scenarioLibrary.js';
+import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, PRESETS, orbitElements, ltanOf, epochDate, parseEpoch, formatEpoch, switchDefinition, restartFromState, definitionError, tleOf } from '../../sim/scenario.js';
 import { copyText, showModal, closeModal, toast } from '../../ui/overlay.js';
 import { payloadComp } from '../../sim/guidance.js';
 import { sensorEval } from '../../sim/sensors.js';
@@ -88,10 +88,10 @@ export function orbitPanel(ctx) {
       for (const c of S.sc.comps) {
         if (c.type !== 'str') continue;
         const s = sensorEval(c, cur);
-        rows.push(`<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span>${c.name}</span><span class="lbl" style="font-family:var(--f-mono);font-size:11.5px">☉ ${s.sunAng.toFixed(0)}° · ☾ ${s.moonUp ? s.moonAng.toFixed(0) + '°' : '–'} · limb ${s.limb.toFixed(0)}°</span>${s.ok ? '<span class="chip ok">Tracking</span>' : s.sunBlind ? '<span class="chip warn">Sun-blinded</span>' : s.earthBlind ? '<span class="chip bad">Earth in FOV</span>' : '<span class="chip moon">Moon-blinded</span>'}</div>`);
+        rows.push(`<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span>${esc(c.name)}</span><span class="lbl" style="font-family:var(--f-mono);font-size:11.5px">☉ ${s.sunAng.toFixed(0)}° · ☾ ${s.moonUp ? s.moonAng.toFixed(0) + '°' : '–'} · limb ${s.limb.toFixed(0)}°</span>${s.ok ? '<span class="chip ok">Tracking</span>' : s.sunBlind ? '<span class="chip warn">Sun-blinded</span>' : s.earthBlind ? '<span class="chip bad">Earth in FOV</span>' : '<span class="chip moon">Moon-blinded</span>'}</div>`);
       }
       const css = S.sc.comps.filter(c => c.type === 'css'); if (css.length) { const n = css.filter(c => sensorEval(c, cur).sees).length; rows.push(`<div style="display:flex;justify-content:space-between"><span>Sun sensors seeing Sun</span><span class="chip ${n ? 'ok' : 'dim'}">${n}/${css.length}</span></div>`); }
-      const pc = payloadComp(S); if (pc) { const s = sensorEval(pc, cur); rows.push(`<div style="display:flex;justify-content:space-between"><span>${pc.name} off-nadir</span><span style="font-family:var(--f-mono)">${s.nadAng.toFixed(1)}°</span></div>`); }
+      const pc = payloadComp(S); if (pc) { const s = sensorEval(pc, cur); rows.push(`<div style="display:flex;justify-content:space-between"><span>${esc(pc.name)} off-nadir</span><span style="font-family:var(--f-mono)">${s.nadAng.toFixed(1)}°</span></div>`); }
       return `<div style="display:flex;flex-direction:column;gap:6px">${rows.join('')}</div>`;
     }),
     tip('Star tracker is blinded if the Sun is inside its exclusion angle, the Earth limb is closer than its Earth exclusion, or the Moon (when not behind the Earth) is inside its Moon exclusion. ☾ – = Moon behind the Earth. Edit the angles in <b>Spacecraft Layout</b>.')));
@@ -113,7 +113,7 @@ export function orbitPanel(ctx) {
 function scenarioCard(ctx) {
   const items = S.scenarios.items, switched = () => { S.layout.sel = null; scChanged(); ctx.renderRail(); syncAll(); };
   /** Default orbit fields for a new scenario, or for what an imported one lacks. */
-  const defaults = () => { const d = defaultState().orbit; applyPreset(d, d.preset); return scenarioData(d); };
+  const defaults = () => newScenarioOrbit(defaultState().orbit);
   const pick = selectRow({ id: 'scenPick', label: 'Scenario', options: items.map(i => [i.id, i.name]), get: () => S.scenarios.active, set: id => { if (selectScenario(S, id)) switched(); } });
   const nameIn = h('input', { type: 'text', id: 'scenName', value: activeScenario(S).name, maxlength: 32, 'aria-label': 'Scenario name' });
   // no rail rebuild here: a click on New or Duplicate that ended the typing must still land
@@ -183,7 +183,7 @@ function orbitCard(ctx, o, sl) {
   if (o.def === 'tle') {
     const ta = h('textarea', { id: 'tle', rows: 3, spellcheck: 'false', class: 'dcm', placeholder: 'NAME (optional)\n1 25544U 98067A   …\n2 25544  51.6416 …' });
     ta.value = o.tle || '';
-    let tm = 0; ta.addEventListener('input', () => { clearTimeout(tm); tm = setTimeout(() => { o.tle = ta.value.trim(); o.t = 0; changed(); }, 300); });
+    let tm = 0; ta.addEventListener('input', () => { clearTimeout(tm); tm = setTimeout(() => { if (!ta.isConnected) return; o.tle = ta.value.trim(); o.t = 0; changed(); }, 300); }); // gone: the scenario was switched
     body = [ta,
       h('div', { class: 'btns' }, h('button', { class: 'btn', onclick: () => { ta.value = ISS_TLE; o.tle = ISS_TLE; o.t = 0; changed(); } }, 'Example: ISS (2008)')),
       status(),

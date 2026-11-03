@@ -1,17 +1,21 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { defaultSC } from '../src/spacecraft/exampleSpacecraft.js';
-import { activeItem, addSpacecraft, deleteSpacecraft, selectSpacecraft } from '../src/spacecraft/library.js';
+import { activeItem, addSpacecraft, deleteSpacecraft, replaceActive, selectSpacecraft } from '../src/spacecraft/library.js';
+import * as AM from '../src/core/attitude.js';
+import { attitudeAt } from '../src/sim/guidance.js';
+import { computeTimeline } from '../src/sim/timeline.js';
+import { signalCatalog } from '../src/sim/signals.js';
 import { defaultState, migrate } from '../src/state/store.js';
 import { orbitElements } from '../src/sim/scenario.js';
-import { SCENARIO_KEYS, activeScenario, addScenario, deleteScenario, duplicateScenario, ensureScenarios, exportScenario, importScenario, renameScenario, sanitizeScenario, scenarioData, selectScenario } from '../src/sim/scenarioLibrary.js';
+import { SCENARIO_KEYS, activeScenario, addScenario, deleteScenario, duplicateScenario, ensureScenarios, exportScenario, importScenario, newScenarioOrbit, renameScenario, sanitizeScenario, scenarioData, selectScenario } from '../src/sim/scenarioLibrary.js';
 
 const fresh = () => { const s = defaultState(); migrate(s); return s; };
 
 test('scenarios: the key list matches the orbit settings: everything is either in a scenario or a known display setting', () => {
   const display = new Set(['show', 'plot', 'playing', 'speed', 'scale', 'hideInset', '_init']);
   for (const k of Object.keys(defaultState().orbit)) assert.ok(SCENARIO_KEYS.includes(k) || display.has(k), `orbit.${k} is in neither list`);
-  for (const k of SCENARIO_KEYS) assert.ok(!display.has(k), k);
+  for (const k of SCENARIO_KEYS) { assert.ok(!display.has(k), k); assert.ok(k in defaultState().orbit, `no default for ${k}`); }
 });
 
 test('scenarios: an old save becomes a library of one with its spacecraft; idempotent', () => {
@@ -39,13 +43,13 @@ test('scenarios: the orbit really changes (elements follow the switch)', () => {
 });
 
 test('scenarios: each flies its own spacecraft, with its own part-based axes', () => {
-  const s = fresh(), a = s.scenarios.active, scA = s.sc, idA = s.fleet.active; s.orbit.sunAxis = 'comp:partA'; s.orbit.tgtComp = 'plA';
+  const s = fresh(), a = s.scenarios.active, scA = s.sc, idA = s.fleet.active; const partA = s.sc.comps[0].id; s.orbit.sunAxis = 'comp:' + partA; s.orbit.tgtComp = partA;
   const b = addScenario(s, s.orbit, 'B'), scB = defaultSC(), idB = addSpacecraft(s, scB, 'Sat B');
   assert.equal(s.fleet.active, idB); s.orbit.sunAxis = '+X';
-  selectScenario(s, a); assert.equal(s.sc, scA); assert.equal(s.orbit.sunAxis, 'comp:partA'); assert.equal(s.orbit.tgtComp, 'plA');
+  selectScenario(s, a); assert.equal(s.sc, scA); assert.equal(s.orbit.sunAxis, 'comp:' + partA); assert.equal(s.orbit.tgtComp, partA);
   selectScenario(s, b); assert.equal(s.sc, scB); assert.equal(s.fleet.active, idB); assert.equal(s.orbit.sunAxis, '+X');
   // two scenarios on one spacecraft keep different axes
-  selectSpacecraft(s, idA); s.orbit.sunAxis = '-Y'; selectScenario(s, a); assert.equal(s.orbit.sunAxis, 'comp:partA'); assert.equal(s.sc, scA);
+  selectSpacecraft(s, idA); s.orbit.sunAxis = '-Y'; selectScenario(s, a); assert.equal(s.orbit.sunAxis, 'comp:' + partA); assert.equal(s.sc, scA);
   selectScenario(s, b); assert.equal(s.orbit.sunAxis, '-Y'); assert.equal(s.sc, scA);
 });
 
@@ -112,4 +116,74 @@ test('scenarios: a damaged library is repaired', () => {
   const s = fresh(); s.scenarios.items.push({ id: 'x', name: 'No data' }, { id: 'y', data: {}, scId: 'q' }, { id: 'y', name: 'dup', data: {} }); ensureScenarios(s);
   assert.equal(s.scenarios.items.length, 2); assert.ok(s.scenarios.items.every(i => i.name));
   s.scenarios.active = 'gone'; ensureScenarios(s); assert.equal(activeScenario(s).data, null); s.scenarios = 'junk'; ensureScenarios(s); assert.equal(s.scenarios.items.length, 1);
+});
+
+/* ---------- import: nothing a pasted file holds may stop the app ---------- */
+const D = () => scenarioData(defaultState().orbit);
+
+test('import: hostile fields never reach the sim; the result runs through guidance, signals and the timeline', () => {
+  const bad = [
+    { def: 'rv' }, { def: 'rv', r: [7000, 0, 0] }, { refFrame: ['vvlh'] }, { refFrame: 'constructor' }, { refFrame: '__proto__' }, { mode: 'sun', sunAxis: ['+X'] }, { mode: 'sun', sunSecAxis: ['+X'] },
+    { t: 1e15 }, { preset: 'nope' }, { preset: 'constructor' }, { hp: 1e308, ha: 1e308 }, { epoch: ['2026-10-05T10:00'] }, { sunSec: 'junk' }, { tle: 7 }, { i: 'x', raan: {}, argp: null, nu0: [] }, { roll: Infinity, pitch: NaN, yaw: '1' }, { tgtLat: 91, tgtLon: 1e9 }, { mode: 'constructor' }, { mode: 'inertial', inertialQ: { w: 0, x: 0, y: 0, z: 0 } }, { mode: 'inertial', inertialQ: 'x' },
+  ];
+  for (const orbit of bad) {
+    const s = fresh(), id = importScenario(s, { kind: 'scenario', orbit }, D()), label = JSON.stringify(orbit);
+    assert.equal(s.scenarios.active, id, label);
+    const A = attitudeAt(s, s.orbit.t); assert.ok(A.st.r.every(Number.isFinite), label); assert.ok(A.CBI.flat().every(Number.isFinite), label);
+    assert.ok(signalCatalog(s).length > 0, label); assert.ok(computeTimeline(s, 1, null, 12), label);
+    if (orbit.def === 'rv') assert.equal(s.orbit.def, 'elements', label);
+  }
+  // valid values of those fields are kept, so the checks aren't simply rejecting everything
+  const o = sanitizeScenario({ preset: 'iss', def: 'rv', r: [7000, 0, 0], v: [0, 7.5, 0], t: 100, i: 51, raan: 10, argp: 1, nu0: 2, roll: 1, pitch: 2, yaw: 3, sunSec: 'velocity', sunAxis: 'comp:a', sunSecAxis: '-Y', tle: 'x', tgtComp: 'c', refFrame: 'lvlh' }, D());
+  assert.deepEqual([o.preset, o.def, o.t, o.i, o.raan, o.argp, o.nu0, o.roll, o.pitch, o.yaw, o.sunSec, o.sunAxis, o.sunSecAxis, o.tle, o.tgtComp, o.refFrame], ['iss', 'rv', 100, 51, 10, 1, 2, 1, 2, 3, 'velocity', 'comp:a', '-Y', 'x', 'c', 'lvlh']);
+});
+
+test('import: a failure late in the import changes nothing; odd names are replaced', () => {
+  const s = fresh(), snap = () => JSON.stringify([s.fleet, s.scenarios, s.orbit]), before = snap(), other = defaultSC(); other.bus.mass = 5;
+  for (const j of [{ kind: 'scenario', orbit: 7 }, { kind: 'scenario', atttool: 2, orbit: {} }, { kind: 'scenario', orbit: {}, spacecraft: { sc: { bus: { x: 1, y: 1, z: 1, mass: 1 }, comps: [null] } } }, { kind: 'scenario', orbit: {}, spacecraft: { sc: { bus: { x: 1, y: 1, z: 1, mass: 1 }, comps: [{ type: 'constructor', name: 'S', pos: [0, 0, 0], q: { w: 1, x: 0, y: 0, z: 0 }, mass: 1 }] } } }]) {
+    assert.throws(() => importScenario(s, j, D())); assert.equal(snap(), before, JSON.stringify(j).slice(0, 60));
+  }
+  importScenario(s, { kind: 'scenario', name: { toString: 1 }, orbit: {}, spacecraft: { name: 7, sc: other } }, D());
+  assert.equal(activeScenario(s).name, 'Imported scenario'); assert.equal(activeItem(s).name, 'Imported spacecraft');
+  importScenario(s, { kind: 'scenario', name: 'x'.repeat(99), orbit: {} }, D()); assert.equal(activeScenario(s).name.length, 32);
+});
+
+test('import: the app\'s own export finds the identical spacecraft, whatever normalising does to its numbers', () => {
+  const s = fresh();
+  // a q.unit() output that q.unit() changes in the last digits
+  s.sc.comps[0].q = { w: 0.9950041652780256, x: 0.059900049988096865, y: 0.07986673331746251, z: 0 }; s.sc.comps[1].eul = [1, 2, 3];
+  const n = s.fleet.items.length, json = JSON.parse(JSON.stringify(exportScenario(s))), keep = JSON.stringify(json);
+  importScenario(s, json, D()); assert.equal(s.fleet.items.length, n, 'no duplicate spacecraft');
+  assert.equal(JSON.stringify(json), keep, 'the caller\'s JSON is not modified');
+  const other = JSON.parse(keep); other.spacecraft.sc.comps[0].pos[0] += 1e-3; importScenario(s, other, D()); assert.equal(s.fleet.items.length, n + 1, 'a real difference counts');
+});
+
+test('scenarios: inertial mode keeps its attitude per scenario and in the export; other modes leave Rotation Lab alone', () => {
+  const s = fresh(), a = s.scenarios.active, qA = AM.q.unit({ w: 1, x: 2, y: 3, z: 4 }), qB = AM.q.unit({ w: 4, x: 3, y: 2, z: 1 }), qOff = AM.q.unit({ w: 1, x: 1, y: 0, z: 0 });
+  s.orbit.mode = 'inertial'; s.rot.q = qA;
+  const b = duplicateScenario(s); s.rot.q = qB; const off = addScenario(s, { ...s.orbit, mode: 'offsets' }, 'Off');
+  assert.deepEqual(s.rot.q, qB, 'a non-inertial scenario leaves it');
+  s.rot.q = qOff; selectScenario(s, a); assert.ok(AM.v.norm(AM.v.sub(Object.values(s.rot.q), Object.values(qA))) < 1e-12);
+  // Euler angles stay in step
+  const fromE = AM.C2q(AM.euler2C(s.rot.seq, s.rot.euler.map(x => x * AM.D2R))); assert.ok(1 - Math.abs(fromE.w * s.rot.q.w + fromE.x * s.rot.q.x + fromE.y * s.rot.q.y + fromE.z * s.rot.q.z) < 1e-9);
+  selectScenario(s, b); assert.ok(AM.v.norm(AM.v.sub(Object.values(s.rot.q), Object.values(qB))) < 1e-12);
+  selectScenario(s, off); assert.ok(AM.v.norm(AM.v.sub(Object.values(s.rot.q), Object.values(qB))) < 1e-12);
+  selectScenario(s, b);
+  const json = JSON.parse(JSON.stringify(exportScenario(s))), t = fresh(); importScenario(t, json, D());
+  assert.ok(AM.v.norm(AM.v.sub(Object.values(json.orbit.inertialQ), Object.values(qB))) < 1e-12); selectScenario(t, t.scenarios.items[0].id); selectScenario(t, t.scenarios.items[1].id);
+  assert.ok(AM.v.norm(AM.v.sub(Object.values(t.rot.q), Object.values(qB))) < 1e-9, 'opens with that attitude elsewhere');
+});
+
+test('scenarios: parts deleted, reset or replaced while parked fall back to the defaults', () => {
+  const s = fresh(), a = s.scenarios.active, part = 'comp:' + s.sc.comps[0].id;
+  Object.assign(s.orbit, { sunAxis: part, sunSecAxis: part, tgtComp: s.sc.comps[0].id });
+  addScenario(s, s.orbit, 'B');
+  replaceActive(s, defaultSC()); selectScenario(s, a);
+  assert.deepEqual([s.orbit.sunAxis, s.orbit.sunSecAxis, s.orbit.tgtComp], ['-Z', '+X', ''], 'not a part that is gone');
+  const kept = 'comp:' + s.sc.comps[1].id; s.orbit.sunAxis = kept; const b = s.scenarios.items[1].id; selectScenario(s, b); selectScenario(s, a); assert.equal(s.orbit.sunAxis, kept, 'a part still there stays');
+});
+
+test('scenarios: a new one starts from the default orbit with the preset applied', () => {
+  const d = defaultState().orbit, o = newScenarioOrbit(d);
+  assert.deepEqual(Object.keys(o), SCENARIO_KEYS); assert.equal(o.t, 0); assert.ok(o.i > 97 && o.i < 98, 'SSO inclination'); assert.notEqual(o.raan, 0, 'RAAN set for the LTAN');
 });
