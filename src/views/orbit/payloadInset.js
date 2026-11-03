@@ -71,7 +71,7 @@ export function createPayloadInset(el) {
     // cities: dots for all in view; names for the largest that fit (they win over grid labels), the city
     // nearest the target first, each tried right, left, above and below its dot
     let nLab = 0; const maxLab = Math.max(3, Math.round(W * H / 6000));
-    const tq = V.target, d2 = c => tq ? (c.x - tq[0]) ** 2 + (c.y - tq[1]) ** 2 : Infinity;
+    const tq = V.foot || V.target, d2 = c => tq ? (c.x - tq[0]) ** 2 + (c.y - tq[1]) ** 2 : Infinity;
     const near = tq && Mp.cities.length ? Mp.cities.reduce((a, c) => d2(c) < d2(a) ? c : a) : null;
     const order = near && d2(near) < (0.02 * V.viewTan) ** 2 ? [near, ...Mp.cities.filter(c => c !== near)] : Mp.cities;
     for (const c of order) {
@@ -102,6 +102,10 @@ export function createPayloadInset(el) {
     // target and error vector (boresight − target)
     if (V.target) {
       const [a, b] = P(V.target);
+      if (V.foot) { // the point on the map under a target with a height: relief displacement, seen directly
+        const [fa, fb] = P(V.foot); x.strokeStyle = C.tgt; x.lineWidth = 1; x.setLineDash([2, 2]); x.beginPath(); x.moveTo(fa, fb); x.lineTo(a, b); x.stroke(); x.setLineDash([]);
+        x.beginPath(); x.arc(fa, fb, 3, 0, 2 * Math.PI); x.stroke();
+      }
       if (Math.hypot(a - cx, b - cy) > 2) { x.strokeStyle = C.err; x.lineWidth = 1; x.beginPath(); x.moveTo(a, b); x.lineTo(cx, cy); x.stroke(); }
       x.fillStyle = C.tgt; x.beginPath(); x.arc(a, b, 3.5, 0, 2 * Math.PI); x.fill();
       x.strokeStyle = C.tgt; x.beginPath(); x.arc(a, b, 7, 0, 2 * Math.PI); x.stroke();

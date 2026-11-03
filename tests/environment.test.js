@@ -138,6 +138,11 @@ test('ECEF <-> ECI round trip and lat/lon', () => {
 test('rayEarth hits nadir point and misses when looking away', () => {
   const hit = ENV.rayEarth([7000, 0, 0], [-1, 0, 0]); close(hit[0], ENV.RE, 1e-9);
   assert.equal(ENV.rayEarth([7000, 0, 0], [1, 0, 0]), null);
+  close(ENV.rayEarth([7000, 0, 0], [-1, 0, 0], ENV.RE + 5)[0], ENV.RE + 5, 1e-9, 'other radius');
+  // a ray passing 3 km above the Earth misses it and hits a sphere 5 km above it
+  const o = [7000, ENV.RE + 3, 0];
+  assert.equal(ENV.rayEarth(o, [-1, 0, 0]), null);
+  close(ENV.rayEarth(o, [-1, 0, 0], ENV.RE + 5)[0], Math.sqrt((ENV.RE + 5) ** 2 - (ENV.RE + 3) ** 2), 1e-6, 'x at the hit');
 });
 
 test('dipole field: ~30 µT at the equator, twice that at the pole', () => {

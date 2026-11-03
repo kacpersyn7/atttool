@@ -5,9 +5,10 @@ import { defaultSC } from '../src/spacecraft/exampleSpacecraft.js';
 import { compAxis, mkComp, fillParams, sanitizeSpacecraft } from '../src/spacecraft/component.js';
 import { sensorEval } from '../src/sim/sensors.js';
 import * as ENV from '../src/env/index.js';
-import { applyPreset, orbitElements, ltanOf, PRESETS } from '../src/sim/scenario.js';
+import { applyPreset, orbitElements, ltanOf, PRESETS, targetHeight } from '../src/sim/scenario.js';
+import { defaultState } from '../src/state/store.js';
 import { attitudeAt, payloadComp, bodyRate } from '../src/sim/guidance.js';
-import { computeTimeline } from '../src/sim/timeline.js';
+import { computeTimeline, timelineKey } from '../src/sim/timeline.js';
 import { close, closeArr } from './helpers.js';
 import { pointing, project, payloadView, gridStep, groundRelVel } from '../src/sim/payload.js';
 
@@ -228,6 +229,96 @@ test('payload: roll offset η gives the spherical-Earth ground error R_E·λ, λ
     const hN = AM.v.unit(AM.v.cross(A.st.r, A.st.v)), side = AM.v.dot(AM.v.sub(p.hit, p.tgt), AM.v.scale(hN, -1));
     assert.equal(Math.sign(p.gCross), Math.sign(side)); assert.equal(Math.sign(p.cross), Math.sign(side));
   }
+});
+
+/* ---------- target height (#34) ---------- */
+
+/** Put the target `phi` deg (central angle) from the sub-satellite point at time t, along the meridian towards the equator. */
+function targetAway(s, t, phi) {
+  targetUnder(s, t); s.orbit.tgtLat += s.orbit.tgtLat > 0 ? -phi : phi;
+  const A = attitudeAt(s, t), Rs = AM.v.norm(A.st.r), tI = ENV.ecef2eci(ENV.llh2ecef(s.orbit.tgtLat * AM.D2R, s.orbit.tgtLon * AM.D2R), A.date);
+  return { A, Rs, phi: AM.v.angle(A.st.r, tI) };
+}
+/** Nadir angle at the spacecraft (radius Rs) of a point at radius R and central angle phi. */
+const nadirAngle = (Rs, R, phi) => Math.atan2(R * Math.sin(phi), Rs - R * Math.cos(phi));
+
+test('target height: 0 and a missing tgtAlt (older saves) give identical results', () => {
+  const a = state('offsets'), b = state('offsets'); a.orbit.tgtAlt = 0; targetAway(a, 900, 10); targetAway(b, 900, 10); a.orbit.roll = b.orbit.roll = 7;
+  const pa = pointing(a, attitudeAt(a, 900)), pb = pointing(b, attitudeAt(b, 900));
+  for (const k of ['ang', 'along', 'cross', 'gnd', 'gAlong', 'gCross', 'elev', 'relief', 'h']) assert.equal(pa[k], pb[k], k);
+  assert.equal(pa.relief, 0); assert.equal(payloadView(a, attitudeAt(a, 900)).foot, null);
+});
+
+test('target height: target mode still has zero pointing and ground error', () => {
+  for (const alt of [8849, -430]) {
+    const s = state('target'); s.orbit.tgtLat = 10; s.orbit.tgtLon = 20; s.orbit.tgtAlt = alt;
+    let t = 0; for (; t < 86400; t += 30) { if (!attitudeAt(s, t).flag.below) break; }
+    const A = attitudeAt(s, t + 60), p = pointing(s, A);
+    // ang via acos: ~1e-6° noise. Tracked 60 s after rise here, at a low elevation, so that noise is ~2 m on the ground.
+    assert.equal(p.tgtUp, true); assert.ok(p.ang < 1e-5, 'angle ' + p.ang); assert.ok(p.gnd < 2e-3, 'ground km ' + p.gnd);
+    close(AM.v.norm(p.tgt), ENV.RE + alt / 1000, 1e-9, 'target radius'); close(AM.v.norm(p.foot), ENV.RE, 1e-9, 'foot radius');
+  }
+});
+
+test('target height: relief displacement matches the closed-form triangle and tends to h·tan(incidence)', () => {
+  for (const phi0 of [1, 5, 10, 15]) for (const alt of [100, 2000, 8849]) {
+    const s = state('offsets'), t = 900, { Rs, phi } = targetAway(s, t, phi0); s.orbit.tgtAlt = alt;
+    const h = alt / 1000, p = pointing(s, attitudeAt(s, t)), eta = nadirAngle(Rs, ENV.RE + h, phi);
+    const inc = Math.asin(Rs * Math.sin(eta) / ENV.RE); // incidence where the line of sight meets the sphere (law of sines)
+    close(p.relief, ENV.RE * (inc - eta - phi), 1e-6, `relief φ=${phi0} h=${alt}`);
+    const incT = Math.PI / 2 - p.elev;
+    // small-height limit, worst case here about 2.5 % (φ = 15°, 8849 m)
+    close(p.relief, h * Math.tan(incT), 0.05 * h * Math.tan(incT) + 1e-3, `≈ h·tan(i) at φ=${phi0} h=${alt}`);
+  }
+  // the example of #34: a 2 km mountain about 30° off nadir from 550 km moves by about 1.3 km (incidence ≈ 33°)
+  const s = state('offsets'), t = 900; const { phi, Rs } = targetAway(s, t, 2.9); s.orbit.tgtAlt = 2000;
+  close(nadirAngle(Rs, ENV.RE, phi) * AM.R2D, 30, 2, 'about 30° off nadir');
+  close(pointing(s, attitudeAt(s, t)).relief, 1.3, 0.1, 'km'); // excludes h·tan(off-nadir) = 1.155 km
+});
+
+test('target height: a target below the sphere displaces the other way, straight below it almost nothing', () => {
+  const s = state('offsets'), t = 900; targetAway(s, t, 10); s.orbit.tgtAlt = -430;
+  assert.ok(pointing(s, attitudeAt(s, t)).relief < 0);
+  const n = state('offsets'); targetUnder(n, t); n.orbit.tgtAlt = 5000;
+  assert.ok(Math.abs(pointing(n, attitudeAt(n, t)).relief) < 1e-3);
+});
+
+test('target height: aiming at the foot of a mountain misses its top by the triangle angle; ground error ≈ relief', () => {
+  const s0 = state('target'), t = 900, { Rs, phi } = targetAway(s0, t, 10), A = attitudeAt(s0, t); // tracks the foot, h = 0
+  const s = structuredClone(s0); s.orbit.tgtAlt = 5000;
+  const p = pointing(s, A);
+  close(p.ang * AM.D2R, Math.abs(nadirAngle(Rs, ENV.RE + 5, phi) - nadirAngle(Rs, ENV.RE, phi)), 1e-6, 'angle');
+  // the boresight meets the sphere R_t at the incidence it, the sphere R_E (the foot) at iF: both are on the same ray
+  const etaF = nadirAngle(Rs, ENV.RE, phi), iF = Math.asin(Rs * Math.sin(etaF) / ENV.RE), it = Math.asin(Rs * Math.sin(etaF) / (ENV.RE + 5));
+  close(p.gnd, (ENV.RE + 5) * (iF - it), 1e-6, 'ground km');
+  assert.ok(Math.abs(Math.hypot(p.gAlong, p.gCross) - p.gnd) < 1e-9);
+});
+
+test('target height: the camera image and the on-Earth check do not depend on it; bad values count as 0; limits apply', () => {
+  const at = alt => { const s = state('offsets'), t = 900; targetAway(s, t, 3); s.orbit.tgtAlt = alt; return s; };
+  for (const roll of [0, 40]) {
+    const a = at(0), b = at(9000); a.orbit.roll = b.orbit.roll = roll;
+    const Va = payloadView(a, attitudeAt(a, 900)), Vb = payloadView(b, attitudeAt(b, 900));
+    assert.equal(Vb.kmPerTan, Va.kmPerTan); assert.equal(Vb.grid.length, Va.grid.length); assert.deepEqual(Vb.p.hit, Va.p.hit);
+  }
+  const lim = at(9000); lim.orbit.roll = 67.1; // just past the limb of the sphere (67.0°) but on the sphere 9 km up
+  assert.equal(pointing(lim, attitudeAt(lim, 900)).hit, null);
+  for (const bad of ['abc', Infinity, null, undefined]) { assert.equal(targetHeight({ tgtAlt: bad }), 0); }
+  assert.equal(targetHeight({ tgtAlt: 1e6 }), 9); assert.equal(targetHeight({ tgtAlt: -1e7 }), -0.5); assert.equal(targetHeight({ tgtAlt: 2000 }), 2);
+  assert.equal(defaultState().orbit.tgtAlt, 0);
+});
+
+test('target height: changes the timeline cache key', () => {
+  const s = state('target'), k0 = timelineKey(s, 1, []); s.orbit.tgtAlt = 2000;
+  assert.notEqual(timelineKey(s, 1, []), k0);
+});
+
+test('target height: in the image the top of a mountain leans away from the nadir', () => {
+  const s = state('offsets'), t = 900; targetAway(s, t, 3); s.orbit.tgtAlt = 8000; s.orbit.roll = 0;
+  const V = payloadView(s, attitudeAt(s, t), { viewTan: 2 });
+  assert.ok(V.foot && V.target && V.nadir);
+  const d = q => Math.hypot(q[0] - V.nadir[0], q[1] - V.nadir[1]);
+  assert.ok(d(V.target) > d(V.foot), `${d(V.target)} > ${d(V.foot)}`);
 });
 
 test('payload: pitch offset gives mostly along-track error, positive when the boresight looks ahead', () => {

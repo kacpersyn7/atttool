@@ -16,7 +16,7 @@
  */
 import * as AM from '../core/attitude.js';
 import * as ENV from '../env/index.js';
-import { epochDate, orbitElements } from './scenario.js';
+import { epochDate, orbitElements, targetECEF, targetHeight } from './scenario.js';
 import { payloadComp } from './guidance.js';
 
 const { v, m } = AM;
@@ -29,36 +29,44 @@ export function groundRelVel(r, vel) { return v.sub(vel, v.cross([0, 0, ENV.WE],
 export function payloadCI(c, CBI) { return m.mul(AM.q2C(c.q), CBI); }
 
 /**
- * Pointing of the payload against the ground target (state.orbit.tgtLat / tgtLon) at attitude A.
+ * Pointing of the payload against the ground target (state.orbit.tgtLat / tgtLon / tgtAlt) at attitude A.
  * CBI defaults to A.CBI; pass another attitude (e.g. with knowledge / performance errors) to compare.
  * @returns null without a payload, else {
- *   c, CCI, bore (ECI unit), hit (ECI km | null: boresight misses the Earth), slant (km to hit | null),
- *   tgt (ECI km), tgtUp (target above the spacecraft's horizon), elev (rad),
+ *   c, CCI, bore (ECI unit), hit (ECI km | null: boresight misses the Earth, i.e. the sphere at height 0
+ *     like the map), slant (km to hit | null),
+ *   tgt (ECI km), tgtUp (spacecraft above the target's local horizontal, elev > 0), elev (rad),
+ *   h (target height, km), foot (ECI km: the point on the sphere under the target),
+ *   relief (km | null, relief displacement: from the foot to where the line of sight through the target
+ *     meets the sphere; ≈ h·tan(incidence), sign of h; null if below the horizon or it misses the sphere),
  *   ang, along, cross (deg; null if the target is below the horizon; along/cross are separate tangent-plane
  *     angles — they add up to ang only for small errors),
- *   gnd, gAlong, gCross (km on the ground, hit − target: great-circle distance and its split along the
- *     initial azimuth at the target, so hypot(gAlong, gCross) = gnd; null if no hit or target below horizon) }
+ *   gnd, gAlong, gCross (km, from the target to the boresight's hit on the sphere at the target's height, so
+ *     a boresight on the target gives zero: great-circle distance and its split along the initial azimuth at the target, so hypot(gAlong, gCross) = gnd; null if no hit or target below horizon) }
  */
 export function pointing(state, A, CBI = A.CBI) {
   const c = payloadComp(state); if (!c) return null;
   const o = state.orbit, r = A.st.r;
   const CCI = payloadCI(c, CBI), bore = CCI[2];
+  const h = targetHeight(o), Rt = ENV.RE + h;
   const hit = ENV.rayEarth(r, bore), slant = hit ? v.norm(v.sub(hit, r)) : null;
-  const tgt = ENV.ecef2eci(ENV.llh2ecef(o.tgtLat * D2R, o.tgtLon * D2R), A.date);
+  const tgt = ENV.ecef2eci(targetECEF(o), A.date), foot = v.scale(v.unit(tgt), ENV.RE);
   const los = v.sub(tgt, r), elev = Math.PI / 2 - v.angle(tgt, v.scale(los, -1)), tgtUp = elev > 0;
   const vr = groundRelVel(r, A.st.v);
-  const res = { c, CCI, bore, hit, slant, tgt, tgtUp, elev, ang: null, along: null, cross: null, gnd: null, gAlong: null, gCross: null };
+  const res = { c, CCI, bore, hit, slant, tgt, tgtUp, elev, h, foot, relief: null, ang: null, along: null, cross: null, gnd: null, gAlong: null, gCross: null };
   if (!tgtUp) return res;
+  const seen = ENV.rayEarth(r, v.unit(los));
+  if (seen) res.relief = Math.sign(h) * ENV.RE * v.angle(seen, foot);
   // angular error in the frame z = boresight, x = along-track ⊥ z, y = z × x (right of track)
   const z = bore, x = v.unit(v.sub(vr, v.scale(z, v.dot(vr, z)))), y = v.cross(z, x), u = v.unit(los);
   res.ang = v.angle(bore, u) * R2D;
   res.along = -Math.atan2(v.dot(u, x), v.dot(u, z)) * R2D;
   res.cross = -Math.atan2(v.dot(u, y), v.dot(u, z)) * R2D;
-  if (hit) {
+  const hitT = ENV.rayEarth(r, bore, Rt);
+  if (hitT) {
     // great-circle distance split by the initial azimuth at the target (the direction of hit − target
     // projected on the local horizontal), so that hypot(gAlong, gCross) = gnd exactly
-    const n = v.unit(tgt), xa = v.unit(v.sub(vr, v.scale(n, v.dot(vr, n)))), ya = v.cross(xa, n), d = v.sub(hit, tgt);
-    res.gnd = ENV.RE * v.angle(hit, tgt);
+    const n = v.unit(tgt), xa = v.unit(v.sub(vr, v.scale(n, v.dot(vr, n)))), ya = v.cross(xa, n), d = v.sub(hitT, tgt);
+    res.gnd = Rt * v.angle(hitT, tgt);
     const dh = v.sub(d, v.scale(n, v.dot(d, n))), dl = v.norm(dh);
     res.gAlong = dl > 0 ? res.gnd * v.dot(dh, xa) / dl : 0; res.gCross = dl > 0 ? res.gnd * v.dot(dh, ya) / dl : 0;
   }
@@ -85,6 +93,7 @@ export function gridStep(spanDeg, n = 5) { return LADDER.find(s => spanDeg / s <
  * viewTan: half-width of the view as a tangent (default: 3× the payload half-FOV, at least tan 1.5°).
  * @returns null without a payload, else { p (pointing()), fovTan, viewTan, kmPerTan, center:'hit'|'none',
  *   grid: [{ kind: 'lat'|'lon', deg, pts }], step, track: pts, target: [x,y]|null, nadir: [x,y]|null,
+ *   foot: [x,y]|null (the point on the sphere under a target with a height; null at height 0),
  *   alongDir, rightDir: unit 2-vectors in the image (null if the boresight misses the Earth) }
  *   pts are arrays of [x, y] or null (a break in the polyline).
  */
@@ -92,9 +101,10 @@ export function payloadView(state, A, opts = {}) {
   const p = pointing(state, A, opts.CBI); if (!p) return null;
   const r = A.st.r, fovTan = Math.tan((p.c.fov || 2) / 2 * D2R);
   const viewTan = opts.viewTan || Math.max(3 * fovTan, Math.tan(1.5 * D2R));
-  const out = { p, fovTan, viewTan, kmPerTan: p.slant, grid: [], step: null, track: [], target: null, nadir: null, alongDir: null, rightDir: null };
+  const out = { p, fovTan, viewTan, kmPerTan: p.slant, grid: [], step: null, track: [], target: null, foot: null, nadir: null, alongDir: null, rightDir: null };
   const proj = P => project(p.CCI, r, P);
   out.target = p.tgtUp ? proj(p.tgt) : null;
+  out.foot = p.tgtUp && p.h !== 0 ? proj(p.foot) : null;
   out.nadir = proj(v.scale(v.unit(r), ENV.RE));
   if (!p.hit) return out;
   // along-track / right directions drawn at the image centre

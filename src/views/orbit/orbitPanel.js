@@ -5,7 +5,7 @@ import { h, card, tip, slider, numCell, selectRow, check, seg, liveText, syncAll
 import { deg, fmt, hhmm, hms } from '../../ui/format.js';
 import { TYPES } from '../../spacecraft/componentTypes.js';
 import { selectSpacecraft } from '../../spacecraft/library.js';
-import { PRESETS, orbitElements, ltanOf, epochDate, parseEpoch, formatEpoch, switchDefinition, restartFromState, definitionError, tleOf } from '../../sim/scenario.js';
+import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, PRESETS, orbitElements, ltanOf, epochDate, parseEpoch, formatEpoch, switchDefinition, restartFromState, definitionError, tleOf } from '../../sim/scenario.js';
 import { copyText } from '../../ui/overlay.js';
 import { payloadComp } from '../../sim/guidance.js';
 import { sensorEval } from '../../sim/sensors.js';
@@ -60,8 +60,9 @@ export function orbitPanel(ctx) {
     selectRow({ id: 'sunSecAxis', label: 'Secondary axis', options: axisOptions(false), get: () => o.sunSecAxis || '+X', set: v => { o.sunSecAxis = v; save(); } }),
     selectRow({ id: 'sunSec', label: '…toward', options: [['nadir', 'Nadir'], ['normal', 'Orbit normal +h'], ['antinormal', 'Orbit normal −h'], ['velocity', 'Velocity'], ['zenith', 'Zenith']], get: () => o.sunSec, set: v => { o.sunSec = v; save(); } }),
     tip('Two-vector (TRIAD) pointing: the primary axis is aligned exactly, the secondary only as close as possible. Typical safe mode: array normal on the Sun.'));
+  const altCell = (id, label) => numCell(id, label, () => targetHeight(o) * 1000, x => { o.tgtAlt = Math.max(TGT_ALT_MIN, Math.min(TGT_ALT_MAX, x)); save(); }, 100, 0);
   if (o.mode === 'target') modeCtl.push(
-    h('div', { class: 'grid2' }, numCell('tlat', 'Latitude °', () => o.tgtLat, x => { o.tgtLat = x; save(); }, .1, 2), numCell('tlon', 'Longitude °', () => o.tgtLon, x => { o.tgtLon = x; save(); }, .1, 2)),
+    h('div', { class: 'grid2' }, numCell('tlat', 'Latitude °', () => o.tgtLat, x => { o.tgtLat = x; save(); }, .1, 2), numCell('tlon', 'Longitude °', () => o.tgtLon, x => { o.tgtLon = x; save(); }, .1, 2), altCell('talt', 'Height m')),
     selectRow({ id: 'tgtComp', label: 'Pointing axis', options: S.sc.comps.filter(c => TYPES[c.type].cone).map(c => [c.id, c.name]), get: () => (payloadComp(S) || {}).id, set: v => { o.tgtComp = v; save(); } }),
     h('div', { class: 'status' }, liveText(() => { const cur = ctx.cur(); return !cur || !cur.flag ? '' : cur.flag.below ? `<span class="chip dim">Target below horizon · holding nadir</span>` : `<span class="chip ok">Tracking · elevation ${deg(cur.flag.elev).toFixed(1)}°</span>`; })),
     tip('Boresight → line of sight to the ground point, body +X kept toward velocity. Watch the body rate rise near closest approach.'));
@@ -72,15 +73,15 @@ export function orbitPanel(ctx) {
     ...modeCtl));
 
   if (payloadComp(S)) out.push(card('Payload pointing', payloadComp(S).name + ' vs ground target',
-    o.mode === 'target' ? null : h('div', { class: 'grid2' }, numCell('ptlat', 'Target lat °', () => o.tgtLat, x => { o.tgtLat = x; save(); }, .1, 2), numCell('ptlon', 'Target lon °', () => o.tgtLon, x => { o.tgtLon = x; save(); }, .1, 2)),
+    o.mode === 'target' ? null : h('div', { class: 'grid2' }, numCell('ptlat', 'Target lat °', () => o.tgtLat, x => { o.tgtLat = x; save(); }, .1, 2), numCell('ptlon', 'Target lon °', () => o.tgtLon, x => { o.tgtLon = x; save(); }, .1, 2), altCell('ptalt', 'Target height m')),
     liveText(() => {
       const cur = ctx.cur(); if (!cur) return ''; const p = pointing(S, cur); if (!p) return '';
       if (!p.tgtUp) return `<span class="chip dim">Target below horizon · elevation ${deg(p.elev).toFixed(1)}°</span>`;
       const kmT = x => x === null ? '—' : Math.abs(x) < 1 ? fmt(x * 1000, 0) + ' m' : fmt(x, 2) + ' km';
       const row = (k, val) => `<div style="display:flex;justify-content:space-between"><span>${k}</span><span style="font-family:var(--f-mono)">${val}</span></div>`;
-      return `<div style="display:flex;flex-direction:column;gap:4px">${row('Angle error', fmt(p.ang, 3) + '°')}${row('along · cross', fmt(p.along, 3) + '° · ' + fmt(p.cross, 3) + '°')}${row('Ground error', kmT(p.gnd))}${row('along · cross', kmT(p.gAlong) + ' · ' + kmT(p.gCross))}${row('Target elevation', deg(p.elev).toFixed(1) + '°')}</div>`;
+      return `<div style="display:flex;flex-direction:column;gap:4px">${row('Angle error', fmt(p.ang, 3) + '°')}${row('along · cross', fmt(p.along, 3) + '° · ' + fmt(p.cross, 3) + '°')}${row('Ground error', kmT(p.gnd))}${row('along · cross', kmT(p.gAlong) + ' · ' + kmT(p.gCross))}${row('Target elevation', deg(p.elev).toFixed(1) + '°')}${p.h !== 0 && p.relief !== null ? row('Relief displacement', kmT(p.relief)) : ''}</div>`;
     }),
-    tip('Boresight minus target. <b>along</b> > 0: looking ahead of the target along the ground track; <b>cross</b> > 0: looking to the right of it. Ground error is measured from the target to where the boresight hits the Earth. In <b>Ground target tracking</b> mode it is zero by construction (no attitude errors yet).')));
+    tip('Boresight minus target. <b>along</b> > 0: looking ahead of the target along the ground track; <b>cross</b> > 0: looking to the right of it. Ground error is measured from the target to where the boresight hits the Earth (at the target's height). In <b>Ground target tracking</b> mode it is zero by construction (no attitude errors yet). A target with a height is seen shifted from the point under it (hollow marker in the payload view): that shift is the relief displacement.')));
 
   out.push(card('Sensors now', 'live',
     liveText(() => {
