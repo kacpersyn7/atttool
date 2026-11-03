@@ -81,7 +81,7 @@ export function orbitPanel(ctx) {
       const row = (k, val) => `<div style="display:flex;justify-content:space-between"><span>${k}</span><span style="font-family:var(--f-mono)">${val}</span></div>`;
       return `<div style="display:flex;flex-direction:column;gap:4px">${row('Angle error', fmt(p.ang, 3) + '°')}${row('along · cross', fmt(p.along, 3) + '° · ' + fmt(p.cross, 3) + '°')}${row('Ground error', kmT(p.gnd))}${row('along · cross', kmT(p.gAlong) + ' · ' + kmT(p.gCross))}${row('Target elevation', deg(p.elev).toFixed(1) + '°')}${p.h !== 0 && p.relief !== null ? row('Relief displacement', kmT(p.relief)) : ''}</div>`;
     }),
-    tip('Boresight minus target. <b>along</b> > 0: looking ahead of the target along the ground track; <b>cross</b> > 0: looking to the right of it. Ground error is measured from the target to where the boresight hits the Earth (at the target's height). In <b>Ground target tracking</b> mode it is zero by construction (no attitude errors yet). A target with a height is seen shifted from the point under it (hollow marker in the payload view): that shift is the relief displacement.')));
+    tip('Boresight minus target. <b>along</b> > 0: looking ahead of the target along the ground track; <b>cross</b> > 0: looking to the right of it. Ground error is measured from the target to where the boresight hits the Earth (at the height of the target). In <b>Ground target tracking</b> mode it is zero by construction (no attitude errors yet). A target with a height is seen shifted from the point under it (hollow marker in the payload view): that shift is the relief displacement.')));
 
   out.push(card('Sensors now', 'live',
     liveText(() => {
