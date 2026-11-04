@@ -6,6 +6,7 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 ## [Unreleased]
 
 ### Added
+- **Scenario library** (#38): keep named scenarios and switch between them in the Orbit tab (new, duplicate, rename, delete). A scenario keeps the orbit, epoch, time, guidance, target and which spacecraft flies it; display options stay shared. *Copy JSON* and *Import* move a scenario to another computer: the JSON holds the scenario and names its spacecraft, which is found by name in the library (spacecraft have their own JSON in *Spacecraft Layout*). Older saves become a library of one.
 - **More orbit presets** (#44): SSO at LTAN 11:00, 12:00, 13:30, 18:00 and 22:30 (Sentinel-2-like), polar, 53° and equatorial LEO, GPS-like MEO and GTO.
 
 ### Fixed

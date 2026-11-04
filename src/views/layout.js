@@ -13,7 +13,7 @@ import { $, h, card, tip, slider, numCell, selectRow, check, seg, liveText, sync
 import { orientationEditor } from '../ui/orientationEditor.js';
 import { dcmInput } from '../ui/matrixInput.js';
 import { toast, showModal, closeModal, copyText } from '../ui/overlay.js';
-import { fmt, fmtS, matHTML } from '../ui/format.js';
+import { esc, fmt, fmtS, matHTML } from '../ui/format.js';
 import { gfx, mkView, addLights, viewPreset, renderFull } from '../gfx/renderer.js';
 import { COL, Arrow, makeTriad, makeLabel, dashedLine, disposeTree, setObjFromCBR } from '../gfx/primitives.js';
 import { createAxisWidget } from '../gfx/axisWidget.js';
@@ -22,7 +22,7 @@ import { buildSC } from '../gfx/spacecraftMesh.js';
 import { TYPES, axisName } from '../spacecraft/componentTypes.js';
 import { newId, mkComp, qFromBoresight, compAxis, envelope, sanitizeSpacecraft } from '../spacecraft/component.js';
 import { defaultSC } from '../spacecraft/exampleSpacecraft.js';
-import { activeItem, addSpacecraft, deleteSpacecraft, duplicateSpacecraft, renameSpacecraft, replaceActive, selectSpacecraft } from '../spacecraft/library.js';
+import { activeItem, addSpacecraft, deleteSpacecraft, duplicateSpacecraft, renameSpacecraft, replaceActive, selectSpacecraft, validateAxes } from '../spacecraft/library.js';
 import { massProps, maxPrincipalTilt } from '../spacecraft/massProperties.js';
 import { exportPython } from '../spacecraft/exportPython.js';
 import { exportMatlab } from '../spacecraft/exportMatlab.js';
@@ -144,7 +144,7 @@ export function createLayoutView({ renderRail }) {
     if (c.type === 'mtq') params.push(param('dipole', 'Dipole A·m²', 1, 1), param('len', 'Length m', .01, 2));
     if (c.type === 'rw') params.push(param('hmax', 'H max N·m·s', .05, 2));
     if (c.type === 'sa') params.push(param('w', 'Width m', .05, 2), param('h', 'Height m', .05, 2));
-    const delBtn = confirmButton('Delete', 'Click again to delete', () => { S.sc.comps = S.sc.comps.filter(x => x.id !== c.id); S.layout.sel = null; scChanged(); renderRail(); });
+    const delBtn = confirmButton('Delete', 'Click again to delete', () => { S.sc.comps = S.sc.comps.filter(x => x.id !== c.id); validateAxes(S); S.layout.sel = null; scChanged(); renderRail(); });
     const axName = axisName(c.type);
     const nameIn = h('input', { type: 'text', id: 'cname', value: c.name, 'aria-label': 'Component name' }); nameIn.addEventListener('change', () => { c.name = nameIn.value.slice(0, 24) || c.name; scChanged(); renderRail(); });
     return card('Selected · ' + T.label, '+Z_C = ' + axName,
@@ -375,7 +375,7 @@ export function createLayoutView({ renderRail }) {
     $('#hudTL').append(h('div', { class: 'hud' }, h('h4', null, 'Spacecraft frame SCF = body frame B'),
       liveText(() => { const d = nominalDirections(S.sc.align);
         return `<p class="tip">Build in SCF like a CAD model.<br>Nominal flight (${S.sc.align.ref.toUpperCase()}): Earth → <b>${dirText(d.nadir)}</b> · along-track → <b>${dirText(d.alongTrack)}</b></p>`; }),
-      liveText(() => { const c = sel(); return c ? `<p class="tip" style="margin-top:6px">Selected <b>${S.layout.sel === 'bus' ? 'Bus' : c.name}</b> at [${c.pos.map(x => fmt(x, 2)).join(', ')}] m</p>` : '<p class="tip" style="margin-top:6px">Click a part to select it.</p>'; })));
+      liveText(() => { const c = sel(); return c ? `<p class="tip" style="margin-top:6px">Selected <b>${S.layout.sel === 'bus' ? 'Bus' : esc(c.name)}</b> at [${c.pos.map(x => fmt(x, 2)).join(', ')}] m</p>` : '<p class="tip" style="margin-top:6px">Click a part to select it.</p>'; })));
     const vb = (t, d) => h('button', { class: 'vbtn', onclick: () => viewPreset(V, d, 3.6) }, t);
     $('#hudTR').append(viewToggle(), vb('Iso', [1, -1.1, .75]), vb('+X', [1, 0, 0.0001]), vb('−X', [-1, 0, 0.0001]), vb('+Y', [0, 1, 0.0001]), vb('−Y', [0, -1, 0.0001]), vb('+Z', [0, -0.0001, 1]), vb('−Z', [0, -0.0001, -1]));
   }

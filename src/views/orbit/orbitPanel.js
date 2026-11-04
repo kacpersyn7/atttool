@@ -1,12 +1,13 @@
 /** Control rail for the Orbit & Frames workspace. */
 import * as ENV from '../../env/index.js';
-import { S, save, scChanged } from '../../state/store.js';
-import { h, card, tip, slider, numCell, selectRow, check, seg, liveText, syncAll, onSync } from '../../ui/dom.js';
-import { deg, fmt, hhmm, hms } from '../../ui/format.js';
+import { S, save, scChanged, defaultState } from '../../state/store.js';
+import { h, card, tip, slider, numCell, selectRow, check, seg, liveText, syncAll, onSync, confirmButton } from '../../ui/dom.js';
+import { deg, esc, fmt, hhmm, hms } from '../../ui/format.js';
 import { TYPES } from '../../spacecraft/componentTypes.js';
-import { selectSpacecraft } from '../../spacecraft/library.js';
+import { activeItem, selectSpacecraft } from '../../spacecraft/library.js';
+import { activeScenario, addScenario, deleteScenario, duplicateScenario, exportScenario, importScenario, newScenarioOrbit, renameScenario, selectScenario } from '../../sim/scenarioLibrary.js';
 import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, PRESETS, orbitElements, ltanOf, epochDate, parseEpoch, formatEpoch, switchDefinition, restartFromState, definitionError, tleOf } from '../../sim/scenario.js';
-import { copyText } from '../../ui/overlay.js';
+import { copyText, showModal, closeModal, toast } from '../../ui/overlay.js';
 import { payloadComp } from '../../sim/guidance.js';
 import { sensorEval } from '../../sim/sensors.js';
 import { pointing } from '../../sim/payload.js';
@@ -25,9 +26,7 @@ export function orbitPanel(ctx) {
   const o = S.orbit, out = [];
   const sl = (id, label, min, max, step, key, dec = 1) => slider({ id, label, min, max, step, dec, get: () => o[key], set: x => { o[key] = x; o.preset = 'custom'; save(); syncAll(); } });
 
-  out.push(card('Spacecraft', null,
-    selectRow({ id: 'orbScPick', label: 'Flying', options: S.fleet.items.map(i => [i.id, i.name]), get: () => S.fleet.active, set: id => { if (selectSpacecraft(S, id)) { S.layout.sel = null; scChanged(); ctx.renderRail(); } } }),
-    S.fleet.items.length < 2 ? tip('Build more spacecraft in <b>Spacecraft Layout</b>, then choose here which one to fly.') : null));
+  out.push(scenarioCard(ctx));
   out.push(orbitCard(ctx, o, sl));
 
   const epochInput = h('input', { type: 'datetime-local', id: 'epoch', step: '1', disabled: o.def === 'tle', title: o.def === 'tle' ? 'Set by the TLE' : null });
@@ -89,10 +88,10 @@ export function orbitPanel(ctx) {
       for (const c of S.sc.comps) {
         if (c.type !== 'str') continue;
         const s = sensorEval(c, cur);
-        rows.push(`<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span>${c.name}</span><span class="lbl" style="font-family:var(--f-mono);font-size:11.5px">☉ ${s.sunAng.toFixed(0)}° · ☾ ${s.moonUp ? s.moonAng.toFixed(0) + '°' : '–'} · limb ${s.limb.toFixed(0)}°</span>${s.ok ? '<span class="chip ok">Tracking</span>' : s.sunBlind ? '<span class="chip warn">Sun-blinded</span>' : s.earthBlind ? '<span class="chip bad">Earth in FOV</span>' : '<span class="chip moon">Moon-blinded</span>'}</div>`);
+        rows.push(`<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span>${esc(c.name)}</span><span class="lbl" style="font-family:var(--f-mono);font-size:11.5px">☉ ${s.sunAng.toFixed(0)}° · ☾ ${s.moonUp ? s.moonAng.toFixed(0) + '°' : '–'} · limb ${s.limb.toFixed(0)}°</span>${s.ok ? '<span class="chip ok">Tracking</span>' : s.sunBlind ? '<span class="chip warn">Sun-blinded</span>' : s.earthBlind ? '<span class="chip bad">Earth in FOV</span>' : '<span class="chip moon">Moon-blinded</span>'}</div>`);
       }
       const css = S.sc.comps.filter(c => c.type === 'css'); if (css.length) { const n = css.filter(c => sensorEval(c, cur).sees).length; rows.push(`<div style="display:flex;justify-content:space-between"><span>Sun sensors seeing Sun</span><span class="chip ${n ? 'ok' : 'dim'}">${n}/${css.length}</span></div>`); }
-      const pc = payloadComp(S); if (pc) { const s = sensorEval(pc, cur); rows.push(`<div style="display:flex;justify-content:space-between"><span>${pc.name} off-nadir</span><span style="font-family:var(--f-mono)">${s.nadAng.toFixed(1)}°</span></div>`); }
+      const pc = payloadComp(S); if (pc) { const s = sensorEval(pc, cur); rows.push(`<div style="display:flex;justify-content:space-between"><span>${esc(pc.name)} off-nadir</span><span style="font-family:var(--f-mono)">${s.nadAng.toFixed(1)}°</span></div>`); }
       return `<div style="display:flex;flex-direction:column;gap:6px">${rows.join('')}</div>`;
     }),
     tip('Star tracker is blinded if the Sun is inside its exclusion angle, the Earth limb is closer than its Earth exclusion, or the Moon (when not behind the Earth) is inside its Moon exclusion. ☾ – = Moon behind the Earth. Edit the angles in <b>Spacecraft Layout</b>.')));
@@ -108,6 +107,39 @@ export function orbitPanel(ctx) {
     slider({ id: 'scscale', label: 'S/C size (×)', min: .1, max: 4, step: .05, dec: 2, get: () => o.scale, set: x => { o.scale = x; save(); } }),
     tip('The spacecraft is drawn hugely oversized (about 130 km per metre at 1×) so you can see it from orbit distance. The map in the payload view and on the Earth is Natural Earth 1:50m (public domain): schematic, good to a few km, so use it for orientation, not to measure pointing errors.')));
   return out;
+}
+
+/* ---------------- Scenario card: library, and which spacecraft flies ---------------- */
+function scenarioCard(ctx) {
+  const items = S.scenarios.items, switched = () => { S.layout.sel = null; scChanged(); ctx.renderRail(); syncAll(); };
+  /** Default orbit fields for a new scenario, or for what an imported one lacks. */
+  const defaults = () => newScenarioOrbit(defaultState().orbit);
+  const pick = selectRow({ id: 'scenPick', label: 'Scenario', options: items.map(i => [i.id, i.name]), get: () => S.scenarios.active, set: id => { if (selectScenario(S, id)) switched(); } });
+  const nameIn = h('input', { type: 'text', id: 'scenName', value: activeScenario(S).name, maxlength: 32, 'aria-label': 'Scenario name' });
+  // no rail rebuild here: a click on New or Duplicate that ended the typing must still land
+  nameIn.addEventListener('change', () => {
+    if (renameScenario(S, S.scenarios.active, nameIn.value)) { save(); pick.querySelector(`option[value="${S.scenarios.active}"]`).textContent = activeScenario(S).name; }
+    else { nameIn.value = activeScenario(S).name; toast('Enter a name, different from the other scenarios'); }
+  });
+  const del = confirmButton('Delete', 'Click again to delete', () => { if (deleteScenario(S, S.scenarios.active)) switched(); });
+  del.disabled = items.length < 2; if (del.disabled) del.title = 'The last scenario cannot be deleted';
+  const importDlg = () => {
+    const ta = h('textarea', { style: 'width:100%;min-height:220px', placeholder: 'Paste a scenario JSON copied from AttTool' }), err = h('p', { class: 'tip', style: 'color:var(--bad)' });
+    const doImport = () => {
+      let res; try { res = importScenario(S, JSON.parse(ta.value), defaults()); } catch (e) { err.textContent = 'Could not import: ' + e.message; return; }
+      closeModal(); switched(); toast(res.missing ? `Scenario added. No spacecraft named "${res.missing}" here, so it flies ${activeItem(S).name}` : 'Scenario added');
+    };
+    showModal(h('div', null, h('h2', null, 'Import scenario'), ta, err, h('div', { class: 'btns', style: 'margin-top:8px' }, h('button', { class: 'btn primary', onclick: doImport }, 'Add scenario'))));
+  };
+  return card('Scenario', items.length + ' in the library', pick,
+    h('div', { class: 'row two' }, h('label', { for: 'scenName' }, 'Name'), nameIn),
+    selectRow({ id: 'orbScPick', label: 'Flying', options: S.fleet.items.map(i => [i.id, i.name]), get: () => S.fleet.active, set: id => { if (selectSpacecraft(S, id)) switched(); } }),
+    h('div', { class: 'btns' },
+      h('button', { class: 'btn', onclick: () => { addScenario(S, defaults(), 'New scenario'); switched(); } }, 'New'),
+      h('button', { class: 'btn', onclick: () => { duplicateScenario(S); switched(); } }, 'Duplicate'), del,
+      h('button', { class: 'btn', onclick: () => copyText(JSON.stringify(exportScenario(S), null, 1), 'Scenario JSON') }, 'Copy JSON'),
+      h('button', { class: 'btn', onclick: importDlg }, 'Import…')),
+    tip('A scenario keeps the orbit, epoch, time, guidance and target, and which spacecraft flies it. Display options are shared. <b>Copy JSON</b> holds the scenario and the name of its spacecraft; copy the spacecraft itself in <b>Spacecraft Layout</b>.'));
 }
 
 /* ---------------- Orbit card: elements / r,v / TLE ---------------- */
@@ -151,7 +183,7 @@ function orbitCard(ctx, o, sl) {
   if (o.def === 'tle') {
     const ta = h('textarea', { id: 'tle', rows: 3, spellcheck: 'false', class: 'dcm', placeholder: 'NAME (optional)\n1 25544U 98067A   …\n2 25544  51.6416 …' });
     ta.value = o.tle || '';
-    let tm = 0; ta.addEventListener('input', () => { clearTimeout(tm); tm = setTimeout(() => { o.tle = ta.value.trim(); o.t = 0; changed(); }, 300); });
+    let tm = 0; ta.addEventListener('input', () => { clearTimeout(tm); tm = setTimeout(() => { if (!ta.isConnected) return; o.tle = ta.value.trim(); o.t = 0; changed(); }, 300); }); // gone: the scenario was switched
     body = [ta,
       h('div', { class: 'btns' }, h('button', { class: 'btn', onclick: () => { ta.value = ISS_TLE; o.tle = ISS_TLE; o.t = 0; changed(); } }, 'Example: ISS (2008)')),
       status(),

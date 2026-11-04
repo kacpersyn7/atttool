@@ -45,14 +45,26 @@ export function selectSpacecraft(s, id) {
 
 /** Add a spacecraft (taken over, not copied) and make it active. @returns its id. */
 export function addSpacecraft(s, sc, name) {
+  const id = parkSpacecraft(s, sc, name); selectSpacecraft(s, id); return id;
+}
+
+/** Add a spacecraft (taken over) without making it active. @returns its id. */
+function parkSpacecraft(s, sc, name) {
   const f = s.fleet, it = { id: newId(), name: uniqueName(f, String(name || '').trim() || 'Spacecraft'), sc, axes: null };
-  f.items.push(it); selectSpacecraft(s, it.id); return it.id;
+  f.items.push(it); return it.id;
 }
 
 /** Add a copy of the active spacecraft, with the same pointing axes, and make it active. @returns its id. */
 export function duplicateSpacecraft(s) {
   const axes = saveAxes(s), id = addSpacecraft(s, copy(s.sc), activeItem(s).name + ' copy');
   loadAxes(s, axes); return id;
+}
+
+/** Reset any pointing axis that names a part the active spacecraft doesn't have (deleted, or another spacecraft's). */
+export function validateAxes(s) {
+  const has = id => s.sc.comps.some(c => c.id === id), o = s.orbit;
+  if (o.tgtComp && !has(o.tgtComp)) o.tgtComp = AXES.tgtComp;
+  for (const k of ['sunAxis', 'sunSecAxis']) if (typeof o[k] === 'string' && o[k].startsWith('comp:') && !has(o[k].slice(5))) o[k] = AXES[k];
 }
 
 /** Replace the active spacecraft's data (import, reset); its parts are new, so its pointing axes start over. */

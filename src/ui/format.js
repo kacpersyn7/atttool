@@ -13,3 +13,6 @@ export const matHTML = (M, n = 4) => M.flat().map(x => `<div>${fmtS(x, n)}</div>
 export const hhmm = hr => { const t = (Math.round(hr * 60) % 1440 + 1440) % 1440; return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0'); };
 /** Seconds -> "HH:MM:SS". */
 export const hms = s => { s = Math.max(0, Math.floor(s)); return `${String(Math.floor(s / 3600)).padStart(2, '0')}:${String(Math.floor(s % 3600 / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
+
+/** Text made safe for innerHTML: part and spacecraft names can come from imported files. */
+export const esc = x => String(x).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
