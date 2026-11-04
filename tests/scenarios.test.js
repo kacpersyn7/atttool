@@ -124,7 +124,7 @@ test('scenarios: import rejects other JSON, changing nothing; bad fields take th
   assert.throws(() => importScenario(s, { atttool: 1, sc: defaultSC() }, d), /Expected a scenario/);
   assert.throws(() => importScenario(s, null, d), /Expected a scenario/);
   assert.equal(JSON.stringify(s), snap);
-  const o = sanitizeScenario({ hp: 'high', ha: -5, mode: 'warp', def: 'x', r: [1, 2], epoch: 'soon', t: -1, tgtLat: 200, j2: 1, sunAxis: 'Z', refFrame: 'nope', extra: 1, tgtAlt: 100 }, d);
+  const o = sanitizeScenario({ hp: 'high', ha: -5, mode: 'warp', def: 'x', r: [1, 2], epoch: 'soon', t: 1e15, tgtLat: 200, j2: 1, sunAxis: 'Z', refFrame: 'nope', extra: 1, tgtAlt: 100 }, d);
   for (const k of ['hp', 'ha', 'mode', 'def', 'r', 'epoch', 't', 'tgtLat', 'j2', 'sunAxis', 'refFrame']) assert.deepEqual(o[k], d[k], k);
   assert.equal(o.tgtAlt, 100); assert.ok(!('extra' in o));
   assert.equal(sanitizeScenario(null, d).hp, d.hp);

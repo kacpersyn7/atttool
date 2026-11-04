@@ -36,6 +36,61 @@ export function epochDate(o) {
   return parseEpoch(o.epoch) || parseEpoch(EPOCH0);
 }
 
+/*
+ * Time. The epoch belongs to the orbit definition: the date its elements or state hold at.
+ * The current time is a separate thing, kept as o.t, seconds from the epoch (negative: before it).
+ */
+
+/** Dates that can be typed or reached by playback: the epoch and the current time stay within these. */
+export const DATE_MIN = '1900-01-01T00:00', DATE_MAX = '2200-01-01T00:00';
+const MS_MIN = Date.UTC(1900, 0, 1), MS_MAX = Date.UTC(2200, 0, 1);
+const inDates = d => !!d && d.getTime() >= MS_MIN && d.getTime() <= MS_MAX;
+/** Largest |o.t| that those dates allow (s). */
+export const T_MAX = (MS_MAX - MS_MIN) / 1000;
+/** t limited so that the current date of orbit settings `o` stays within the dates. */
+export const clampTime = (o, t) => { const e = epochDate(o).getTime(); return Math.max((MS_MIN - e) / 1000, Math.min((MS_MAX - e) / 1000, t)); };
+
+/** The current time as a Date. */
+export function currentDate(o) { return new Date(epochDate(o).getTime() + o.t * 1000); }
+
+/** Go to the UTC date `str` (same format as the epoch). The orbit doesn't change. Returns false, changing nothing, if it isn't a date within the limits. */
+export function setCurrentDate(o, str) {
+  const d = parseEpoch(str); if (!inDates(d)) return false;
+  o.t = (d.getTime() - epochDate(o).getTime()) / 1000; return true;
+}
+
+/**
+ * Change the epoch, keeping the current UTC (o.t follows). The fields keep their values, so this re-dates
+ * the orbit; an LTAN preset recomputes RAAN to hold its LTAN. Returns false, changing nothing, for a TLE
+ * (it has its own epoch) or a date outside the limits.
+ */
+export function setEpoch(o, str) {
+  if (o.def === 'tle' || !inDates(parseEpoch(str))) return false;
+  const now = currentDate(o).getTime(), p = PRESETS[o.preset];
+  o.epoch = str;
+  if (o.def === 'elements' && p && p.ltan !== undefined) applyPreset(o, o.preset); // (resets o.t)
+  o.t = clampTime(o, (now - epochDate(o).getTime()) / 1000);
+  return true;
+}
+
+/** Playback step of dt seconds of real time; stops at the limit. */
+export function advanceTime(o, dt) {
+  if (!o.playing) return;
+  const t = o.t + dt * o.speed; o.t = clampTime(o, t); if (o.t !== t) o.playing = false;
+}
+
+/** Span of the time slider (s): it shows this much around the current time. */
+export const SCRUB_SPAN = 3 * 86400;
+/** Start of the slider window: `w0` while it holds t, else centred on t. Saves from before #47 (t in 0..3 d) keep the window from 0. */
+export const scrubWindow = (t, w0 = 0) => t >= w0 && t <= w0 + SCRUB_SPAN ? w0 : Math.round(t - SCRUB_SPAN / 2);
+/** Start of the window after a slider move is released: centred on t if it ended at either end, so the next drag goes further. */
+export const scrubRelease = (t, w0) => { const m = SCRUB_SPAN * 0.01; return t <= w0 + m || t >= w0 + SCRUB_SPAN - m ? Math.round(t - SCRUB_SPAN / 2) : w0; };
+
+/** Days from the epoch if that is far enough for the model to lose the position along the orbit (no drag), else null. */
+export function farFromEpoch(o) {
+  const d = Math.abs(o.t) / 86400; return d >= (o.def === 'tle' ? 3 : 14) ? d : null;
+}
+
 const tleCache = { text: null, val: null };
 /** Parsed TLE of the orbit settings (cached), or null if none / invalid. */
 export function tleOf(o) {
@@ -77,7 +132,7 @@ export function ltanOf(o) { const r = orbitElements(o).raan * R2D - ENV.sunRA(ep
 /**
  * Switch o.def to `to`, filling the new definition from the current orbit so nothing moves.
  * Elements → r,v uses the state at the epoch; anything → elements writes the fields from the elements
- * (and, from a TLE, takes over its epoch). Mutates o.
+ * (and, from a TLE, takes over its epoch). The current UTC stays, except on going to a TLE. Mutates o.
  */
 export function switchDefinition(o, to) {
   if (to === o.def) return;
@@ -85,6 +140,7 @@ export function switchDefinition(o, to) {
   if (to === 'rv') { const s = ENV.propagate(E, 0, false); o.r = s.r.map(x => +x.toFixed(6)); o.v = s.v.map(x => +x.toFixed(9)); }
   if (to === 'elements') setFieldsFromElements(o, E);
   if (o.def === 'tle' && to !== 'tle') o.epoch = formatEpoch(ep);
+  if (to === 'tle' && tleOf(o)) o.t = 0; // a TLE has its own date: start there, as when one is pasted
   o.def = to; o.preset = 'custom';
 }
 
@@ -97,6 +153,7 @@ export function setFieldsFromElements(o, E) {
 
 /** Make the state at time t (s after epoch) the new initial state: epoch moves to t, r,v definition. */
 export function restartFromState(o, t) {
+  t = clampTime(o, t); // the new epoch must be a date that can be read back
   const E = orbitElements(o), s = ENV.propagate(E, t, o.j2), d = new Date(epochDate(o).getTime() + t * 1000);
   o.r = s.r.map(x => +x.toFixed(6)); o.v = s.v.map(x => +x.toFixed(9));
   o.epoch = formatEpoch(new Date(Math.round(d.getTime()))); o.def = 'rv'; o.preset = 'custom'; o.t = 0;

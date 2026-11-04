@@ -11,8 +11,11 @@ export const fmtS = (x, n = 3) => { const r = +fmt(x, n); return (r >= 0 ? '+' :
 export const matHTML = (M, n = 4) => M.flat().map(x => `<div>${fmtS(x, n)}</div>`).join('');
 /** Hours -> "HH:MM". */
 export const hhmm = hr => { const t = (Math.round(hr * 60) % 1440 + 1440) % 1440; return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0'); };
-/** Seconds -> "HH:MM:SS". */
-export const hms = s => { s = Math.max(0, Math.floor(s)); return `${String(Math.floor(s / 3600)).padStart(2, '0')}:${String(Math.floor(s % 3600 / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
+/** Seconds from the epoch -> "T+HH:MM:SS", "T−HH:MM:SS", with days once past one: "T+14 d 03:12:05". */
+export const tPlus = s => {
+  const a = Math.floor(Math.abs(s)), d = Math.floor(a / 86400), p = n => String(n).padStart(2, '0');
+  return `T${s < 0 && a > 0 ? '−' : '+'}${d ? d + ' d ' : ''}${p(Math.floor(a % 86400 / 3600))}:${p(Math.floor(a % 3600 / 60))}:${p(a % 60)}`;
+};
 
 /** Text made safe for innerHTML: part and spacecraft names can come from imported files. */
 export const esc = x => String(x).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);

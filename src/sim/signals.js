@@ -67,13 +67,13 @@ export function signalCatalog(state) {
 export function findSignal(state, id) { return signalCatalog(state).find(s => s.id === id) || null; }
 
 /**
- * Plot window [t0, t1] (s after epoch).
+ * Plot window [t0, t1] (s from the epoch).
  *   win.kind 'orbit' — the orbit containing t (same window as the availability timeline)
- *   win.kind 'last'  — the last win.min minutes up to t (starts at 0 if earlier)
+ *   win.kind 'last'  — the last win.min minutes up to t (reaching back before the epoch if t is near it)
  */
 export function plotWindow(state, win = { kind: 'orbit' }) {
   const t = state.orbit.t;
-  if (win.kind === 'last') { const span = Math.max(1, win.min || 30) * 60; const t0 = Math.max(0, t - span); return { t0, t1: t0 + span, label: `Last ${win.min || 30} min` }; }
+  if (win.kind === 'last') { const span = Math.max(1, win.min || 30) * 60; return { t0: t - span, t1: t, label: `Last ${win.min || 30} min` }; }
   const T = ENV.propagate(orbitElements(state.orbit), 0, false).period, t0 = Math.floor(t / T) * T;
   return { t0, t1: t0 + T, label: `One orbit · ${(T / 60).toFixed(1)} min` };
 }
