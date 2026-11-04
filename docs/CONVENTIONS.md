@@ -90,7 +90,7 @@ Component orientation `c.q` is q_BC: `q2C(c.q) = C_CB`.
 |---|---|
 | Distance (orbit, environment) | km |
 | Distance (spacecraft layout) | m |
-| Time | s since epoch; epoch is UTC `YYYY-MM-DDTHH:MM` |
+| Time | s from the epoch (`o.t`, negative before it); epoch and current time are UTC `YYYY-MM-DDTHH:MM` |
 | Angles in code | rad. UI and state store degrees (`S.orbit.i`, `S.rot.euler`, …) |
 | Magnetic field | nT |
 | Inertia | kg·m² |
@@ -99,6 +99,7 @@ Component orientation `c.q` is q_BC: `q2C(c.q) = C_CB`.
 ## Environment models (deliberately simple)
 
 - **Orbit:** Keplerian two-body with optional J2 secular drift of Ω and ω. No drag, no SRP. The orbit is defined by elements, by a **J2000/GCRF state vector** at the epoch (converted exactly to osculating elements; with J2 these feed a mean-element secular model, so long runs drift slightly), or by a **TLE**.
+- **Epoch and current time:** the epoch belongs to the orbit definition: the date its elements or state hold at. The current time is separate, kept as seconds from the epoch, and may be before it. Moving the current time keeps the orbit. Moving the epoch keeps the current UTC and re-dates the orbit: the same RAAN or r, v on another date, so a different LTAN and ground track (an LTAN preset recomputes RAAN instead). Far from the epoch the Sun geometry and the drift of the plane hold, but not the position along the orbit, since there is no drag.
 - **TLE:** the mean elements are flown with the same Keplerian + J2 model, **not SGP4** (no drag, no Kozai/Brouwer correction, TEME treated as ECI). Good near the TLE epoch, drifting by kilometres per day.
 - **ECI** ignores precession and nutation, so it is J2000 ≈ GCRF to well under a degree over decades.
 - **Sun:** low-precision almanac formula (~0.01°). **Eclipse:** cylindrical shadow (no penumbra).

@@ -2,11 +2,11 @@
 import * as ENV from '../../env/index.js';
 import { S, save, scChanged, defaultState } from '../../state/store.js';
 import { h, card, tip, slider, numCell, selectRow, check, seg, liveText, syncAll, onSync, confirmButton } from '../../ui/dom.js';
-import { deg, esc, fmt, hhmm, hms } from '../../ui/format.js';
+import { deg, esc, fmt, hhmm, tPlus } from '../../ui/format.js';
 import { TYPES } from '../../spacecraft/componentTypes.js';
 import { activeItem, selectSpacecraft } from '../../spacecraft/library.js';
 import { activeScenario, addScenario, deleteScenario, duplicateScenario, exportScenario, importScenario, newScenarioOrbit, renameScenario, selectScenario } from '../../sim/scenarioLibrary.js';
-import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, PRESETS, orbitElements, ltanOf, epochDate, parseEpoch, formatEpoch, switchDefinition, restartFromState, definitionError, tleOf } from '../../sim/scenario.js';
+import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, PRESETS, SCRUB_SPAN, clampTime, currentDate, epochDate, farFromEpoch, formatEpoch, ltanOf, orbitElements, scrubRelease, scrubWindow, setCurrentDate, setEpoch, switchDefinition, restartFromState, definitionError, tleOf } from '../../sim/scenario.js';
 import { copyText, showModal, closeModal, toast } from '../../ui/overlay.js';
 import { payloadComp } from '../../sim/guidance.js';
 import { sensorEval } from '../../sim/sensors.js';
@@ -29,18 +29,19 @@ export function orbitPanel(ctx) {
   out.push(scenarioCard(ctx));
   out.push(orbitCard(ctx, o, sl));
 
-  const epochInput = h('input', { type: 'datetime-local', id: 'epoch', step: '1', disabled: o.def === 'tle', title: o.def === 'tle' ? 'Set by the TLE' : null });
-  epochInput.addEventListener('change', () => { if (parseEpoch(epochInput.value)) { o.epoch = epochInput.value; if (o.def === 'elements' && o.preset !== 'custom' && PRESETS[o.preset].ltan !== undefined) ctx.applyPreset(o.preset); save(); } });
-  onSync(() => { if (document.activeElement !== epochInput) epochInput.value = o.def === 'tle' ? formatEpoch(epochDate(o)) : o.epoch; });
   const playBtn = h('button', { class: 'btn primary', style: 'min-width:84px', onclick: () => { o.playing = !o.playing; save(); syncAll(); } });
   onSync(() => playBtn.textContent = o.playing ? '❚❚ Pause' : '▶ Play');
+  const nowInput = h('input', { type: 'datetime-local', id: 'now', step: '1' });
+  nowInput.addEventListener('change', () => { if (setCurrentDate(o, nowInput.value)) { save(); syncAll(); } });
+  onSync(() => { if (document.activeElement !== nowInput) nowInput.value = formatEpoch(new Date(Math.floor(currentDate(o).getTime() / 1000) * 1000)); });
   out.push(card('Time', null,
-    h('div', { class: 'row two' }, h('label', { for: 'epoch' }, 'Epoch (UTC)'), epochInput),
     h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, playBtn,
       seg([[1, '1×'], [60, '60×'], [300, '300×'], [1000, '1000×']], () => o.speed, v => { o.speed = v; save(); })),
-    slider({ id: 'time', label: 'Time since epoch', min: 0, max: 86400 * 3, step: 1, dec: 0, get: () => o.t, set: x => { o.t = x; save(); } }),
-    h('div', { class: 'kv' }, h('dt', null, 'T+'), h('dd', null, liveText(() => hms(o.t))), h('dt', null, 'UTC'), h('dd', null, liveText(() => ctx.cur() ? ctx.cur().date.toISOString().slice(0, 19).replace('T', ' ') : '')))
-  ));
+    h('div', { class: 'row two' }, h('label', { for: 'now' }, 'Current time (UTC)'), nowInput),
+    timeScrubber(o),
+    h('div', { class: 'kv' }, h('dt', null, 'From the epoch'), h('dd', null, liveText(() => tPlus(o.t)))),
+    liveText(() => { const d = farFromEpoch(o); return d === null ? '' : `<p class="tip" style="color:var(--warn)">${d.toFixed(0)} days from the epoch. The Sun geometry and the drift of the orbit plane still hold; the position along the orbit does not (no drag in this model${o.def === 'tle' ? ', and a TLE is only good near its epoch' : ''}).</p>`; }),
+    tip('Moving the time keeps the orbit. The slider shows 3 days; drag to either end to go further, or type a date.')));
 
   const modeCtl = [];
   const axLbl = (name, color, ax) => h('span', null, name + ' · ', h('span', { class: 'ax', style: 'color:var(--ax-' + color + ')' }, ax));
@@ -109,6 +110,26 @@ export function orbitPanel(ctx) {
   return out;
 }
 
+/* ---------------- Time slider: a window that follows the current time ---------------- */
+let scrubW0 = 0; // kept here so that a rail rebuild doesn't move the window
+
+function timeScrubber(o) {
+  const r = h('input', { type: 'range', id: 'time-r', step: 1, 'aria-label': 'Time, within the 3 days shown' });
+  const n = h('input', { type: 'number', id: 'time-n', step: 1, 'aria-label': 'Seconds from the epoch' });
+  let held = false, moved = false; // while held the window stays still under the pointer
+  const place = () => { r.min = scrubW0; r.max = scrubW0 + SCRUB_SPAN; r.value = o.t; };
+  r.addEventListener('pointerdown', () => { held = true; moved = false; });
+  r.addEventListener('input', () => { moved = true; o.t = +r.value; save(); syncAll(); });
+  const release = () => { if (moved) scrubW0 = scrubRelease(o.t, scrubW0); held = moved = false; syncAll(); };
+  r.addEventListener('change', release); r.addEventListener('pointerup', release); r.addEventListener('pointercancel', release); r.addEventListener('blur', release);
+  n.addEventListener('change', () => { const x = +n.value; if (n.value !== '' && Number.isFinite(x)) { o.t = clampTime(x); save(); } syncAll(); });
+  onSync(() => {
+    if (!held) { scrubW0 = scrubWindow(o.t, scrubW0); place(); }
+    if (document.activeElement !== n) n.value = o.t.toFixed(0);
+  });
+  return h('div', { class: 'row' }, h('label', { for: 'time-n' }, 'Seconds from the epoch'), r, n);
+}
+
 /* ---------------- Scenario card: library, and which spacecraft flies ---------------- */
 function scenarioCard(ctx) {
   const items = S.scenarios.items, switched = () => { S.layout.sel = null; scChanged(); ctx.renderRail(); syncAll(); };
@@ -139,7 +160,7 @@ function scenarioCard(ctx) {
       h('button', { class: 'btn', onclick: () => { duplicateScenario(S); switched(); } }, 'Duplicate'), del,
       h('button', { class: 'btn', onclick: () => copyText(JSON.stringify(exportScenario(S), null, 1), 'Scenario JSON') }, 'Copy JSON'),
       h('button', { class: 'btn', onclick: importDlg }, 'Import…')),
-    tip('A scenario keeps the orbit, epoch, time, guidance and target, and which spacecraft flies it. Display options are shared. <b>Copy JSON</b> holds the scenario and the name of its spacecraft; copy the spacecraft itself in <b>Spacecraft Layout</b>.'));
+    tip('A scenario keeps the orbit, its epoch, the current time, guidance and target, and which spacecraft flies it. Display options are shared. <b>Copy JSON</b> holds the scenario and the name of its spacecraft; copy the spacecraft itself in <b>Spacecraft Layout</b>.'));
 }
 
 /* ---------------- Orbit card: elements / r,v / TLE ---------------- */
@@ -192,9 +213,13 @@ function orbitCard(ctx, o, sl) {
       derived(),
       tip('<b>Approximation:</b> the TLE\'s mean elements are flown with Keplerian + J2 secular drift, not SGP4. Good near the TLE epoch; drifts by kilometres per day (no drag). The epoch comes from the TLE.')];
   }
+  const epochInput = h('input', { type: 'datetime-local', id: 'epoch', step: '1', disabled: o.def === 'tle', title: o.def === 'tle' ? 'Set by the TLE' : 'The date this orbit definition holds at. Moving it re-dates the orbit, keeping the current time.' });
+  epochInput.addEventListener('change', () => { if (setEpoch(o, epochInput.value)) { save(); syncAll(); } });
+  onSync(() => { if (document.activeElement !== epochInput) epochInput.value = o.def === 'tle' ? formatEpoch(epochDate(o)) : o.epoch; });
   const nowState = () => { const c = ctx.cur(); return c ? { r: c.st.r, v: c.st.v, d: c.date } : null; };
   return card('Orbit', 'Keplerian + J2',
     h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, h('span', { class: 'lbl' }, 'Defined by'), defSeg),
+    h('div', { class: 'row two' }, h('label', { for: 'epoch' }, 'Epoch (UTC)'), epochInput),
     ...body, ...common,
     h('div', { class: 'lbl' }, 'State now (ECI ≈ J2000)'),
     h('div', { class: 'kv' },

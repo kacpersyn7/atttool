@@ -79,7 +79,7 @@ test('signals: orbit window matches the availability timeline; last-N window end
   const w = plotWindow(s), tl = computeTimeline(s, 0, null, 10);
   close(w.t0, tl.W0, 1e-9); close(w.t1 - w.t0, tl.T, 1e-9);
   const l = plotWindow(s, { kind: 'last', min: 15 }); close(l.t1, s.orbit.t, 1e-9); close(l.t1 - l.t0, 900, 1e-9);
-  s.orbit.t = 60; const e = plotWindow(s, { kind: 'last', min: 15 }); assert.equal(e.t0, 0); assert.equal(e.t1, 900);
+  s.orbit.t = 60; const e = plotWindow(s, { kind: 'last', min: 15 }); assert.equal(e.t0, -840); assert.equal(e.t1, 60); // reaches back before the epoch
 });
 
 test('signals: quatContinuity and valueAt pick the nearby sign', () => {

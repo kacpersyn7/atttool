@@ -10,7 +10,7 @@ import { S, save, scVersion } from '../../state/store.js';
 import { h, syncAll } from '../../ui/dom.js';
 import { toast } from '../../ui/overlay.js';
 import { fmt } from '../../ui/format.js';
-import { epochDate } from '../../sim/scenario.js';
+import { clampTime, epochDate } from '../../sim/scenario.js';
 import { timelineKey } from '../../sim/timeline.js';
 import { signalCatalog, findSignal, plotWindow, sampleSignals, valueAt, signalsToCSV } from '../../sim/signals.js';
 
@@ -95,7 +95,7 @@ export function createPlotView(dock) {
   function compute() {
     const w = plotWindow(S, win()), ids = sigs().map(s => s.id);
     // quantise the sliding window to the sample spacing so playback doesn't resample every tick
-    const dt = (w.t1 - w.t0) / (N - 1); if (w.t0 > 0 && win().kind === 'last') { w.t0 = Math.ceil(w.t0 / dt) * dt; w.t1 = w.t0 + (N - 1) * dt; }
+    const dt = (w.t1 - w.t0) / (N - 1); if (win().kind === 'last') { w.t0 = Math.ceil(w.t0 / dt) * dt; w.t1 = w.t0 + (N - 1) * dt; }
     const key = timelineKey(S, scVersion(), w.t0) + ids.join() + w.t1;
     if (data && data.key === key) return data;
     return data = { key, w, ...sampleSignals(S, ids, w.t0, w.t1, { N }) };
@@ -170,7 +170,7 @@ export function createPlotView(dock) {
   cv.addEventListener('pointerleave', () => { hoverX = null; draw(); });
   cv.addEventListener('pointerdown', e => {
     if (!data) return; const r = cv.getBoundingClientRect(), f = (e.clientX - r.left - LEFT) / (r.width - LEFT - RIGHT); if (f < 0 || f > 1) return;
-    S.orbit.t = Math.max(0, data.w.t0 + f * (data.w.t1 - data.w.t0)); S.orbit.playing = false; save(); syncAll();
+    S.orbit.t = clampTime(data.w.t0 + f * (data.w.t1 - data.w.t0)); S.orbit.playing = false; save(); syncAll();
   });
 
   renderBar();

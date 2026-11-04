@@ -7,7 +7,7 @@ import { sensorEval } from '../src/sim/sensors.js';
 import * as ENV from '../src/env/index.js';
 import { applyPreset, orbitElements, ltanOf, PRESETS, targetHeight } from '../src/sim/scenario.js';
 import { defaultState } from '../src/state/store.js';
-import { hhmm } from '../src/ui/format.js';
+import { hhmm, tPlus } from '../src/ui/format.js';
 import { attitudeAt, payloadComp, bodyRate } from '../src/sim/guidance.js';
 import { computeTimeline, timelineKey } from '../src/sim/timeline.js';
 import { close, closeArr } from './helpers.js';
@@ -386,4 +386,102 @@ test('ground-relative velocity: equatorial prograde circular orbit loses ω_E·r
   const r = [7000, 0, 0], vc = Math.sqrt(ENV.MU / 7000), vr = groundRelVel(r, [0, vc, 0]);
   closeArr(vr, [0, vc - ENV.WE * 7000, 0], 1e-12);
   close(ENV.WE * 86164.0905, 2 * Math.PI, 1e-6, 'ω_E = 2π per sidereal day');
+});
+
+/* ---------- current time, separate from the epoch (#47) ---------- */
+import { T_LIMIT, SCRUB_SPAN, advanceTime, currentDate, farFromEpoch, scrubRelease, scrubWindow, setCurrentDate, setEpoch } from '../src/sim/scenario.js';
+import { sanitizeScenario } from '../src/sim/scenarioLibrary.js';
+import { plotWindow } from '../src/sim/signals.js';
+
+const ISS = 'ISS (ZARYA)\n1 25544U 98067A   08264.51782528 -.00002182  00000-0 -11606-4 0  2927\n2 25544  51.6416 247.4627 0006703 130.5360 325.0288 15.72125391563537';
+const DAY = 86400, timeState = (extra = {}) => { const s = state(); Object.assign(s.orbit, { def: 'elements', preset: 'custom', t: 0, playing: true, speed: 60, ...extra }); return s; };
+
+test('time: going to a later date keeps the orbit; the node of an ISS-like orbit regresses about 5°/day (textbook value)', () => {
+  const o = timeState({ hp: 420, ha: 420, i: 51.6, raan: 120 }).orbit, before = JSON.stringify(orbitElements(o)), epoch = o.epoch;
+  assert.equal(setCurrentDate(o, '2026-10-19T10:00'), true);
+  assert.equal(o.t, 14 * DAY); assert.equal(o.epoch, epoch); assert.equal(JSON.stringify(orbitElements(o)), before);
+  assert.equal(currentDate(o).toISOString(), '2026-10-19T10:00:00.000Z');
+  const E = orbitElements(o), dRaan = (ENV.propagate(E, 14 * DAY, true).raan - E.raan) * 180 / Math.PI;
+  assert.ok(dRaan < -14 * 4.8 && dRaan > -14 * 5.2, `${dRaan / 14} °/day`);
+});
+
+test('time: a sun-synchronous orbit keeps its LTAN for weeks, while the same plane on a non-SSO orbit does not', () => {
+  const ltanAt = (o, t) => { const r = ENV.propagate(orbitElements(o), t, true).raan * 180 / Math.PI - ENV.sunRA(new Date(new Date(o.epoch + 'Z').getTime() + t * 1000)) * 180 / Math.PI; return (((12 + r / 15) % 24) + 24) % 24; };
+  const o = timeState().orbit; applyPreset(o, 'sso1030');
+  assert.ok(Math.abs(ltanAt(o, 14 * DAY) - 10.5) < 10 / 60, `SSO LTAN ${ltanAt(o, 14 * DAY)}`); // within 10 min: mean Sun vs true Sun
+  const iss = timeState({ hp: 420, ha: 420, i: 51.6, raan: o.raan }).orbit;
+  assert.ok(Math.abs(ltanAt(iss, 14 * DAY) - 10.5) > 3, 'ISS-like plane drifts by hours');
+});
+
+test('time: propagation runs backwards and far ahead (two-body: same state one period away; a quarter period back mirrors a quarter ahead)', () => {
+  const circ = { a: 7000, e: 0, i: 0, raan: 0, argp: 0, nu0: 0 }, T = ENV.propagate(circ, 0, false).period;
+  const ahead = ENV.propagate(circ, T / 4, false), back = ENV.propagate(circ, -T / 4, false);
+  close(ahead.r[1], 7000, 1e-6); close(back.r[1], -7000, 1e-6); close(back.r[0], ahead.r[0], 1e-6);
+  const mol = { a: 26600, e: 0.74, i: 1.1, raan: 1, argp: 4.7, nu0: 0.3 }, TM = ENV.propagate(mol, 0, false).period;
+  for (const t of [0, -1000, 40 * 365.25 * DAY, -40 * 365.25 * DAY]) {
+    const a = ENV.propagate(mol, t, false), b = ENV.propagate(mol, t - TM, false);
+    for (let k = 0; k < 3; k++) close(a.r[k], b.r[k], 1e-2);
+    const rn = Math.hypot(...a.r); assert.ok(rn >= 26600 * 0.26 - 1 && rn <= 26600 * 1.74 + 1);
+  }
+});
+
+test('time: editing the epoch keeps the current UTC; custom elements keep their values, an LTAN preset keeps its LTAN', () => {
+  const o = timeState({ t: 5000, raan: 33 }).orbit, utc = currentDate(o).getTime();
+  assert.equal(setEpoch(o, '2027-01-01T00:00'), true); assert.equal(currentDate(o).getTime(), utc); assert.equal(o.raan, 33); assert.ok(o.t < 0, 'now before the new epoch');
+  assert.equal(setEpoch(o, 'soon'), false);
+  const p = timeState().orbit; applyPreset(p, 'sso1100'); p.t = 7200; const u2 = currentDate(p).getTime(), raan = p.raan;
+  setEpoch(p, '2027-03-01T00:00'); assert.equal(currentDate(p).getTime(), u2); assert.notEqual(p.raan, raan); close(ltanOf(p), 11, 0.01);
+  assert.equal(p.preset, 'sso1100');
+  applyPreset(p, 'sso1030'); assert.equal(p.t, 0, 'choosing a preset starts at its epoch');
+  const r = timeState({ def: 'rv', r: [7000, 0, 0], v: [0, 7.5, 0], t: 60 }).orbit; setEpoch(r, '2027-01-01T00:00'); assert.deepEqual(r.r, [7000, 0, 0]);
+});
+
+test('time: a TLE keeps its own epoch; going to it starts there, leaving it keeps the UTC', () => {
+  const o = timeState({ t: 500, tle: ISS }).orbit;
+  switchDefinition(o, 'tle'); assert.equal(o.t, 0); assert.equal(currentDate(o).toISOString(), '2008-09-20T12:25:40.104Z');
+  assert.equal(setEpoch(o, '2027-01-01T00:00'), false); assert.equal(currentDate(o).toISOString(), '2008-09-20T12:25:40.104Z');
+  o.t = 100; const u = currentDate(o).getTime(); switchDefinition(o, 'elements'); assert.equal(currentDate(o).getTime(), u);
+});
+
+test('time: restarting from a state before the epoch keeps the UTC and the position', () => {
+  const o = timeState({ t: -7200 }).orbit, u = currentDate(o).getTime(), r0 = ENV.propagate(orbitElements(o), -7200, o.j2).r;
+  restartFromState(o, o.t); assert.equal(o.t, 0); assert.equal(currentDate(o).getTime(), u);
+  const r1 = ENV.propagate(orbitElements(o), 0, o.j2).r; for (let k = 0; k < 3; k++) close(r0[k], r1[k], 1e-3);
+});
+
+test('time: playback passes 72 h without wrapping and stops at the limit', () => {
+  const o = timeState({ t: 3 * DAY - 10, speed: 60 }).orbit;
+  advanceTime(o, 1); assert.equal(o.t, 3 * DAY + 50); assert.equal(o.playing, true);
+  o.t = T_LIMIT - 10; advanceTime(o, 1); assert.equal(o.t, T_LIMIT); assert.equal(o.playing, false);
+  o.t = 5; advanceTime(o, 1); assert.equal(o.t, 5, 'paused');
+  assert.equal(setCurrentDate(Object.assign(o, { epoch: '1900-01-01T00:00' }), '2200-01-01T00:00'), true); assert.equal(o.t, T_LIMIT, 'typed date is limited too');
+});
+
+test('time: the slider window holds t, follows it out, and moves on when released at an end', () => {
+  assert.equal(scrubWindow(0), 0); assert.equal(scrubWindow(3 * DAY), 0, 'old saves keep the 0..72 h slider');
+  assert.equal(scrubWindow(3 * DAY + 1, 0), 3 * DAY + 1 - SCRUB_SPAN / 2);
+  assert.equal(scrubWindow(-1, 0), -1 - SCRUB_SPAN / 2); assert.equal(scrubWindow(100, 50), 50);
+  assert.equal(scrubRelease(1.5 * DAY, 0), 0); assert.equal(scrubRelease(3 * DAY, 0), 1.5 * DAY); assert.equal(scrubRelease(0, 0), -1.5 * DAY);
+});
+
+test('time: scenarios accept negative and long times, not beyond the limit', () => {
+  const d = timeState().orbit;
+  for (const t of [-1, 30 * DAY, -T_LIMIT, T_LIMIT]) assert.equal(sanitizeScenario({ t }, d).t, t);
+  for (const t of [T_LIMIT + 1, 1e15, NaN, Infinity, '5']) assert.equal(sanitizeScenario({ t }, d).t, d.t);
+});
+
+test('time: everything downstream works before the epoch and years after it', () => {
+  for (const t of [-1, -2 * DAY, 400 * DAY, -T_LIMIT, T_LIMIT]) {
+    const s = timeState({ t }), A = attitudeAt(s, t); assert.ok(A.st.r.every(Number.isFinite)); assert.ok(A.CBI.flat().every(Number.isFinite));
+    const tl = computeTimeline(s, 0, null, 8); assert.ok(tl.W0 <= t && t < tl.W0 + tl.T + 1e-6, `timeline holds t=${t}`);
+    const w = plotWindow(s); assert.ok(w.t0 <= t && t <= w.t1 + 1e-6);
+    const l = plotWindow(s, { kind: 'last', min: 15 }); assert.equal(l.t1, t);
+  }
+});
+
+test('time: far from the epoch is flagged, sooner for a TLE; odd dates are refused; T+ reads with sign and days', () => {
+  assert.equal(farFromEpoch({ t: 13 * DAY, def: 'elements' }), null); assert.equal(farFromEpoch({ t: -14 * DAY, def: 'elements' }), 14);
+  assert.equal(farFromEpoch({ t: 2 * DAY, def: 'tle' }), null); assert.equal(farFromEpoch({ t: 3 * DAY, def: 'tle' }), 3);
+  assert.equal(parseEpoch('0001-01-01T00:00'), null); assert.equal(parseEpoch('9999-01-01T00:00'), null);
+  for (const [s, want] of [[0, 'T+00:00:00'], [59.9, 'T+00:00:59'], [-0.4, 'T+00:00:00'], [-3661, 'T−01:01:01'], [86400, 'T+1 d 00:00:00'], [14 * DAY + 11525, 'T+14 d 03:12:05'], [-2 * DAY - 1, 'T−2 d 00:00:01']]) assert.equal(tPlus(s), want);
 });

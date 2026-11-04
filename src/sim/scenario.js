@@ -20,9 +20,10 @@ export const targetHeight = o => { const a = +o.tgtAlt; return Number.isFinite(a
 /** Ground target in ECEF (km), at its height above the sphere. */
 export const targetECEF = o => ENV.llh2ecef(o.tgtLat * D2R, o.tgtLon * D2R, targetHeight(o));
 
-/** Parse 'YYYY-MM-DDTHH:MM' or 'YYYY-MM-DDTHH:MM:SS(.sss)' (UTC) → Date, or null. */
+/** Parse 'YYYY-MM-DDTHH:MM' or 'YYYY-MM-DDTHH:MM:SS(.sss)' (UTC) → Date, or null. Years 1900..2200 only: with T_LIMIT the current time stays a four-digit year. */
 export function parseEpoch(str) {
   const t = String(str || '').trim(); if (!/^\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d+)?)?$/.test(t)) return null;
+  const y = +t.slice(0, 4); if (y < 1900 || y > 2200) return null;
   const d = new Date(t + (t.length === 16 ? ':00' : '') + 'Z'); return isNaN(d.getTime()) ? null : d;
 }
 /** Date → 'YYYY-MM-DDTHH:MM:SS(.sss)' (UTC), dropping zero seconds / milliseconds. */
@@ -34,6 +35,55 @@ export function formatEpoch(d) {
 export function epochDate(o) {
   if (o.def === 'tle') { const t = tleOf(o); if (t) return t.epoch; }
   return parseEpoch(o.epoch) || parseEpoch(EPOCH0);
+}
+
+/*
+ * Time. The epoch belongs to the orbit definition: the date its elements or state hold at.
+ * The current time is a separate thing, kept as o.t, seconds from the epoch (negative: before it).
+ */
+
+/** Limit of o.t (s): ±50 years. No physics stops there; it keeps the date and the numbers sensible. */
+export const T_LIMIT = 50 * 365.25 * 86400;
+export const clampTime = t => Math.max(-T_LIMIT, Math.min(T_LIMIT, t));
+
+/** The current time as a Date. */
+export function currentDate(o) { return new Date(epochDate(o).getTime() + o.t * 1000); }
+
+/** Go to the UTC date `str` (same format as the epoch). The orbit doesn't change. Returns false if it isn't a date. */
+export function setCurrentDate(o, str) {
+  const d = parseEpoch(str); if (!d) return false;
+  o.t = clampTime((d.getTime() - epochDate(o).getTime()) / 1000); return true;
+}
+
+/**
+ * Change the epoch, keeping the current UTC (o.t follows). The fields keep their values, so this re-dates
+ * the orbit; an LTAN preset recomputes RAAN to hold its LTAN. A TLE has its own epoch: returns false.
+ */
+export function setEpoch(o, str) {
+  if (o.def === 'tle' || !parseEpoch(str)) return false;
+  const now = currentDate(o).getTime(), p = PRESETS[o.preset];
+  o.epoch = str;
+  if (o.def === 'elements' && p && p.ltan !== undefined) applyPreset(o, o.preset); // (resets o.t)
+  o.t = clampTime((now - epochDate(o).getTime()) / 1000);
+  return true;
+}
+
+/** Playback step of dt seconds of real time; stops at the limit. */
+export function advanceTime(o, dt) {
+  if (!o.playing) return;
+  const t = o.t + dt * o.speed; o.t = clampTime(t); if (o.t !== t) o.playing = false;
+}
+
+/** Span of the time slider (s): it shows this much around the current time. */
+export const SCRUB_SPAN = 3 * 86400;
+/** Start of the slider window: `w0` while it holds t, else centred on t. Saves from before #47 (t in 0..3 d) keep the window from 0. */
+export const scrubWindow = (t, w0 = 0) => t >= w0 && t <= w0 + SCRUB_SPAN ? w0 : Math.round(t - SCRUB_SPAN / 2);
+/** Start of the window after a slider move is released: centred on t if it ended at either end, so the next drag goes further. */
+export const scrubRelease = (t, w0) => { const m = SCRUB_SPAN * 0.01; return t <= w0 + m || t >= w0 + SCRUB_SPAN - m ? Math.round(t - SCRUB_SPAN / 2) : w0; };
+
+/** Days from the epoch if that is far enough for the model to lose the position along the orbit (no drag), else null. */
+export function farFromEpoch(o) {
+  const d = Math.abs(o.t) / 86400; return d >= (o.def === 'tle' ? 3 : 14) ? d : null;
 }
 
 const tleCache = { text: null, val: null };
@@ -77,7 +127,7 @@ export function ltanOf(o) { const r = orbitElements(o).raan * R2D - ENV.sunRA(ep
 /**
  * Switch o.def to `to`, filling the new definition from the current orbit so nothing moves.
  * Elements → r,v uses the state at the epoch; anything → elements writes the fields from the elements
- * (and, from a TLE, takes over its epoch). Mutates o.
+ * (and, from a TLE, takes over its epoch). The current UTC stays, except on going to a TLE. Mutates o.
  */
 export function switchDefinition(o, to) {
   if (to === o.def) return;
@@ -85,6 +135,7 @@ export function switchDefinition(o, to) {
   if (to === 'rv') { const s = ENV.propagate(E, 0, false); o.r = s.r.map(x => +x.toFixed(6)); o.v = s.v.map(x => +x.toFixed(9)); }
   if (to === 'elements') setFieldsFromElements(o, E);
   if (o.def === 'tle' && to !== 'tle') o.epoch = formatEpoch(ep);
+  if (to === 'tle' && tleOf(o)) o.t = 0; // a TLE has its own date: start there, as when one is pasted
   o.def = to; o.preset = 'custom';
 }
 

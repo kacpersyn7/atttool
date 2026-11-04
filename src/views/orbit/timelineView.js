@@ -1,6 +1,7 @@
 /** Draws the one-orbit availability timeline (sim/timeline.js) on a canvas; click to seek. */
 import { S, save, scVersion } from '../../state/store.js';
 import { syncAll } from '../../ui/dom.js';
+import { clampTime } from '../../sim/scenario.js';
 import { computeTimeline } from '../../sim/timeline.js';
 
 const LEFT = 112, RIGHT = 52; // px reserved for row names / percentages
@@ -37,7 +38,7 @@ export function createTimelineView(tlc) {
   tlc.addEventListener('pointerdown', e => {
     if (!tl) return;
     const r = tlc.getBoundingClientRect(), w = r.width - LEFT - RIGHT; const f = (e.clientX - r.left - LEFT) / w; if (f < 0 || f > 1) return;
-    S.orbit.t = tl.W0 + f * tl.T; S.orbit.playing = false; save(); syncAll();
+    S.orbit.t = clampTime(tl.W0 + f * tl.T); S.orbit.playing = false; save(); syncAll();
   });
 
   return { draw };
