@@ -20,10 +20,9 @@ export const targetHeight = o => { const a = +o.tgtAlt; return Number.isFinite(a
 /** Ground target in ECEF (km), at its height above the sphere. */
 export const targetECEF = o => ENV.llh2ecef(o.tgtLat * D2R, o.tgtLon * D2R, targetHeight(o));
 
-/** Parse 'YYYY-MM-DDTHH:MM' or 'YYYY-MM-DDTHH:MM:SS(.sss)' (UTC) → Date, or null. Years 1900..2200 only: with T_LIMIT the current time stays a four-digit year. */
+/** Parse 'YYYY-MM-DDTHH:MM' or 'YYYY-MM-DDTHH:MM:SS(.sss)' (UTC) → Date, or null. */
 export function parseEpoch(str) {
   const t = String(str || '').trim(); if (!/^\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d+)?)?$/.test(t)) return null;
-  const y = +t.slice(0, 4); if (y < 1900 || y > 2200) return null;
   const d = new Date(t + (t.length === 16 ? ':00' : '') + 'Z'); return isNaN(d.getTime()) ? null : d;
 }
 /** Date → 'YYYY-MM-DDTHH:MM:SS(.sss)' (UTC), dropping zero seconds / milliseconds. */
@@ -42,36 +41,42 @@ export function epochDate(o) {
  * The current time is a separate thing, kept as o.t, seconds from the epoch (negative: before it).
  */
 
-/** Limit of o.t (s): ±50 years. No physics stops there; it keeps the date and the numbers sensible. */
-export const T_LIMIT = 50 * 365.25 * 86400;
-export const clampTime = t => Math.max(-T_LIMIT, Math.min(T_LIMIT, t));
+/** Dates that can be typed or reached by playback: the epoch and the current time stay within these. */
+export const DATE_MIN = '1900-01-01T00:00', DATE_MAX = '2200-01-01T00:00';
+const MS_MIN = Date.UTC(1900, 0, 1), MS_MAX = Date.UTC(2200, 0, 1);
+const inDates = d => !!d && d.getTime() >= MS_MIN && d.getTime() <= MS_MAX;
+/** Largest |o.t| that those dates allow (s). */
+export const T_MAX = (MS_MAX - MS_MIN) / 1000;
+/** t limited so that the current date of orbit settings `o` stays within the dates. */
+export const clampTime = (o, t) => { const e = epochDate(o).getTime(); return Math.max((MS_MIN - e) / 1000, Math.min((MS_MAX - e) / 1000, t)); };
 
 /** The current time as a Date. */
 export function currentDate(o) { return new Date(epochDate(o).getTime() + o.t * 1000); }
 
-/** Go to the UTC date `str` (same format as the epoch). The orbit doesn't change. Returns false if it isn't a date. */
+/** Go to the UTC date `str` (same format as the epoch). The orbit doesn't change. Returns false, changing nothing, if it isn't a date within the limits. */
 export function setCurrentDate(o, str) {
-  const d = parseEpoch(str); if (!d) return false;
-  o.t = clampTime((d.getTime() - epochDate(o).getTime()) / 1000); return true;
+  const d = parseEpoch(str); if (!inDates(d)) return false;
+  o.t = (d.getTime() - epochDate(o).getTime()) / 1000; return true;
 }
 
 /**
  * Change the epoch, keeping the current UTC (o.t follows). The fields keep their values, so this re-dates
- * the orbit; an LTAN preset recomputes RAAN to hold its LTAN. A TLE has its own epoch: returns false.
+ * the orbit; an LTAN preset recomputes RAAN to hold its LTAN. Returns false, changing nothing, for a TLE
+ * (it has its own epoch) or a date outside the limits.
  */
 export function setEpoch(o, str) {
-  if (o.def === 'tle' || !parseEpoch(str)) return false;
+  if (o.def === 'tle' || !inDates(parseEpoch(str))) return false;
   const now = currentDate(o).getTime(), p = PRESETS[o.preset];
   o.epoch = str;
   if (o.def === 'elements' && p && p.ltan !== undefined) applyPreset(o, o.preset); // (resets o.t)
-  o.t = clampTime((now - epochDate(o).getTime()) / 1000);
+  o.t = clampTime(o, (now - epochDate(o).getTime()) / 1000);
   return true;
 }
 
 /** Playback step of dt seconds of real time; stops at the limit. */
 export function advanceTime(o, dt) {
   if (!o.playing) return;
-  const t = o.t + dt * o.speed; o.t = clampTime(t); if (o.t !== t) o.playing = false;
+  const t = o.t + dt * o.speed; o.t = clampTime(o, t); if (o.t !== t) o.playing = false;
 }
 
 /** Span of the time slider (s): it shows this much around the current time. */
@@ -148,6 +153,7 @@ export function setFieldsFromElements(o, E) {
 
 /** Make the state at time t (s after epoch) the new initial state: epoch moves to t, r,v definition. */
 export function restartFromState(o, t) {
+  t = clampTime(o, t); // the new epoch must be a date that can be read back
   const E = orbitElements(o), s = ENV.propagate(E, t, o.j2), d = new Date(epochDate(o).getTime() + t * 1000);
   o.r = s.r.map(x => +x.toFixed(6)); o.v = s.v.map(x => +x.toFixed(9));
   o.epoch = formatEpoch(new Date(Math.round(d.getTime()))); o.def = 'rv'; o.preset = 'custom'; o.t = 0;

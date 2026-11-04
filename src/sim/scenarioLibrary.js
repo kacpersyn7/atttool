@@ -17,7 +17,7 @@ import * as ENV from '../env/index.js';
 import { newId } from '../spacecraft/component.js';
 import { activeItem as activeSC, selectSpacecraft, uniqueName, validateAxes } from '../spacecraft/library.js';
 import * as AM from '../core/attitude.js';
-import { PRESETS, T_LIMIT, applyPreset, parseEpoch } from './scenario.js';
+import { PRESETS, T_MAX, applyPreset, parseEpoch } from './scenario.js';
 
 /** The fields of state.orbit that make up a scenario. refFrame only picks the frame shown, but it goes with the mode's offsets. */
 export const SCENARIO_KEYS = ['preset', 'def', 'r', 'v', 'tle', 'epoch', 'hp', 'ha', 'i', 'raan', 'argp', 'nu0', 'j2', 't',
@@ -107,7 +107,7 @@ const angle = inRange(-3600, 3600);
 /** Checks per field, within what the UI allows: a value that fails takes the default. */
 const VALID = {
   preset: x => x === 'custom' || (isStr(x) && Object.hasOwn(PRESETS, x)), def: oneOf('elements', 'rv', 'tle'), r: x => x === null || vec3(x), v: x => x === null || vec3(x), tle: isStr,
-  epoch: x => isStr(x) && !!parseEpoch(x), hp: inRange(100, 500000), ha: inRange(100, 500000), i: angle, raan: angle, argp: angle, nu0: angle, j2: x => typeof x === 'boolean', t: inRange(-T_LIMIT, T_LIMIT),
+  epoch: x => isStr(x) && !!parseEpoch(x), hp: inRange(100, 500000), ha: inRange(100, 500000), i: angle, raan: angle, argp: angle, nu0: angle, j2: x => typeof x === 'boolean', t: inRange(-T_MAX, T_MAX),
   mode: oneOf('offsets', 'target', 'sun', 'inertial'), refFrame: x => isStr(x) && Object.hasOwn(ENV.ORBIT_FRAMES, x), roll: angle, pitch: angle, yaw: angle,
   sunAxis: axis, sunSec: oneOf('nadir', 'zenith', 'velocity', 'normal', 'antinormal'), sunSecAxis: axis,
   tgtLat: inRange(-90, 90), tgtLon: angle, tgtAlt: isNum, tgtComp: isStr,

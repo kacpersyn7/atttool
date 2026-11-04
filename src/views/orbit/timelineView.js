@@ -38,7 +38,7 @@ export function createTimelineView(tlc) {
   tlc.addEventListener('pointerdown', e => {
     if (!tl) return;
     const r = tlc.getBoundingClientRect(), w = r.width - LEFT - RIGHT; const f = (e.clientX - r.left - LEFT) / w; if (f < 0 || f > 1) return;
-    S.orbit.t = clampTime(tl.W0 + f * tl.T); S.orbit.playing = false; save(); syncAll();
+    S.orbit.t = clampTime(S.orbit, tl.W0 + f * tl.T); S.orbit.playing = false; save(); syncAll();
   });
 
   return { draw };

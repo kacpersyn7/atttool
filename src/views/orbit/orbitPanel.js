@@ -6,7 +6,7 @@ import { deg, esc, fmt, hhmm, tPlus } from '../../ui/format.js';
 import { TYPES } from '../../spacecraft/componentTypes.js';
 import { activeItem, selectSpacecraft } from '../../spacecraft/library.js';
 import { activeScenario, addScenario, deleteScenario, duplicateScenario, exportScenario, importScenario, newScenarioOrbit, renameScenario, selectScenario } from '../../sim/scenarioLibrary.js';
-import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, PRESETS, SCRUB_SPAN, clampTime, currentDate, epochDate, farFromEpoch, formatEpoch, ltanOf, orbitElements, scrubRelease, scrubWindow, setCurrentDate, setEpoch, switchDefinition, restartFromState, definitionError, tleOf } from '../../sim/scenario.js';
+import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, DATE_MAX, DATE_MIN, PRESETS, SCRUB_SPAN, clampTime, currentDate, epochDate, farFromEpoch, formatEpoch, ltanOf, orbitElements, scrubRelease, scrubWindow, setCurrentDate, setEpoch, switchDefinition, restartFromState, definitionError, tleOf } from '../../sim/scenario.js';
 import { copyText, showModal, closeModal, toast } from '../../ui/overlay.js';
 import { payloadComp } from '../../sim/guidance.js';
 import { sensorEval } from '../../sim/sensors.js';
@@ -31,16 +31,20 @@ export function orbitPanel(ctx) {
 
   const playBtn = h('button', { class: 'btn primary', style: 'min-width:84px', onclick: () => { o.playing = !o.playing; save(); syncAll(); } });
   onSync(() => playBtn.textContent = o.playing ? '❚❚ Pause' : '▶ Play');
-  const nowInput = h('input', { type: 'datetime-local', id: 'now', step: '1' });
-  nowInput.addEventListener('change', () => { if (setCurrentDate(o, nowInput.value)) { save(); syncAll(); } });
-  onSync(() => { if (document.activeElement !== nowInput) nowInput.value = formatEpoch(new Date(Math.floor(currentDate(o).getTime() / 1000) * 1000)); });
+  const nowInput = dateInput('now');
+  const showNow = () => nowInput.value = formatEpoch(new Date(Math.floor(currentDate(o).getTime() / 1000) * 1000));
+  // typing a time while the clock runs would edit a stale value: pause first
+  nowInput.addEventListener('focus', () => { if (o.playing) { o.playing = false; save(); } showNow(); syncAll(); });
+  nowInput.addEventListener('change', () => { if (setCurrentDate(o, nowInput.value)) { save(); syncAll(); } else refused(); });
+  nowInput.addEventListener('blur', () => syncAll());
+  onSync(() => { if (document.activeElement !== nowInput) showNow(); });
   out.push(card('Time', null,
     h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, playBtn,
       seg([[1, '1×'], [60, '60×'], [300, '300×'], [1000, '1000×']], () => o.speed, v => { o.speed = v; save(); })),
     h('div', { class: 'row two' }, h('label', { for: 'now' }, 'Current time (UTC)'), nowInput),
     timeScrubber(o),
     h('div', { class: 'kv' }, h('dt', null, 'From the epoch'), h('dd', null, liveText(() => tPlus(o.t)))),
-    liveText(() => { const d = farFromEpoch(o); return d === null ? '' : `<p class="tip" style="color:var(--warn)">${d.toFixed(0)} days from the epoch. The Sun geometry and the drift of the orbit plane still hold; the position along the orbit does not (no drag in this model${o.def === 'tle' ? ', and a TLE is only good near its epoch' : ''}).</p>`; }),
+    liveText(() => { const d = farFromEpoch(o); return d === null ? '' : `<p class="tip" style="color:var(--warn)">${d.toFixed(0)} days from the epoch: the Sun geometry and the plane drift still hold, the position along the orbit does not (no drag).</p>`; }),
     tip('Moving the time keeps the orbit. The slider shows 3 days; drag to either end to go further, or type a date.')));
 
   const modeCtl = [];
@@ -110,6 +114,9 @@ export function orbitPanel(ctx) {
   return out;
 }
 
+const dateInput = id => h('input', { type: 'datetime-local', id, step: '1', min: DATE_MIN, max: DATE_MAX });
+const refused = () => toast(`Enter a date from ${DATE_MIN.slice(0, 4)} to ${DATE_MAX.slice(0, 4)}`);
+
 /* ---------------- Time slider: a window that follows the current time ---------------- */
 let scrubW0 = 0; // kept here so that a rail rebuild doesn't move the window
 
@@ -118,16 +125,21 @@ function timeScrubber(o) {
   const n = h('input', { type: 'number', id: 'time-n', step: 1, 'aria-label': 'Seconds from the epoch' });
   let held = false, moved = false; // while held the window stays still under the pointer
   const place = () => { r.min = scrubW0; r.max = scrubW0 + SCRUB_SPAN; r.value = o.t; };
-  r.addEventListener('pointerdown', () => { held = true; moved = false; });
-  r.addEventListener('input', () => { moved = true; o.t = +r.value; save(); syncAll(); });
-  const release = () => { if (moved) scrubW0 = scrubRelease(o.t, scrubW0); held = moved = false; syncAll(); };
-  r.addEventListener('change', release); r.addEventListener('pointerup', release); r.addEventListener('pointercancel', release); r.addEventListener('blur', release);
-  n.addEventListener('change', () => { const x = +n.value; if (n.value !== '' && Number.isFinite(x)) { o.t = clampTime(x); save(); } syncAll(); });
+  // pressing a thumb already at an end changes nothing and fires no input, but must still move the window on
+  const release = () => { if (held || moved) scrubW0 = scrubRelease(o.t, scrubW0); held = moved = false; syncAll(); };
+  r.addEventListener('pointerdown', () => {
+    held = true; moved = false;
+    const up = () => { release(); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); };
+    addEventListener('pointerup', up); addEventListener('pointercancel', up); // on the window: the pointer may end anywhere
+  });
+  r.addEventListener('input', () => { moved = true; o.t = clampTime(o, +r.value); save(); syncAll(); });
+  r.addEventListener('change', release);
+  n.addEventListener('change', () => { const x = +n.value; if (n.value !== '' && Number.isFinite(x)) { o.t = clampTime(o, x); save(); } n.value = o.t.toFixed(0); syncAll(); });
   onSync(() => {
     if (!held) { scrubW0 = scrubWindow(o.t, scrubW0); place(); }
     if (document.activeElement !== n) n.value = o.t.toFixed(0);
   });
-  return h('div', { class: 'row' }, h('label', { for: 'time-n' }, 'Seconds from the epoch'), r, n);
+  return h('div', { class: 'row wide' }, h('label', { for: 'time-n' }, 'From epoch, s'), r, n);
 }
 
 /* ---------------- Scenario card: library, and which spacecraft flies ---------------- */
@@ -213,8 +225,10 @@ function orbitCard(ctx, o, sl) {
       derived(),
       tip('<b>Approximation:</b> the TLE\'s mean elements are flown with Keplerian + J2 secular drift, not SGP4. Good near the TLE epoch; drifts by kilometres per day (no drag). The epoch comes from the TLE.')];
   }
-  const epochInput = h('input', { type: 'datetime-local', id: 'epoch', step: '1', disabled: o.def === 'tle', title: o.def === 'tle' ? 'Set by the TLE' : 'The date this orbit definition holds at. Moving it re-dates the orbit, keeping the current time.' });
-  epochInput.addEventListener('change', () => { if (setEpoch(o, epochInput.value)) { save(); syncAll(); } });
+  const epochInput = dateInput('epoch'); epochInput.disabled = o.def === 'tle';
+  epochInput.title = o.def === 'tle' ? 'Set by the TLE' : 'The date this orbit definition holds at. Moving it re-dates the orbit, keeping the current time.';
+  epochInput.addEventListener('change', () => { if (setEpoch(o, epochInput.value)) { save(); syncAll(); } else refused(); });
+  epochInput.addEventListener('blur', () => syncAll());
   onSync(() => { if (document.activeElement !== epochInput) epochInput.value = o.def === 'tle' ? formatEpoch(epochDate(o)) : o.epoch; });
   const nowState = () => { const c = ctx.cur(); return c ? { r: c.st.r, v: c.st.v, d: c.date } : null; };
   return card('Orbit', 'Keplerian + J2',

@@ -170,7 +170,7 @@ export function createPlotView(dock) {
   cv.addEventListener('pointerleave', () => { hoverX = null; draw(); });
   cv.addEventListener('pointerdown', e => {
     if (!data) return; const r = cv.getBoundingClientRect(), f = (e.clientX - r.left - LEFT) / (r.width - LEFT - RIGHT); if (f < 0 || f > 1) return;
-    S.orbit.t = clampTime(data.w.t0 + f * (data.w.t1 - data.w.t0)); S.orbit.playing = false; save(); syncAll();
+    S.orbit.t = clampTime(S.orbit, data.w.t0 + f * (data.w.t1 - data.w.t0)); S.orbit.playing = false; save(); syncAll();
   });
 
   renderBar();
