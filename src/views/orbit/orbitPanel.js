@@ -79,7 +79,7 @@ export function orbitPanel(ctx) {
     tip('This change keeps the attitude Rotation Lab had when it was made inertial (reference R = ECI). Set another one there, then take it here.'),
     h('div', { class: 'btns' }, h('button', { class: 'btn', onclick: () => { takeRotation(g, S.rot.q); save(); toast('Rotation Lab attitude taken'); } }, 'Take the Rotation Lab attitude')));
   out.push(scheduleCard(ctx, o));
-  out.push(card('Attitude guidance', g === o ? null : liveText(() => 'change at ' + showUTC(g.start)),
+  out.push(card('Attitude guidance', g === o ? null : liveText(() => 'change at ' + esc(showUTC(g.start))),
     sched.length ? h('p', { class: 'tip', style: 'margin:0' }, g === o ? 'Editing the initial settings, flown before the first change.' : 'Editing the change selected in Mode schedule.') : null,
     selectRow({ id: 'mode', label: 'Mode', options: [['offsets', 'Nominal attitude + offsets'], ['target', 'Ground target tracking'], ['sun', 'Sun pointing'], ['inertial', 'Inertial (from Rotation Lab)']], get: () => g.mode, set: v => { if (g === o) o.mode = v; else setChangeMode(g, v, S.rot.q); save(); ctx.renderRail(); } }),
     selectRow({ id: 'refFrame', label: 'Shown orbital frame', options: Object.entries(ENV.ORBIT_FRAMES).map(([k, f]) => [k, f.label]), get: () => o.refFrame, set: v => { o.refFrame = v; save(); ctx.renderRail(); } }),
@@ -131,7 +131,7 @@ const refused = () => toast(`Enter a date from ${DATE_MIN.slice(0, 4)} to ${DATE
 let selChange = null; // id of the change the guidance controls edit; null: the initial settings
 const MODE_SHORT = { offsets: 'Nominal', target: 'Target', sun: 'Sun', inertial: 'Inertial' };
 /** Warning text for scheduleNotes entries. */
-const noteText = ns => (ns || []).map(n => n === 'tie' ? 'Same start as another change: the later in the list flies' : 'Starts during the slew before it, so it blends from that slew').join('. ');
+const noteText = ns => (ns || []).map(n => n === 'tie' ? 'Same start as another change: this one flies, as the later in the list' : n === 'overridden' ? 'Never flies: a later change in the list starts at the same moment' : 'Starts during the slew before it, so it blends from that slew').join('. ');
 /** A start for display: always with seconds, without fractions. */
 const showUTC = str => { const d = parseEpoch(str); return d ? d.toISOString().slice(0, 19).replace('T', ' ') : str; };
 
@@ -142,11 +142,20 @@ function scheduleCard(ctx, o) {
     const c = sched.find(c => c.id === id); if (c) setCurrentDate(o, c.start); // jump to its start
     save(); ctx.renderRail();
   };
-  const list = h('div', { onclick: e => { const b = e.target.closest('[data-id]'); if (b) pick(b.dataset.id); } },
+  // the live list may be redrawn between press and release (a start applied on blur changes it), and then the
+  // browser fires no click: a pointer picks the row the press started on when it is released over the list;
+  // click is left for the keyboard (Enter / Space on a row)
+  let pressed = null;
+  const rowOf = e => { const b = e.target.closest('[data-id]'); return b ? b.dataset.id : null; };
+  const list = h('div', {
+    onpointerdown: e => { pressed = e.button === 0 ? rowOf(e) : null; },
+    onpointerup: e => { const id = pressed; pressed = null; if (id !== null && e.button === 0) pick(id); },
+    onclick: e => { if (e.detail === 0) { const id = rowOf(e); if (id !== null) pick(id); } },
+  },
     liveText(() => {
       const cur = ctx.cur(), now = cur && cur.seg ? cur.seg.id : '';
       const notes = scheduleNotes(o);
-      const row = (id, start, mode, slew, warn = '') => `<button type="button" class="srow${(selChange || '') === id ? ' on' : ''}" data-id="${esc(id)}" title="${warn ? esc(warn) + ' ' : ''}${id ? 'Edit this change and go to its start' : 'Edit the initial settings'}"><span class="dot${now === id ? ' now' : ''}"></span><span class="st">${start}${warn ? ' <span class="warn">⚠</span>' : ''}</span><span>${MODE_SHORT[mode] || ''}</span><span class="sl">${slew}</span></button>`;
+      const row = (id, start, mode, slew, warn = '') => `<button type="button" class="srow${(selChange || '') === id ? ' on' : ''}" data-id="${esc(id)}" title="${warn ? esc(warn) + '. ' : ''}${id ? 'Edit this change and go to its start' : 'Edit the initial settings'}"><span class="dot${now === id ? ' now' : ''}"></span><span class="st">${start}${warn ? ' <span class="warn">⚠</span>' : ''}</span><span>${MODE_SHORT[mode] || ''}</span><span class="sl">${slew}</span></button>`;
       return row('', 'Initial', o.mode, '') + scheduleOrder(sched).map(({ i }) => { const c = sched[i]; return row(c.id, esc(showUTC(c.start)), c.mode, c.slew ? c.slew + ' s' : 'jump', noteText(notes[c.id])); }).join('');
     }, 'sched'));
   const kids = [list,
@@ -173,10 +182,11 @@ function scheduleCard(ctx, o) {
     start.addEventListener('blur', commit);
     onSync(() => { if (document.activeElement !== start) shown(); });
     kids.push(h('div', { class: 'row two' }, h('label', { for: 'chStart' }, 'Starts (UTC)'), start),
-      h('div', { style: 'display:flex;justify-content:space-between;gap:8px' }, pending, liveText(() => { const d = parseEpoch(sel.start); return d ? tPlus((d.getTime() - epochDate(o).getTime()) / 1000) + ' from the epoch' : ''; }, 'lbl')),
+      h('div', { style: 'display:flex;justify-content:space-between;gap:8px' }, pending, h('span', { class: 'lbl', style: 'margin-left:auto' }, liveText(() => { const d = parseEpoch(pending.hidden ? sel.start : start.value); return d ? tPlus((d.getTime() - epochDate(o).getTime()) / 1000) + ' from the epoch' : ''; }))),
       h('div', { class: 'row two' }, h('label', { for: 'chSlew', title: 'From the attitude before it, 0 to 3600 s (0: a jump)' }, 'Slew (s)'), slew),
       h('div', { class: 'status' }, liveText(() => {
         const tr = changeTurn(S, sel.id), n = noteText(scheduleNotes(o)[sel.id]); if (!tr) return '';
+        if (tr.overridden) return `<span class="chip warn">${esc(n)}</span>`;
         const turn = tr.rate === null ? `Jumps ${tr.angle.toFixed(1)}°` : `Turns ${tr.angle.toFixed(1)}° in ${sel.slew} s · ${tr.rate.toFixed(2)}°/s on average`;
         return `<span class="chip dim" title="At its start, from the attitude before it. Kinematics only: real wheels may not turn this fast.">${turn}</span>${n ? ` <span class="chip warn">${esc(n)}</span>` : ''}`;
       })));

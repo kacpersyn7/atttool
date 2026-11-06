@@ -3,7 +3,7 @@
  * settings. Edits replace the array, so a scenario never shares it with another.
  */
 import { newId } from '../spacecraft/component.js';
-import { SEGMENT_KEYS, scheduleOrder } from './guidance.js';
+import { SEGMENT_KEYS, flownBefore, scheduleOrder } from './guidance.js';
 import { currentDate, formatEpoch, parseEpoch, validDate } from './scenario.js';
 import { MAX_CHANGES } from './scenarioLibrary.js';
 
@@ -42,16 +42,20 @@ export function setChangeStart(o, id, str) {
 }
 
 /**
- * Things worth a warning, by change id: 'overlap' (it starts while the slew into the change before it is still
- * under way, so it blends from that slew) and 'tie' (another change starts at the same moment: the later in the list flies).
+ * Things worth a warning, by change id: 'overlap' (it starts while the slew into what flew before it is still
+ * under way, so it blends from that slew), 'overridden' (a later change in the list starts at the same moment,
+ * so this one never flies) and 'tie' (the change that flies, over the ones it overrides).
  */
 export function scheduleNotes(o) {
   const sched = o.schedule || [], order = scheduleOrder(sched), notes = {};
-  const add = (id, n) => { (notes[id] = notes[id] || []).push(n); };
+  const add = (id, n) => { const l = notes[id] = notes[id] || []; if (!l.includes(n)) l.push(n); };
   order.forEach((x, j) => {
-    if (j === 0) return; const p = order[j - 1], c = sched[x.i], pc = sched[p.i];
-    if (x.ms === p.ms) { add(c.id, 'tie'); add(pc.id, 'tie'); }
-    else if (x.ms < p.ms + Math.max(0, +pc.slew || 0) * 1000) add(c.id, 'overlap');
+    const c = sched[x.i];
+    if (j + 1 < order.length && order[j + 1].ms === x.ms) { add(c.id, 'overridden'); return; }
+    if (j > 0 && order[j - 1].ms === x.ms) add(c.id, 'tie');
+    const k = flownBefore(order, j); if (k < 0) return;
+    const p = order[k], pc = sched[p.i];
+    if (x.ms < p.ms + Math.max(0, +pc.slew || 0) * 1000) add(c.id, 'overlap');
   });
   return notes;
 }

@@ -178,7 +178,9 @@ test('schedule notes: a change that starts during the slew before it, and change
   const s = inertialPair(); const o = s.orbit;
   assert.deepEqual(scheduleNotes(o), {});
   o.schedule = [...o.schedule, { id: 'b', start: at(s, 630), slew: 60, mode: 'inertial', q: qz(0) }, { id: 'c', start: at(s, 900), slew: 0, mode: 'offsets' }, { id: 'd', start: at(s, 900), slew: 0, mode: 'sun' }];
-  assert.deepEqual(scheduleNotes(o), { b: ['overlap'], c: ['tie'], d: ['tie'] });
+  assert.deepEqual(scheduleNotes(o), { b: ['overlap'], c: ['overridden'], d: ['tie'] }, 'c never flies: d, later in the list, starts with it');
+  o.schedule = [{ id: 'p', start: at(s, 100), slew: 600, mode: 'offsets' }, ...['x', 'y', 'z'].map(id => ({ id, start: at(s, 300), slew: 0, mode: 'sun' }))];
+  assert.deepEqual(scheduleNotes(o), { x: ['overridden'], y: ['overridden'], z: ['tie', 'overlap'] }, 'three at once: each note once; the one that flies is checked against what flew before');
   o.schedule = [{ id: 'a', start: at(s, 600), slew: 60, mode: 'offsets' }, { id: 'b', start: at(s, 660), slew: 0, mode: 'offsets' }];
   assert.deepEqual(scheduleNotes(o), {}, 'starting just as the slew ends is fine');
 });
@@ -186,4 +188,25 @@ test('schedule notes: a change that starts during the slew before it, and change
 test('schedule edits: moving a start keeps the change object (the controls stay bound to it), replaces the array', () => {
   const s = inertialPair(), o = s.orbit, c = o.schedule[0], arr = o.schedule;
   assert.equal(setChangeStart(o, 'a', at(s, 1200)), true); assert.equal(o.schedule[0], c); assert.notEqual(o.schedule, arr); assert.equal(c.start, at(s, 1200));
+});
+
+test('schedule: changes at the same moment: only the last flies, and it slews from what flew before, not from the ones it overrides', () => {
+  const s = inertialPair(); // 0°, then 90° at 600 s over 60 s
+  s.orbit.schedule = [{ id: 'lose', start: at(s, 600), slew: 0, mode: 'inertial', q: qz(170) }, { id: 'win', start: at(s, 600), slew: 60, mode: 'inertial', q: qz(90) }];
+  close(angleBetween(attitudeAt(s, 630).CBI, AM.q2C(qz(45))), 0, 1e-5, 'halfway from 0° to 90°: the 170° one never flew');
+  assert.deepEqual(changeTurn(s, 'lose'), { overridden: true }); close(changeTurn(s, 'win').angle, 90, 1e-6);
+});
+
+test('changeTurn: from initial inertial settings (Rotation Lab), and into target tracking while the target is below the horizon', () => {
+  const s = inertialPair(); s.rot.q = qz(-30); close(changeTurn(s, 'a').angle, 120, 1e-6, 'from Rotation Lab −30° to 90°');
+  const t = fresh(); applyPreset(t.orbit, 'sso1030'); Object.assign(t.orbit, { mode: 'offsets', roll: 20, pitch: 0, yaw: 0 });
+  t.orbit.schedule = [{ id: 'g', start: at(t, 600), slew: 60, mode: 'target', tgtLat: -80, tgtLon: 0, tgtAlt: 0 }];
+  assert.ok(attitudeAt(t, 700).flag.below, 'set up: the target is below the horizon');
+  close(changeTurn(t, 'g').angle, 20, 1e-6, 'it holds the nominal attitude: the 20° roll comes off');
+});
+
+test('schedule: a chain of overlapping slews stays cheap (each change worked out once per time)', () => {
+  const s = inertialPair(); s.orbit.schedule = Array.from({ length: 40 }, (_, k) => ({ id: 'c' + k, start: at(s, 600 + k), slew: 3600, mode: 'inertial', q: qz(k * 7) }));
+  const t0 = performance.now(); for (let n = 0; n < 20; n++) attitudeAt(s, 1000 + n); changeTurn(s, 'c39');
+  assert.ok(performance.now() - t0 < 500, `${(performance.now() - t0).toFixed(0)} ms for 20 samples of a 40-deep chain`);
 });
