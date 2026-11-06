@@ -1,2 +1,2 @@
 /** App version, shown in the header. Keep equal to "version" in package.json (a unit test checks). */
-export const VERSION = '0.7.0';
+export const VERSION = '0.8.0';
