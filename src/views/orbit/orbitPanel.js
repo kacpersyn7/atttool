@@ -6,7 +6,7 @@ import { deg, esc, fmt, hhmm, tPlus } from '../../ui/format.js';
 import { TYPES } from '../../spacecraft/componentTypes.js';
 import { activeItem, selectSpacecraft } from '../../spacecraft/library.js';
 import { MAX_CHANGES, activeScenario, addScenario, deleteScenario, duplicateScenario, exportScenario, importScenario, newScenarioOrbit, renameScenario, selectScenario } from '../../sim/scenarioLibrary.js';
-import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, DATE_MAX, DATE_MIN, PRESETS, SCRUB_SPANS, clampTime, currentDate, epochDate, farFromEpoch, formatEpoch, ltanOf, orbitElements, scrubCancelResume, scrubEnd, scrubHold, scrubKey, scrubPress, scrubSpan, scrubWindow, setCurrentDate, setEpoch, switchDefinition, restartFromState, definitionError, tleOf, parseEpoch } from '../../sim/scenario.js';
+import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, DATE_MAX, DATE_MIN, PRESETS, SCRUB_SPANS, clampTime, currentDate, epochDate, farFromEpoch, formatEpoch, ltanOf, orbitElements, scrubCancelResume, scrubEnd, scrubHold, scrubKey, scrubPress, scrubSpan, scrubWindowAt, setCurrentDate, setEpoch, switchDefinition, restartFromState, definitionError, tleOf, parseEpoch } from '../../sim/scenario.js';
 import { copyText, showModal, closeModal, toast } from '../../ui/overlay.js';
 import { payloadComp, scheduleOrder } from '../../sim/guidance.js';
 import { addChange, deleteChange, setChangeMode, setChangeStart, takeRotation } from '../../sim/schedule.js';
@@ -193,13 +193,13 @@ function timeScrubber(o) {
     e.preventDefault(); if (hold.held) return; // the thumb follows the pointer while held
     o.t = clampTime(o, o.t + d); save(); syncAll(); // past an end the window follows (sync)
   });
-  n.addEventListener('change', () => { const x = +n.value; if (n.value !== '' && Number.isFinite(x)) { o.t = clampTime(o, x); save(); } n.value = o.t.toFixed(0); syncAll(); });
+  n.addEventListener('change', () => { const x = +n.value; if (n.value !== '' && Number.isFinite(x)) { o.t = clampTime(o, x); save(); } n.value = String(Math.trunc(o.t) || 0); syncAll(); });
   onSync(() => {
     if (!hold.held) {
       span = scrubSpan(o); if (span !== scrubSpanW) { scrubSpanW = span; scrubW0 = NaN; } // a new span (or orbit period): back on its pages
-      scrubW0 = scrubWindow(o.t, scrubW0, span); r.min = scrubW0; r.max = scrubW0 + span; r.value = o.t;
+      scrubW0 = scrubWindowAt(o, scrubW0, span); r.min = scrubW0; r.max = scrubW0 + span; r.value = o.t;
     }
-    if (document.activeElement !== n) n.value = o.t.toFixed(0);
+    if (document.activeElement !== n) n.value = String(Math.trunc(o.t) || 0);
   });
   const spanSeg = seg(SCRUB_SPANS, () => o.scrub || 'orbit', v => { o.scrub = v; save(); }); // the sync puts the window on the page of t
   spanSeg.title = 'How much time the slider shows';

@@ -89,8 +89,17 @@ export function scrubSpan(o) { return o.scrub === 'day' ? 86400 : o.scrub === '3
  * The slider shows one page of time: pages are whole spans counted from the epoch (page 0 runs from T+0 to
  * T+span), so the Orbit span shows the same orbit as the availability timeline (sim/timeline.js).
  */
-/** The page that holds t: its start (s from the epoch). */
-export const scrubPage = (t, span) => Math.floor(t / span) * span;
+/**
+ * The page that holds t: its start (s from the epoch). A time on a boundary starts the next page, also when
+ * t / span rounds to just below a whole number. The timeline and the plots use it for their orbit window too.
+ */
+export const scrubPage = (t, span) => Math.floor(t / span + 1e-9) * span;
+/** scrubWindow, kept within the date limits of `o`: never a page that starts at or past the last date, and no page turn past a limit. */
+export function scrubWindowAt(o, w0, span) {
+  let w = scrubWindow(o.t, w0, span); const hi = clampTime(o, Infinity), lo = clampTime(o, -Infinity);
+  if (w >= hi) w -= span; if (w + span <= lo) w += span;
+  return w;
+}
 /**
  * Start of the slider window: `w0` while it holds t (its ends included, to a billionth of the span: a time on a
  * page boundary read back from the slider is off by rounding), else the page of t. No window yet: pass NaN.
@@ -114,7 +123,8 @@ export function scrubPress(h, o) { if (h.held) return; h.held = true; h.moved = 
 /** Release: resumes playback if the press paused it, and returns the new window start (see scrubRelease). */
 export function scrubEnd(h, o, w0, span) {
   // pressing a thumb already at an end changes nothing and fires no input, but must still move the window on
-  const w = h.held || h.moved ? scrubRelease(o.t, w0, span) : w0;
+  let w = h.held || h.moved ? scrubRelease(o.t, w0, span) : w0;
+  if ((w > w0 && o.t >= clampTime(o, Infinity)) || (w < w0 && o.t <= clampTime(o, -Infinity))) w = w0; // nothing to turn to past a date limit
   if (h.held && h.resume) o.playing = true;
   h.held = h.moved = h.resume = false; return w;
 }

@@ -389,7 +389,7 @@ test('ground-relative velocity: equatorial prograde circular orbit loses ω_E·r
 });
 
 /* ---------- current time, separate from the epoch (#47) ---------- */
-import { T_MAX, advanceTime, scrubPage, scrubCancelResume, scrubEnd, scrubHold, scrubKey, scrubPress, scrubSpan, clampTime, currentDate, farFromEpoch, scrubRelease, scrubWindow, setCurrentDate, setEpoch } from '../src/sim/scenario.js';
+import { T_MAX, advanceTime, scrubPage, scrubWindowAt, scrubCancelResume, scrubEnd, scrubHold, scrubKey, scrubPress, scrubSpan, clampTime, currentDate, farFromEpoch, scrubRelease, scrubWindow, setCurrentDate, setEpoch } from '../src/sim/scenario.js';
 import { sanitizeScenario } from '../src/sim/scenarioLibrary.js';
 import { plotWindow } from '../src/sim/signals.js';
 
@@ -496,11 +496,26 @@ test('time: the slider shows pages counted from the epoch; the start and the end
   assert.equal(back, span); assert.equal(scrubWindow(+String(edge + 1e-11), back, span), back, 'turned back: stays');
 });
 
-test('time: with the Orbit span the slider page is the orbit the availability timeline shows', () => {
-  for (const t of [0, 1234, 5800, 50000, -3000]) {
-    const s = timeState({ t, scrub: 'orbit' }), tl = computeTimeline(s, 0, null, 8);
-    close(scrubWindow(t, NaN, scrubSpan(s.orbit)), tl.W0, 1e-9, `t=${t}`); close(scrubSpan(s.orbit), tl.T, 1e-9);
+test('time: with the Orbit span the slider pages are the timeline and plot orbits, also on every boundary and after a page turn', () => {
+  const s = timeState({ scrub: 'orbit' }), T = scrubSpan(s.orbit);
+  for (const t of [0, 1234, 5800, 50000, -3000, ...Array.from({ length: 101 }, (_, i) => (i - 50) * T)]) {
+    s.orbit.t = t; const tl = computeTimeline(s, 0, null, 8); close(scrubSpan(s.orbit), tl.T, 1e-9);
+    close(scrubWindow(t, NaN, T), tl.W0, 1e-6, `t=${t}`); close(plotWindow(s).t0, tl.W0, 1e-6);
   }
+  // a right-end turn lands on the page the timeline shows
+  for (const k of [-47, -27, 15, 23, 30, 46]) { s.orbit.t = k * T; close(scrubWindow(k * T, scrubRelease(k * T, (k - 1) * T, T), T), computeTimeline(s, 0, null, 8).W0, 1e-6, `k=${k}`); }
+  // turning back from a page start shows the page before, with t at its right end: the one place the timeline (which follows t) differs
+  assert.equal(scrubWindow(0, scrubRelease(0, 0, T), T), -T);
+});
+
+test('time: page turns stay within the date limits (a midnight epoch with the Day span puts the limits on page edges)', () => {
+  const o = timeState({ epoch: '2026-10-05T00:00', scrub: 'day' }).orbit, D = 86400, h = scrubHold();
+  assert.equal(setCurrentDate(o, '2200-01-01T00:00'), true); const hi = o.t;
+  assert.equal(scrubWindowAt(o, NaN, D), hi - D, 'the last date: the page before it, not one wholly past it');
+  scrubPress(h, o); assert.equal(scrubEnd(h, o, hi - D, D), hi - D, 'no turn past the last date');
+  assert.equal(setCurrentDate(o, '1900-01-01T00:00'), true); const lo = o.t;
+  assert.equal(scrubWindowAt(o, NaN, D), lo); scrubPress(h, o); assert.equal(scrubEnd(h, o, lo, D), lo, 'no turn before the first date');
+  o.t = 5 * D; assert.equal(scrubWindowAt(o, NaN, D), 5 * D);
 });
 
 test('time: the slider span is one orbital period (Kepler, T = 2π √(a³/μ)), a day or 3 days; keys step 1 min, 1 s with Shift, a tenth of the span by page', () => {

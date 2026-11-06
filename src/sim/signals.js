@@ -12,7 +12,7 @@
 import * as AM from '../core/attitude.js';
 import * as ENV from '../env/index.js';
 import { compAxis } from '../spacecraft/component.js';
-import { orbitElements } from './scenario.js';
+import { orbitElements, scrubPage } from './scenario.js';
 import { attitudeAt, payloadComp } from './guidance.js';
 import { sensorEval } from './sensors.js';
 import { pointing } from './payload.js';
@@ -74,7 +74,7 @@ export function findSignal(state, id) { return signalCatalog(state).find(s => s.
 export function plotWindow(state, win = { kind: 'orbit' }) {
   const t = state.orbit.t;
   if (win.kind === 'last') { const span = Math.max(1, win.min || 30) * 60; return { t0: t - span, t1: t, label: `Last ${win.min || 30} min` }; }
-  const T = ENV.propagate(orbitElements(state.orbit), 0, false).period, t0 = Math.floor(t / T) * T;
+  const T = ENV.propagate(orbitElements(state.orbit), 0, false).period, t0 = scrubPage(t, T);
   return { t0, t1: t0 + T, label: `One orbit · ${(T / 60).toFixed(1)} min` };
 }
 
