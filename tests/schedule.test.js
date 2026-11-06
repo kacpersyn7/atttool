@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import * as AM from '../src/core/attitude.js';
 import * as ENV from '../src/env/index.js';
 import { close, closeArr } from './helpers.js';
-import { attitudeAt, bodyRate, blendAttitude, relativeQ, scheduleOrder } from '../src/sim/guidance.js';
-import { addChange, deleteChange, setChangeMode, setChangeStart, takeRotation, DEFAULT_SLEW } from '../src/sim/schedule.js';
+import { attitudeAt, bodyRate, blendAttitude, changeTurn, relativeQ, scheduleOrder } from '../src/sim/guidance.js';
+import { addChange, deleteChange, scheduleNotes, setChangeMode, setChangeStart, takeRotation, DEFAULT_SLEW } from '../src/sim/schedule.js';
 import { computeTimeline, timelineKey } from '../src/sim/timeline.js';
 import { pointing } from '../src/sim/payload.js';
 import { applyPreset, currentDate, epochDate, parseEpoch, restartFromState, setEpoch, targetECEF } from '../src/sim/scenario.js';
@@ -162,4 +162,28 @@ test('schedule in scenarios: kept per scenario, never shared, cleaned on import,
   const long = cleanSchedule(['1', '2'].map(k => ({ id: 'a'.repeat(40) + k, start: at(s, 5), mode: 'sun' })), s.orbit); assert.notEqual(long[0].id, long[1].id, 'unique after trimming');
   const qi = cleanSchedule([{ start: at(s, 5), mode: 'inertial', q: 'x' }], s.orbit, qz(30)); assert.deepEqual(qi[0].q, AM.q.unit(qz(30)), 'the scenario inertial attitude');
   assert.deepEqual(cleanSchedule([{ start: at(s, 5), mode: 'inertial' }], s.orbit)[0].q, AM.q.id(), 'else the identity: never Rotation Lab at the moment');
+});
+
+test('schedule: the turn a change asks for at its start, and its mean rate (90° in 60 s = 1.5°/s)', () => {
+  const s = inertialPair(); const tr = changeTurn(s, 'a'); close(tr.angle, 90, 1e-6); close(tr.rate, 1.5, 1e-8);
+  assert.equal(changeTurn(inertialPair(0), 'a').rate, null, 'slew 0: a jump'); assert.equal(changeTurn(s, 'nope'), null);
+  // a change during the slew before it turns from that slew: halfway, 45° are left
+  s.orbit.schedule.push({ id: 'b', start: at(s, 630), slew: 30, mode: 'inertial', q: qz(90) }); close(changeTurn(s, 'b').angle, 45, 1e-6); close(changeTurn(s, 'b').rate, 1.5, 1e-8);
+  // the half turn reads 180°
+  const h = fresh(); Object.assign(h.orbit, { mode: 'sun', sunAxis: '-Z', sunSecAxis: '+X', sunSec: 'nadir' });
+  h.orbit.schedule = [{ id: 'h', start: at(h, 600), slew: 60, mode: 'sun', sunAxis: '+Z', sunSecAxis: '+X', sunSec: 'nadir' }]; close(changeTurn(h, 'h').angle, 180, 1e-6);
+});
+
+test('schedule notes: a change that starts during the slew before it, and changes with the same start', () => {
+  const s = inertialPair(); const o = s.orbit;
+  assert.deepEqual(scheduleNotes(o), {});
+  o.schedule = [...o.schedule, { id: 'b', start: at(s, 630), slew: 60, mode: 'inertial', q: qz(0) }, { id: 'c', start: at(s, 900), slew: 0, mode: 'offsets' }, { id: 'd', start: at(s, 900), slew: 0, mode: 'sun' }];
+  assert.deepEqual(scheduleNotes(o), { b: ['overlap'], c: ['tie'], d: ['tie'] });
+  o.schedule = [{ id: 'a', start: at(s, 600), slew: 60, mode: 'offsets' }, { id: 'b', start: at(s, 660), slew: 0, mode: 'offsets' }];
+  assert.deepEqual(scheduleNotes(o), {}, 'starting just as the slew ends is fine');
+});
+
+test('schedule edits: moving a start keeps the change object (the controls stay bound to it), replaces the array', () => {
+  const s = inertialPair(), o = s.orbit, c = o.schedule[0], arr = o.schedule;
+  assert.equal(setChangeStart(o, 'a', at(s, 1200)), true); assert.equal(o.schedule[0], c); assert.notEqual(o.schedule, arr); assert.equal(c.start, at(s, 1200));
 });

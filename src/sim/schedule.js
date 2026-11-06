@@ -3,7 +3,7 @@
  * settings. Edits replace the array, so a scenario never shares it with another.
  */
 import { newId } from '../spacecraft/component.js';
-import { SEGMENT_KEYS } from './guidance.js';
+import { SEGMENT_KEYS, scheduleOrder } from './guidance.js';
 import { currentDate, formatEpoch, parseEpoch, validDate } from './scenario.js';
 import { MAX_CHANGES } from './scenarioLibrary.js';
 
@@ -35,10 +35,25 @@ export function deleteChange(o, id) {
   const sched = o.schedule || [], n = sched.length; o.schedule = sched.filter(c => c.id !== id); return o.schedule.length < n;
 }
 
-/** Move change `id` to start at UTC `str`. @returns false, changing nothing, if it isn't a date within the limits. */
+/** Move change `id` to start at UTC `str` (the change object stays, the array is replaced). @returns false, changing nothing, if it isn't a date within the limits. */
 export function setChangeStart(o, id, str) {
   const c = (o.schedule || []).find(c => c.id === id); if (!c || !validDate(str)) return false;
-  o.schedule = o.schedule.map(x => x === c ? { ...c, start: str } : x); return true;
+  c.start = str; o.schedule = [...o.schedule]; return true;
+}
+
+/**
+ * Things worth a warning, by change id: 'overlap' (it starts while the slew into the change before it is still
+ * under way, so it blends from that slew) and 'tie' (another change starts at the same moment: the later in the list flies).
+ */
+export function scheduleNotes(o) {
+  const sched = o.schedule || [], order = scheduleOrder(sched), notes = {};
+  const add = (id, n) => { (notes[id] = notes[id] || []).push(n); };
+  order.forEach((x, j) => {
+    if (j === 0) return; const p = order[j - 1], c = sched[x.i], pc = sched[p.i];
+    if (x.ms === p.ms) { add(c.id, 'tie'); add(pc.id, 'tie'); }
+    else if (x.ms < p.ms + Math.max(0, +pc.slew || 0) * 1000) add(c.id, 'overlap');
+  });
+  return notes;
 }
 
 /** Set the mode of change c; one made inertial takes Rotation Lab's attitude rotQ if it has none. */

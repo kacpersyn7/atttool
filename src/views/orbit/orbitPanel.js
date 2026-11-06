@@ -8,8 +8,8 @@ import { activeItem, selectSpacecraft } from '../../spacecraft/library.js';
 import { MAX_CHANGES, activeScenario, addScenario, deleteScenario, duplicateScenario, exportScenario, importScenario, newScenarioOrbit, renameScenario, selectScenario } from '../../sim/scenarioLibrary.js';
 import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, DATE_MAX, DATE_MIN, PRESETS, SCRUB_SPANS, clampTime, currentDate, epochDate, farFromEpoch, formatEpoch, ltanOf, orbitElements, scrubCancelResume, scrubEnd, scrubHold, scrubKey, scrubPress, scrubSpan, scrubWindow, setCurrentDate, setEpoch, switchDefinition, restartFromState, definitionError, tleOf, parseEpoch } from '../../sim/scenario.js';
 import { copyText, showModal, closeModal, toast } from '../../ui/overlay.js';
-import { payloadComp, scheduleOrder } from '../../sim/guidance.js';
-import { addChange, deleteChange, setChangeMode, setChangeStart, takeRotation } from '../../sim/schedule.js';
+import { changeTurn, payloadComp, scheduleOrder } from '../../sim/guidance.js';
+import { addChange, deleteChange, scheduleNotes, setChangeMode, setChangeStart, takeRotation } from '../../sim/schedule.js';
 import { sensorEval } from '../../sim/sensors.js';
 import { pointing } from '../../sim/payload.js';
 
@@ -79,7 +79,7 @@ export function orbitPanel(ctx) {
     tip('This change keeps the attitude Rotation Lab had when it was made inertial (reference R = ECI). Set another one there, then take it here.'),
     h('div', { class: 'btns' }, h('button', { class: 'btn', onclick: () => { takeRotation(g, S.rot.q); save(); toast('Rotation Lab attitude taken'); } }, 'Take the Rotation Lab attitude')));
   out.push(scheduleCard(ctx, o));
-  out.push(card('Attitude guidance', g === o ? null : 'change at ' + showUTC(g.start),
+  out.push(card('Attitude guidance', g === o ? null : liveText(() => 'change at ' + showUTC(g.start)),
     sched.length ? h('p', { class: 'tip', style: 'margin:0' }, g === o ? 'Editing the initial settings, flown before the first change.' : 'Editing the change selected in Mode schedule.') : null,
     selectRow({ id: 'mode', label: 'Mode', options: [['offsets', 'Nominal attitude + offsets'], ['target', 'Ground target tracking'], ['sun', 'Sun pointing'], ['inertial', 'Inertial (from Rotation Lab)']], get: () => g.mode, set: v => { if (g === o) o.mode = v; else setChangeMode(g, v, S.rot.q); save(); ctx.renderRail(); } }),
     selectRow({ id: 'refFrame', label: 'Shown orbital frame', options: Object.entries(ENV.ORBIT_FRAMES).map(([k, f]) => [k, f.label]), get: () => o.refFrame, set: v => { o.refFrame = v; save(); ctx.renderRail(); } }),
@@ -130,6 +130,8 @@ const refused = () => toast(`Enter a date from ${DATE_MIN.slice(0, 4)} to ${DATE
 /* ---------------- Mode schedule: changes of guidance mode at set times, with slews ---------------- */
 let selChange = null; // id of the change the guidance controls edit; null: the initial settings
 const MODE_SHORT = { offsets: 'Nominal', target: 'Target', sun: 'Sun', inertial: 'Inertial' };
+/** Warning text for scheduleNotes entries. */
+const noteText = ns => (ns || []).map(n => n === 'tie' ? 'Same start as another change: the later in the list flies' : 'Starts during the slew before it, so it blends from that slew').join('. ');
 /** A start for display: always with seconds, without fractions. */
 const showUTC = str => { const d = parseEpoch(str); return d ? d.toISOString().slice(0, 19).replace('T', ' ') : str; };
 
@@ -143,8 +145,9 @@ function scheduleCard(ctx, o) {
   const list = h('div', { onclick: e => { const b = e.target.closest('[data-id]'); if (b) pick(b.dataset.id); } },
     liveText(() => {
       const cur = ctx.cur(), now = cur && cur.seg ? cur.seg.id : '';
-      const row = (id, start, mode, slew) => `<button type="button" class="srow${(selChange || '') === id ? ' on' : ''}" data-id="${esc(id)}" title="${id ? 'Edit this change and go to its start' : 'Edit the initial settings'}"><span class="dot${now === id ? ' now' : ''}"></span><span class="st">${start}</span><span>${MODE_SHORT[mode] || ''}</span><span class="sl">${slew}</span></button>`;
-      return row('', 'Initial', o.mode, '') + scheduleOrder(sched).map(({ i }) => { const c = sched[i]; return row(c.id, esc(showUTC(c.start)), c.mode, c.slew + ' s'); }).join('');
+      const notes = scheduleNotes(o);
+      const row = (id, start, mode, slew, warn = '') => `<button type="button" class="srow${(selChange || '') === id ? ' on' : ''}" data-id="${esc(id)}" title="${warn ? esc(warn) + ' ' : ''}${id ? 'Edit this change and go to its start' : 'Edit the initial settings'}"><span class="dot${now === id ? ' now' : ''}"></span><span class="st">${start}${warn ? ' <span class="warn">⚠</span>' : ''}</span><span>${MODE_SHORT[mode] || ''}</span><span class="sl">${slew}</span></button>`;
+      return row('', 'Initial', o.mode, '') + scheduleOrder(sched).map(({ i }) => { const c = sched[i]; return row(c.id, esc(showUTC(c.start)), c.mode, c.slew ? c.slew + ' s' : 'jump', noteText(notes[c.id])); }).join('');
     }, 'sched'));
   const kids = [list,
     h('div', { class: 'status' }, liveText(() => { const cur = ctx.cur(); if (!cur) return ''; const s = cur.seg; const m = MODE_SHORT[cur.g.mode];
@@ -160,12 +163,25 @@ function scheduleCard(ctx, o) {
     const start = dateInput('chStart'), slew = h('input', { type: 'number', id: 'chSlew', min: 0, max: 3600, step: 1 });
     slew.addEventListener('change', () => { const x = +slew.value; if (slew.value !== '' && Number.isFinite(x)) { sel.slew = Math.max(0, Math.min(3600, Math.round(x))); save(); } slew.value = sel.slew; syncAll(); });
     onSync(() => { if (document.activeElement !== slew) slew.value = sel.slew; });
-    start.addEventListener('change', () => { if (setChangeStart(o, sel.id, start.value)) { save(); ctx.renderRail(); } else refused(); });
-    start.addEventListener('blur', () => syncAll());
-    onSync(() => { if (document.activeElement !== start) start.value = sel.start; });
-    kids.push(h('div', { class: 'row two' }, h('label', { for: 'chStart' }, 'Starts (UTC)'), start), h('div', { class: 'row two' }, h('label', { for: 'chSlew', title: 'From the attitude before it, 0 to 3600 s' }, 'Slew (s)'), slew));
+    // a typed start applies on Enter or on leaving the field, not while the date is half typed (change fires per part)
+    const pending = h('span', { class: 'lbl', hidden: true }, 'Enter to apply · Esc to undo');
+    const shown = () => { start.value = sel.start; pending.hidden = true; };
+    const commit = () => { if (pending.hidden) return; pending.hidden = true; if (setChangeStart(o, sel.id, start.value)) save(); else { refused(); start.value = sel.start; } syncAll(); };
+    start.addEventListener('input', () => { pending.hidden = start.value === sel.start; });
+    start.addEventListener('change', () => { pending.hidden = start.value === sel.start; });
+    start.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); commit(); } else if (e.key === 'Escape') { e.preventDefault(); shown(); } });
+    start.addEventListener('blur', commit);
+    onSync(() => { if (document.activeElement !== start) shown(); });
+    kids.push(h('div', { class: 'row two' }, h('label', { for: 'chStart' }, 'Starts (UTC)'), start),
+      h('div', { style: 'display:flex;justify-content:space-between;gap:8px' }, pending, liveText(() => { const d = parseEpoch(sel.start); return d ? tPlus((d.getTime() - epochDate(o).getTime()) / 1000) + ' from the epoch' : ''; }, 'lbl')),
+      h('div', { class: 'row two' }, h('label', { for: 'chSlew', title: 'From the attitude before it, 0 to 3600 s (0: a jump)' }, 'Slew (s)'), slew),
+      h('div', { class: 'status' }, liveText(() => {
+        const tr = changeTurn(S, sel.id), n = noteText(scheduleNotes(o)[sel.id]); if (!tr) return '';
+        const turn = tr.rate === null ? `Jumps ${tr.angle.toFixed(1)}°` : `Turns ${tr.angle.toFixed(1)}° in ${sel.slew} s · ${tr.rate.toFixed(2)}°/s on average`;
+        return `<span class="chip dim" title="At its start, from the attitude before it. Kinematics only: real wheels may not turn this fast.">${turn}</span>${n ? ` <span class="chip warn">${esc(n)}</span>` : ''}`;
+      })));
   }
-  kids.push(tip('Each change slews from the attitude before it to its own over the slew time; both are worked out at every moment, so scrubbing works. Kinematics only: no wheels or torque limits. Times are UTC, so they stay put when the epoch moves. Click a row to edit it in <b>Attitude guidance</b>.'));
+  kids.push(tip('Each change slews from the attitude before it to its own over the slew time; both are worked out at every moment, so scrubbing works. Kinematics only: no wheels or torque limits. Times are UTC, so they stay put when the epoch moves. Click a row to edit it in <b>Attitude guidance</b>; a typed start applies on Enter.'));
   return card('Mode schedule', sched.length ? sched.length + (sched.length === 1 ? ' change' : ' changes') : 'none', ...kids);
 }
 
