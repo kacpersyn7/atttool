@@ -6,7 +6,7 @@ import { deg, esc, fmt, hhmm, tPlus } from '../../ui/format.js';
 import { TYPES } from '../../spacecraft/componentTypes.js';
 import { activeItem, selectSpacecraft } from '../../spacecraft/library.js';
 import { MAX_CHANGES, activeScenario, addScenario, deleteScenario, duplicateScenario, exportScenario, importScenario, newScenarioOrbit, renameScenario, selectScenario } from '../../sim/scenarioLibrary.js';
-import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, DATE_MAX, DATE_MIN, PRESETS, SCRUB_SPANS, clampTime, currentDate, epochDate, farFromEpoch, formatEpoch, ltanOf, orbitElements, scrubCancelResume, scrubEnd, scrubHold, scrubKey, scrubPress, scrubSpan, scrubWindow, setCurrentDate, setEpoch, switchDefinition, restartFromState, definitionError, tleOf } from '../../sim/scenario.js';
+import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, DATE_MAX, DATE_MIN, PRESETS, SCRUB_SPANS, clampTime, currentDate, epochDate, farFromEpoch, formatEpoch, ltanOf, orbitElements, scrubCancelResume, scrubEnd, scrubHold, scrubKey, scrubPress, scrubSpan, scrubWindow, setCurrentDate, setEpoch, switchDefinition, restartFromState, definitionError, tleOf, parseEpoch } from '../../sim/scenario.js';
 import { copyText, showModal, closeModal, toast } from '../../ui/overlay.js';
 import { payloadComp, scheduleOrder } from '../../sim/guidance.js';
 import { addChange, deleteChange, setChangeMode, setChangeStart, takeRotation } from '../../sim/schedule.js';
@@ -72,14 +72,14 @@ export function orbitPanel(ctx) {
   if (g.mode === 'target') modeCtl.push(
     h('div', { class: 'grid2' }, numCell('tlat', 'Latitude °', () => g.tgtLat, x => { g.tgtLat = x; save(); }, .1, 2), numCell('tlon', 'Longitude °', () => g.tgtLon, x => { g.tgtLon = x; save(); }, .1, 2), altCell('talt', 'Height m')),
     selectRow({ id: 'tgtComp', label: 'Pointing axis', options: S.sc.comps.filter(c => TYPES[c.type].cone).map(c => [c.id, c.name]), get: () => (payloadComp(S) || {}).id, set: v => { o.tgtComp = v; save(); } }),
-    h('div', { class: 'status' }, liveText(() => { const cur = ctx.cur(); return !cur || !cur.flag ? '' : cur.flag.below ? `<span class="chip dim">Target below horizon · holding nadir</span>` : `<span class="chip ok">Tracking · elevation ${deg(cur.flag.elev).toFixed(1)}°</span>`; })),
+    h('div', { class: 'status' }, liveText(() => { const cur = ctx.cur(); if (cur && cur.g !== g && sched.length) return `<span class="chip dim">Not flying now: ${g === o ? 'a change is' : 'it starts at ' + esc(showUTC(g.start))}</span>`; return !cur || !cur.flag ? '' : cur.flag.below ? `<span class="chip dim">Target below horizon · holding nadir</span>` : `<span class="chip ok">Tracking · elevation ${deg(cur.flag.elev).toFixed(1)}°</span>`; })),
     tip('Boresight → line of sight to the ground point, body +X kept toward velocity. Watch the body rate rise near closest approach.'));
   if (g.mode === 'inertial' && g === o) modeCtl.push(tip('Body frame fixed in ECI using the attitude from <b>Rotation Lab</b> (reference R = ECI). Watch the Sun and Earth sweep around the spacecraft once per orbit.'));
   if (g.mode === 'inertial' && g !== o) modeCtl.push(
     tip('This change keeps the attitude Rotation Lab had when it was made inertial (reference R = ECI). Set another one there, then take it here.'),
     h('div', { class: 'btns' }, h('button', { class: 'btn', onclick: () => { takeRotation(g, S.rot.q); save(); toast('Rotation Lab attitude taken'); } }, 'Take the Rotation Lab attitude')));
   out.push(scheduleCard(ctx, o));
-  out.push(card('Attitude guidance', g === o ? null : 'change at ' + g.start.replace('T', ' '),
+  out.push(card('Attitude guidance', g === o ? null : 'change at ' + showUTC(g.start),
     sched.length ? h('p', { class: 'tip', style: 'margin:0' }, g === o ? 'Editing the initial settings, flown before the first change.' : 'Editing the change selected in Mode schedule.') : null,
     selectRow({ id: 'mode', label: 'Mode', options: [['offsets', 'Nominal attitude + offsets'], ['target', 'Ground target tracking'], ['sun', 'Sun pointing'], ['inertial', 'Inertial (from Rotation Lab)']], get: () => g.mode, set: v => { if (g === o) o.mode = v; else setChangeMode(g, v, S.rot.q); save(); ctx.renderRail(); } }),
     selectRow({ id: 'refFrame', label: 'Shown orbital frame', options: Object.entries(ENV.ORBIT_FRAMES).map(([k, f]) => [k, f.label]), get: () => o.refFrame, set: v => { o.refFrame = v; save(); ctx.renderRail(); } }),
@@ -89,10 +89,11 @@ export function orbitPanel(ctx) {
     g.mode === 'target' ? null : h('div', { class: 'grid2' }, numCell('ptlat', 'Target lat °', () => g.tgtLat, x => { g.tgtLat = x; save(); }, .1, 2), numCell('ptlon', 'Target lon °', () => g.tgtLon, x => { g.tgtLon = x; save(); }, .1, 2), altCell('ptalt', 'Target height m')),
     liveText(() => {
       const cur = ctx.cur(); if (!cur) return ''; const p = pointing(S, cur); if (!p) return '';
-      if (!p.tgtUp) return `<span class="chip dim">Target below horizon · elevation ${deg(p.elev).toFixed(1)}°</span>`;
+      const note = sched.length && cur.g !== g ? `<p class="tip" style="margin:0 0 4px">Now flying: ${cur.seg ? 'the change at ' + esc(showUTC(cur.g.start)) : 'the initial settings'}. The numbers are for that target.</p>` : '';
+      if (!p.tgtUp) return note + `<span class="chip dim">Target below horizon · elevation ${deg(p.elev).toFixed(1)}°</span>`;
       const kmT = x => x === null ? '—' : Math.abs(x) < 1 ? fmt(x * 1000, 0) + ' m' : fmt(x, 2) + ' km';
       const row = (k, val) => `<div style="display:flex;justify-content:space-between"><span>${k}</span><span style="font-family:var(--f-mono)">${val}</span></div>`;
-      return `<div style="display:flex;flex-direction:column;gap:4px">${row('Angle error', fmt(p.ang, 3) + '°')}${row('along · cross', fmt(p.along, 3) + '° · ' + fmt(p.cross, 3) + '°')}${row('Ground error', kmT(p.gnd))}${row('along · cross', kmT(p.gAlong) + ' · ' + kmT(p.gCross))}${row('Target elevation', deg(p.elev).toFixed(1) + '°')}${p.h !== 0 && p.relief !== null ? row('Relief displacement', kmT(p.relief)) : ''}</div>`;
+      return note + `<div style="display:flex;flex-direction:column;gap:4px">${row('Angle error', fmt(p.ang, 3) + '°')}${row('along · cross', fmt(p.along, 3) + '° · ' + fmt(p.cross, 3) + '°')}${row('Ground error', kmT(p.gnd))}${row('along · cross', kmT(p.gAlong) + ' · ' + kmT(p.gCross))}${row('Target elevation', deg(p.elev).toFixed(1) + '°')}${p.h !== 0 && p.relief !== null ? row('Relief displacement', kmT(p.relief)) : ''}</div>`;
     }),
     tip('Boresight minus target. <b>along</b> > 0: looking ahead of the target along the ground track; <b>cross</b> > 0: looking to the right of it. Ground error is measured from the target to where the boresight hits the Earth (at the height of the target). In <b>Ground target tracking</b> mode it is zero by construction (no attitude errors yet). A target with a height is seen shifted from the point under it (hollow marker in the payload view): that shift is the relief displacement.')));
 
@@ -129,6 +130,8 @@ const refused = () => toast(`Enter a date from ${DATE_MIN.slice(0, 4)} to ${DATE
 /* ---------------- Mode schedule: changes of guidance mode at set times, with slews ---------------- */
 let selChange = null; // id of the change the guidance controls edit; null: the initial settings
 const MODE_SHORT = { offsets: 'Nominal', target: 'Target', sun: 'Sun', inertial: 'Inertial' };
+/** A start for display: always with seconds, without fractions. */
+const showUTC = str => { const d = parseEpoch(str); return d ? d.toISOString().slice(0, 19).replace('T', ' ') : str; };
 
 function scheduleCard(ctx, o) {
   const sched = o.schedule || [], sel = sched.find(c => c.id === selChange) || null;
@@ -141,15 +144,16 @@ function scheduleCard(ctx, o) {
     liveText(() => {
       const cur = ctx.cur(), now = cur && cur.seg ? cur.seg.id : '';
       const row = (id, start, mode, slew) => `<button type="button" class="srow${(selChange || '') === id ? ' on' : ''}" data-id="${esc(id)}" title="${id ? 'Edit this change and go to its start' : 'Edit the initial settings'}"><span class="dot${now === id ? ' now' : ''}"></span><span class="st">${start}</span><span>${MODE_SHORT[mode] || ''}</span><span class="sl">${slew}</span></button>`;
-      return row('', 'Initial', o.mode, '') + scheduleOrder(sched).map(({ i }) => { const c = sched[i]; return row(c.id, esc(c.start.replace('T', ' ')), c.mode, c.slew + ' s'); }).join('');
+      return row('', 'Initial', o.mode, '') + scheduleOrder(sched).map(({ i }) => { const c = sched[i]; return row(c.id, esc(showUTC(c.start)), c.mode, c.slew + ' s'); }).join('');
     }, 'sched'));
   const kids = [list,
     h('div', { class: 'status' }, liveText(() => { const cur = ctx.cur(); if (!cur) return ''; const s = cur.seg; const m = MODE_SHORT[cur.g.mode];
       return s && s.slew !== null ? `<span class="chip warn">Slewing into ${m} · ${(100 * s.slew).toFixed(0)} %</span>` : `<span class="chip ok">Now: ${m}${s ? '' : ' (initial)'}</span>`; })),
     h('div', { class: 'btns' },
-      h('button', { class: 'btn', title: 'A change at the current time, starting from the attitude flown now', onclick: () => {
+      h('button', { class: 'btn', title: 'A change at the current time (or when the slew under way ends), starting from the attitude flown now', onclick: () => {
         const cur = ctx.cur(), c = addChange(o, cur ? cur.g : o, S.rot.q);
         if (!c) { toast(`The schedule holds up to ${MAX_CHANGES} changes, within ${DATE_MIN.slice(0, 4)} to ${DATE_MAX.slice(0, 4)}`); return; }
+        if (cur && cur.seg && cur.seg.slew !== null) toast('Added when the slew under way ends, at ' + showUTC(c.start));
         selChange = c.id; save(); ctx.renderRail(); } }, '+ Change now'),
       sel ? confirmButton('Delete change', 'Click again to delete', () => { deleteChange(o, sel.id); selChange = null; save(); ctx.renderRail(); }) : null)];
   if (sel) {

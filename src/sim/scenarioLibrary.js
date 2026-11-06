@@ -119,9 +119,9 @@ export function sanitizeScenario(orbit, defaults) {
   const src = orbit && typeof orbit === 'object' ? orbit : {};
   const o = Object.fromEntries(SCENARIO_KEYS.map(k => [k, VALID[k](src[k]) ? src[k] : defaults[k]]));
   if (o.def === 'rv' && !(vec3(o.r) && vec3(o.v))) o.def = 'elements'; // the state vector fields need all six numbers
-  o.schedule = cleanSchedule(o.schedule, o);
   const q = src.inertialQ;
   if (q && [q.w, q.x, q.y, q.z].every(isNum) && AM.q.norm(q) > 1e-9) o.inertialQ = AM.q.unit({ w: q.w, x: q.x, y: q.y, z: q.z });
+  o.schedule = cleanSchedule(o.schedule, o, o.inertialQ);
   return o;
 }
 
@@ -130,16 +130,18 @@ export const MAX_CHANGES = 100;
 const quat = q => q && typeof q === 'object' && [q.w, q.x, q.y, q.z].every(isNum) && AM.q.norm(q) > 1e-9;
 /**
  * Schedule changes from untrusted JSON: a change needs a valid start and mode, or it is dropped; other
- * settings that fail take the scenario's own (`base`); slew 0..3600 s, else 60. Ids are made unique.
+ * settings that fail take the scenario's own (`base`); slew 0..3600 s, else 60. Ids are made unique. An inertial
+ * change without a valid attitude gets `q0` (the scenario's inertial attitude), else the identity.
  */
-export function cleanSchedule(x, base) {
+export function cleanSchedule(x, base, q0 = null) {
   if (!Array.isArray(x)) return [];
   const ids = new Set(), out = [];
   for (const c of x.slice(0, MAX_CHANGES)) {
     if (!c || typeof c !== 'object' || !isStr(c.start) || !validDate(c.start) || !VALID.mode(c.mode)) continue;
-    const seg = { id: isStr(c.id) && c.id && !ids.has(c.id) ? c.id.slice(0, 40) : newId(), start: c.start, slew: inRange(0, 3600)(c.slew) ? c.slew : 60 };
+    const id = isStr(c.id) ? c.id.slice(0, 40) : '';
+    const seg = { id: id && !ids.has(id) ? id : newId(), start: c.start, slew: inRange(0, 3600)(c.slew) ? c.slew : 60 };
     for (const k of SEGMENT_KEYS) seg[k] = VALID[k](c[k]) ? c[k] : base[k];
-    if (seg.mode === 'inertial' && quat(c.q)) seg.q = AM.q.unit({ w: c.q.w, x: c.q.x, y: c.q.y, z: c.q.z });
+    if (seg.mode === 'inertial') { const q = quat(c.q) ? c.q : q0 || AM.q.id(); seg.q = AM.q.unit({ w: q.w, x: q.x, y: q.y, z: q.z }); }
     ids.add(seg.id); out.push(seg);
   }
   return out;

@@ -4,7 +4,7 @@
  */
 import { newId } from '../spacecraft/component.js';
 import { SEGMENT_KEYS } from './guidance.js';
-import { currentDate, formatEpoch, validDate } from './scenario.js';
+import { currentDate, formatEpoch, parseEpoch, validDate } from './scenario.js';
 import { MAX_CHANGES } from './scenarioLibrary.js';
 
 /** Default slew time of a new change (s). */
@@ -14,12 +14,15 @@ export const DEFAULT_SLEW = 60;
 const qCopy = q => ({ w: q.w, x: q.x, y: q.y, z: q.z });
 
 /**
- * Add a change at the current time (whole seconds) that starts with the settings `g` flying now (the orbit
- * settings or a change; an inertial one keeps its attitude, else Rotation Lab's rotQ). @returns the change, or
- * null if the schedule is full or the time is outside the date limits.
+ * Add a change that starts with the settings `g` flying now (the orbit settings or a change; an inertial one keeps
+ * its attitude, else Rotation Lab's rotQ), so nothing moves until it is edited. It starts at the current time
+ * (whole seconds), or when the slew into `g` ends if that is still under way. @returns the change, or null if the
+ * schedule is full or the time is outside the date limits.
  */
 export function addChange(o, g, rotQ) {
-  const sched = o.schedule || [], start = formatEpoch(new Date(Math.floor(currentDate(o).getTime() / 1000) * 1000));
+  const sched = o.schedule || [], now = currentDate(o).getTime(), d = g !== o ? parseEpoch(g.start) : null;
+  const slewEnd = d ? d.getTime() + Math.max(0, +g.slew || 0) * 1000 : -Infinity;
+  const start = formatEpoch(new Date((now < slewEnd ? Math.ceil(slewEnd / 1000) : Math.floor(now / 1000)) * 1000));
   if (sched.length >= MAX_CHANGES || !validDate(start)) return null;
   const c = { id: newId(), start, slew: DEFAULT_SLEW };
   for (const k of SEGMENT_KEYS) c[k] = g[k];

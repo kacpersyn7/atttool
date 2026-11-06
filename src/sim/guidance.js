@@ -29,10 +29,10 @@ export const MODES = ['offsets', 'target', 'sun', 'inertial'];
 /** Settings a schedule change keeps. The payload part (tgtComp) and the shown frame stay scenario-wide. */
 export const SEGMENT_KEYS = ['mode', 'roll', 'pitch', 'yaw', 'sunAxis', 'sunSec', 'sunSecAxis', 'tgtLat', 'tgtLon', 'tgtAlt'];
 
-/** Body axis from a spec: '+X', '-Z', or 'comp:<id>' (that component's +Z; +Z if the part is not on this spacecraft). */
-export function axisSpec(spec, comps) {
+/** Body axis from a spec: '+X', '-Z', or 'comp:<id>' (that component's +Z; `missing` if the part is not on this spacecraft). */
+export function axisSpec(spec, comps, missing = [0, 0, 1]) {
   if (!spec) return [0, 0, 1];
-  if (spec.startsWith('comp:')) { const c = comps.find(c => 'comp:' + c.id === spec); return c ? compAxis(c) : [0, 0, 1]; }
+  if (spec.startsWith('comp:')) { const c = comps.find(c => 'comp:' + c.id === spec); return c ? compAxis(c) : missing; }
   const s = spec[0] === '-' ? -1 : 1, k = 'XYZ'.indexOf(spec[1]); const a = [0, 0, 0]; a[k] = s; return a;
 }
 
@@ -55,7 +55,8 @@ export function scheduleOrder(sched) {
 function modeAttitude(state, g, x) {
   const o = state.orbit;
   if (g.mode === 'sun') {
-    const b1 = axisSpec(g.sunAxis, state.sc.comps); let b2 = axisSpec(g.sunSecAxis || '+X', state.sc.comps);
+    // a part that is gone falls back as the spacecraft's defaults do (spacecraft/library.js AXES): −Z on the Sun, +X secondary
+    const b1 = axisSpec(g.sunAxis, state.sc.comps, [0, 0, -1]); let b2 = axisSpec(g.sunSecAxis || '+X', state.sc.comps, [1, 0, 0]);
     if (AM.v.norm(AM.v.cross(b1, b2)) < 1e-3) b2 = Math.abs(b1[0]) < .9 ? [1, 0, 0] : [0, 1, 0];
     return { CBI: AM.triad(b1, b2, x.sun, x.refVec(g.sunSec)), flag: null };
   }
@@ -70,8 +71,25 @@ function modeAttitude(state, g, x) {
   return { CBI: AM.m.mul(AM.euler2C('321', [(g.yaw || 0) * D2R, (g.pitch || 0) * D2R, (g.roll || 0) * D2R]), x.CNI), flag: null }; // offsets
 }
 
-/** Attitude blended from Ca (f = 0) to Cb (f = 1) along the shortest rotation, at a constant rate in f. */
-export function blendAttitude(Ca, Cb, f) { return AM.q2C(AM.q.slerp(AM.C2q(Ca), AM.C2q(Cb), f)); }
+/** Quaternion of a rotation matrix with a fixed sign: w > 0, or for a half turn (w ≈ 0) its largest vector component > 0. */
+function signedQ(R) {
+  const q = AM.C2q(R), w = Math.abs(q.w) > 1e-9 ? q.w : [q.x, q.y, q.z].reduce((a, b) => Math.abs(b) > Math.abs(a) ? b : a, 0);
+  return w < 0 ? AM.q.neg(q) : q;
+}
+/** The rotation from attitude Ca to Cb (C_b←a = Cb·Caᵀ) as a quaternion, on the side of `ref` (default: the short way). */
+export function relativeQ(Ca, Cb, ref = null) {
+  const q = signedQ(AM.m.mul(Cb, AM.m.T(Ca)));
+  if (!ref) return q;
+  return q.w * ref.w + q.x * ref.x + q.y * ref.y + q.z * ref.z < 0 ? AM.q.neg(q) : q;
+}
+/**
+ * Attitude blended from Ca (f = 0) to Cb (f = 1), turning about one axis at a constant rate in f. `ref` (from
+ * relativeQ at the start of the slew) fixes which way it turns, so a half turn doesn't flip side from one moment to the next.
+ */
+export function blendAttitude(Ca, Cb, f, ref = null) {
+  const q = relativeQ(Ca, Cb, ref);
+  return AM.m.mul(AM.q2C(AM.q.slerp(AM.q.id(), q, f)), Ca);
+}
 
 /**
  * Full geometric state at t seconds after epoch.
@@ -84,34 +102,39 @@ export function blendAttitude(Ca, Cb, f) { return AM.q2C(AM.q.slerp(AM.C2q(Ca), 
  *   else { i (index in the schedule), id, slew (0..1 while slewing into it, else null) }.
  */
 export function attitudeAt(state, t, E = orbitElements(state.orbit)) {
-  const o = state.orbit;
-  const date = new Date(epochDate(o).getTime() + t * 1000);
-  const st = ENV.propagate(E, t, o.j2);
-  const sun = ENV.sunECI(date);
-  const CVI = ENV.vvlh(st.r, st.v);
-  const CRI = ENV.orbitFrame(o.refFrame, st.r, st.v);
-  const al = state.sc.align || defaultAlign();
-  const CNI = AM.m.mul(alignMatrix(al), ENV.orbitFrame(al.ref, st.r, st.v));
-  const nadirI = AM.v.unit(AM.v.scale(st.r, -1)), hI = AM.v.unit(AM.v.cross(st.r, st.v));
-  const refVec = k => k === 'nadir' ? nadirI : k === 'normal' ? hI : k === 'antinormal' ? AM.v.scale(hI, -1) : k === 'velocity' ? AM.v.unit(st.v) : k === 'zenith' ? AM.v.scale(nadirI, -1) : nadirI;
-  const x = { date, st, sun, CNI, refVec };
-
-  const sched = o.schedule, order = scheduleOrder(sched), now = date.getTime();
+  const o = state.orbit, e0 = epochDate(o).getTime(), now = e0 + t * 1000;
+  const x = geometry(state, E, now);
+  const sched = o.schedule, order = scheduleOrder(sched);
   let p = -1; for (let j = 0; j < order.length; j++) if (order[j].ms <= now) p = j;
-  // attitude of change j (-1: the initial settings) at this t; a change still slewing blends from the one before
-  const att = j => {
-    const g = j < 0 ? o : sched[order[j].i], a = modeAttitude(state, g, x);
+  const geo = new Map([[now, x]]), at = ms => { if (!geo.has(ms)) geo.set(ms, geometry(state, E, ms)); return geo.get(ms); };
+  // attitude of change j (-1: the initial settings) at UTC ms; a change still slewing blends from the one before
+  const att = (j, ms) => {
+    const g = j < 0 ? o : sched[order[j].i], a = modeAttitude(state, g, at(ms));
     if (j < 0) return a;
-    const dur = Math.max(0, +g.slew || 0) * 1000, f = dur ? (now - order[j].ms) / dur : 1;
+    const t0 = order[j].ms, dur = Math.max(0, +g.slew || 0) * 1000, f = dur ? (ms - t0) / dur : 1;
     if (f >= 1) return a; // ends exactly on the new attitude
-    return { CBI: blendAttitude(att(j - 1).CBI, a.CBI, f), flag: a.flag, slew: f };
+    const from = att(j - 1, ms).CBI;
+    if (ms === t0) return { CBI: from, flag: a.flag, slew: 0 };
+    const ref = relativeQ(att(j - 1, t0).CBI, modeAttitude(state, g, at(t0)).CBI); // which way it turns: fixed at the start
+    return { CBI: blendAttitude(from, a.CBI, f, ref), flag: a.flag, slew: f };
   };
-  const r = att(p), g = p < 0 ? o : sched[order[p].i];
+  const r = att(p, now), g = p < 0 ? o : sched[order[p].i];
   const seg = p < 0 ? null : { i: order[p].i, id: g.id, slew: r.slew ?? null };
-
+  const { date, st, sun, CNI } = x;
+  const CVI = ENV.vvlh(st.r, st.v), CRI = ENV.orbitFrame(o.refFrame, st.r, st.v);
   const ecl = ENV.eclipse(st.r, sun);
   const moon = AM.v.unit(AM.v.sub(ENV.moonECI(date), st.r)), moonUp = !ENV.behindEarth(st.r, moon);
   return { t, date, st, sun, moon, moonUp, CRI, CVI, CNI, CBI: r.CBI, ecl, flag: r.flag, g, seg };
+}
+
+/** What the guidance modes need at UTC ms: date, orbit state, Sun, nominal attitude, reference directions. */
+function geometry(state, E, ms) {
+  const o = state.orbit, date = new Date(ms), st = ENV.propagate(E, (ms - epochDate(o).getTime()) / 1000, o.j2);
+  const sun = ENV.sunECI(date), al = state.sc.align || defaultAlign();
+  const CNI = AM.m.mul(alignMatrix(al), ENV.orbitFrame(al.ref, st.r, st.v));
+  const nadirI = AM.v.unit(AM.v.scale(st.r, -1)), hI = AM.v.unit(AM.v.cross(st.r, st.v));
+  const refVec = k => k === 'nadir' ? nadirI : k === 'normal' ? hI : k === 'antinormal' ? AM.v.scale(hI, -1) : k === 'velocity' ? AM.v.unit(st.v) : k === 'zenith' ? AM.v.scale(nadirI, -1) : nadirI;
+  return { date, st, sun, CNI, refVec };
 }
 
 /** Body angular rate (rad/s, body axes) by finite difference over 1 s. */

@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import * as AM from '../src/core/attitude.js';
 import * as ENV from '../src/env/index.js';
 import { close, closeArr } from './helpers.js';
-import { attitudeAt, bodyRate, blendAttitude, scheduleOrder } from '../src/sim/guidance.js';
+import { attitudeAt, bodyRate, blendAttitude, relativeQ, scheduleOrder } from '../src/sim/guidance.js';
 import { addChange, deleteChange, setChangeMode, setChangeStart, takeRotation, DEFAULT_SLEW } from '../src/sim/schedule.js';
 import { computeTimeline, timelineKey } from '../src/sim/timeline.js';
 import { pointing } from '../src/sim/payload.js';
-import { applyPreset, currentDate, epochDate, restartFromState, setEpoch, targetECEF } from '../src/sim/scenario.js';
+import { applyPreset, currentDate, epochDate, parseEpoch, restartFromState, setEpoch, targetECEF } from '../src/sim/scenario.js';
 import { MAX_CHANGES, addScenario, cleanSchedule, exportScenario, importScenario, scenarioData, selectScenario } from '../src/sim/scenarioLibrary.js';
 import { defaultState, migrate } from '../src/state/store.js';
 
@@ -63,6 +63,32 @@ test('schedule: a change during the slew of the one before blends from it; the a
   close(angleBetween(attitudeAt(s, 690).CBI, AM.q2C(qz(-30))), 0, 0, 'ends on its own attitude');
 });
 
+test('schedule: a half turn (Sun on −Z, then on +Z) turns one way all through the slew, at 180°/60 s', () => {
+  const s = fresh(); Object.assign(s.orbit, { mode: 'sun', sunAxis: '-Z', sunSecAxis: '+X', sunSec: 'nadir' });
+  s.orbit.schedule = [{ id: 'h', start: at(s, 600), slew: 60, mode: 'sun', sunAxis: '+Z', sunSecAxis: '+X', sunSec: 'nadir' }];
+  let prev = attitudeAt(s, 600).CBI, worst = 0;
+  for (let t = 600.5; t <= 660; t += 0.5) { const C = attitudeAt(s, t).CBI; worst = Math.max(worst, angleBetween(C, prev)); prev = C; }
+  assert.ok(worst < 3 * 0.5 + 0.05, `largest step ${worst}° per 0.5 s (3°/s plus the Sun and nadir drift)`);
+  const C = attitudeAt(s, 660).CBI; close(AM.v.dot(AM.m.mulv(C, attitudeAt(s, 660).sun), [0, 0, 1]), 1, 1e-9, 'ends with +Z on the Sun');
+});
+
+test('schedule: a slew between two moving attitudes (Sun pointing into nominal) is continuous and ends on the nominal one', () => {
+  const s = fresh(); Object.assign(s.orbit, { mode: 'sun', sunAxis: '-Z', sunSecAxis: '+X', sunSec: 'nadir' });
+  s.orbit.schedule = [{ id: 'n', start: at(s, 900), slew: 120, mode: 'offsets', roll: 0, pitch: 0, yaw: 0 }];
+  const full = angleBetween(attitudeAt(s, 900).CBI, attitudeAt({ ...s, orbit: { ...s.orbit, mode: 'offsets', roll: 0, pitch: 0, yaw: 0, schedule: [] } }, 900).CBI);
+  let prev = attitudeAt(s, 900).CBI, worst = 0;
+  for (let t = 901; t <= 1020; t += 1) { const C = attitudeAt(s, t).CBI; worst = Math.max(worst, angleBetween(C, prev)); prev = C; }
+  assert.ok(worst < full / 120 + 0.2, `largest step ${worst}°/s for a ${full.toFixed(1)}° slew`);
+  assert.deepEqual(attitudeAt(s, 1020).CBI, attitudeAt(s, 1020).CNI, 'zero offsets: exactly the nominal attitude');
+});
+
+test('relativeQ: the short way, unless the reference picks the other side of a half turn', () => {
+  const A = AM.q2C(qz(0)), B = AM.q2C(qz(180)), q = relativeQ(A, B), r = relativeQ(A, B, AM.q.neg(q));
+  close(Math.abs(q.z), 1, 1e-12); assert.equal(Math.sign(r.z), -Math.sign(q.z), 'the side of the reference');
+  close(relativeQ(A, AM.q2C(qz(-170))).w, Math.cos(85 * D2R), 1e-12, '170° the short way, not 190°');
+  closeArr(blendAttitude(A, B, 1, q), B, 1e-12);
+});
+
 test('schedule: list order does not matter; equal starts: the later in the list wins; unreadable starts are skipped', () => {
   const s = inertialPair(0); const e = { start: at(s, 300), slew: 0, mode: 'inertial' };
   s.orbit.schedule = [{ ...e, id: 'late', start: at(s, 900), q: qz(20) }, { ...e, id: 'x', q: qz(5) }, { ...e, id: 'y', q: qz(7) }, { ...e, id: 'bad', start: 'soon', q: qz(99) }];
@@ -89,9 +115,9 @@ test('schedule: each change has its own target; pointing and the guidance use th
   closeArr(pointing(s, attitudeAt(s, 700)).tgt, ENV.ecef2eci(targetECEF(s.orbit), attitudeAt(s, 700).date), 1e-9, 'before it: the initial target');
 });
 
-test('schedule: a Sun axis naming a part that is not on this spacecraft falls back to +Z instead of failing', () => {
+test('schedule: a Sun axis naming a part that is not on this spacecraft falls back like the spacecraft defaults (−Z on the Sun)', () => {
   const s = inertialPair(0); s.orbit.schedule[0] = { id: 'a', start: at(s, 600), slew: 0, mode: 'sun', sunAxis: 'comp:gone', sunSecAxis: '+X', sunSec: 'nadir' };
-  const A = attitudeAt(s, 700); assert.ok(A.CBI.flat().every(Number.isFinite)); close(AM.v.dot(AM.m.mulv(A.CBI, A.sun), [0, 0, 1]), 1, 1e-9, '+Z on the Sun');
+  const A = attitudeAt(s, 700); assert.ok(A.CBI.flat().every(Number.isFinite)); close(AM.v.dot(AM.m.mulv(A.CBI, A.sun), [0, 0, -1]), 1, 1e-9, '−Z on the Sun, as validateAxes resets the initial settings');
 });
 
 test('schedule: the timeline shows a mode band with the slews and recomputes when the schedule changes', () => {
@@ -113,6 +139,9 @@ test('schedule edits: a change starts from what flies now, at whole seconds; edi
   const arr = o.schedule; assert.equal(setChangeStart(o, c.id, '2300-01-01T00:00'), false); assert.equal(o.schedule, arr);
   assert.equal(setChangeStart(o, c.id, at(s, 50)), true); assert.notEqual(o.schedule, arr); assert.equal(o.schedule.find(x => x.id === c.id).start, at(s, 50));
   assert.equal(deleteChange(o, c.id), true); assert.equal(deleteChange(o, c.id), false); assert.equal(o.schedule.length, 1);
+  // during a slew the new change starts when the slew ends, so the turn already under way stays as it was
+  const p = inertialPair(); p.orbit.t = 620; const A = attitudeAt(p, 620), want = attitudeAt(p, 640).CBI, wantRate = Math.hypot(...bodyRate(p, 625));
+  const late = addChange(p.orbit, A.g, p.rot.q); assert.equal(parseEpoch(late.start).getTime(), parseEpoch(at(p, 660)).getTime(), 'at the end of the slew'); closeArr(attitudeAt(p, 640).CBI, want, 1e-12); close(Math.hypot(...bodyRate(p, 625)), wantRate, 1e-12);
   o.schedule = Array.from({ length: MAX_CHANGES }, (_, i) => ({ id: 'n' + i, start: at(s, i), slew: 0, mode: 'offsets' })); assert.equal(addChange(o, o, s.rot.q), null, 'full');
 });
 
@@ -130,4 +159,7 @@ test('schedule in scenarios: kept per scenario, never shared, cleaned on import,
   const c = cleanSchedule([{ id: 'x', start: at(s, 1), mode: 'sun', slew: 9999, roll: 'a' }, { id: 'x', start: at(s, 2), mode: 'inertial', q: { w: 2, x: 0, y: 0, z: 0 } }, { start: 'soon', mode: 'sun' }, { start: at(s, 3), mode: 'warp' }], s.orbit);
   assert.equal(c.length, 2); assert.equal(c[0].slew, 60); assert.equal(c[0].roll, s.orbit.roll); assert.notEqual(c[1].id, 'x'); close(AM.q.norm(c[1].q), 1, 1e-12);
   assert.equal(cleanSchedule(Array.from({ length: 300 }, (_, i) => ({ start: at(s, i), mode: 'sun' })), s.orbit).length, MAX_CHANGES);
+  const long = cleanSchedule(['1', '2'].map(k => ({ id: 'a'.repeat(40) + k, start: at(s, 5), mode: 'sun' })), s.orbit); assert.notEqual(long[0].id, long[1].id, 'unique after trimming');
+  const qi = cleanSchedule([{ start: at(s, 5), mode: 'inertial', q: 'x' }], s.orbit, qz(30)); assert.deepEqual(qi[0].q, AM.q.unit(qz(30)), 'the scenario inertial attitude');
+  assert.deepEqual(cleanSchedule([{ start: at(s, 5), mode: 'inertial' }], s.orbit)[0].q, AM.q.id(), 'else the identity: never Rotation Lab at the moment');
 });

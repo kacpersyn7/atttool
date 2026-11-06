@@ -46,7 +46,7 @@ export function payloadCI(c, CBI) { return m.mul(AM.q2C(c.q), CBI); }
  */
 export function pointing(state, A, CBI = A.CBI) {
   const c = payloadComp(state); if (!c) return null;
-  const o = (A.seg && state.orbit.schedule && state.orbit.schedule[A.seg.i]) || state.orbit, r = A.st.r; // the settings in force at A
+  const o = (A.seg && (state.orbit.schedule || []).find(c => c.id === A.seg.id)) || state.orbit, r = A.st.r; // the settings in force at A
   const CCI = payloadCI(c, CBI), bore = CCI[2];
   const h = targetHeight(o), Rt = ENV.RE + h;
   const hit = ENV.rayEarth(r, bore), slant = hit ? v.norm(v.sub(hit, r)) : null;
