@@ -389,7 +389,7 @@ test('ground-relative velocity: equatorial prograde circular orbit loses ω_E·r
 });
 
 /* ---------- current time, separate from the epoch (#47) ---------- */
-import { T_MAX, advanceTime, scrubCancelResume, scrubEnd, scrubHold, scrubKey, scrubPress, scrubSpan, clampTime, currentDate, farFromEpoch, scrubRelease, scrubWindow, setCurrentDate, setEpoch } from '../src/sim/scenario.js';
+import { T_MAX, advanceTime, scrubPage, scrubCancelResume, scrubEnd, scrubHold, scrubKey, scrubPress, scrubSpan, clampTime, currentDate, farFromEpoch, scrubRelease, scrubWindow, setCurrentDate, setEpoch } from '../src/sim/scenario.js';
 import { sanitizeScenario } from '../src/sim/scenarioLibrary.js';
 import { plotWindow } from '../src/sim/signals.js';
 
@@ -480,13 +480,27 @@ test('time: a saved epoch outside the typed limits still means what it says', ()
   assert.equal(sanitizeScenario({ epoch: '1850-01-01T00:00' }, o).epoch, '1850-01-01T00:00');
 });
 
-test('time: the slider window holds t, follows it out, and moves on when released at an end', () => {
+test('time: the slider shows pages counted from the epoch; the start and the end of a page behave alike', () => {
   const S3 = 3 * DAY;
-  assert.equal(scrubWindow(0, 0, S3), 0); assert.equal(scrubWindow(S3, 0, S3), 0);
-  assert.equal(scrubWindow(S3 + 1, 0, S3), S3 + 1 - S3 / 2);
-  assert.equal(scrubWindow(-1, 0, S3), -1 - S3 / 2); assert.equal(scrubWindow(100, 50, S3), 50);
-  assert.equal(scrubRelease(1.5 * DAY, 0, S3), 0); assert.equal(scrubRelease(S3, 0, S3), 1.5 * DAY); assert.equal(scrubRelease(0, 0, S3), -1.5 * DAY);
-  assert.equal(scrubRelease(3000, 0, 5700), 0); assert.equal(scrubRelease(5700, 0, 5700), 2850);
+  assert.equal(scrubWindow(0, NaN, S3), 0, 'T+0 at the left end, as on any page'); assert.equal(scrubWindow(S3, 0, S3), 0, 'ends included');
+  assert.equal(scrubWindow(S3 + 1, 0, S3), S3, 'next page'); assert.equal(scrubWindow(-1, 0, S3), -S3, 'page before the epoch');
+  assert.equal(scrubWindow(10 * DAY, 0, S3), 9 * DAY); assert.equal(scrubWindow(0, 9 * DAY, S3), 0, 'back to T+0: the first page again, not centred');
+  assert.equal(scrubWindow(100, 50, S3), 50, 'a window that holds t stays');
+  assert.equal(scrubRelease(1.5 * DAY, 0, S3), 0); assert.equal(scrubRelease(S3, 0, S3), S3, 'released at the right end: next page'); assert.equal(scrubRelease(0, 0, S3), -S3, 'at the left end: the page before');
+  assert.equal(scrubRelease(3000, 0, 5700), 0); assert.equal(scrubRelease(5700, 0, 5700), 5700);
+  // the same at either end: after turning the page, t sits at the matching end of the new page
+  assert.equal(scrubWindow(S3, scrubRelease(S3, 0, S3), S3), S3); assert.equal(scrubWindow(0, scrubRelease(0, 0, S3), S3), -S3);
+  assert.equal(scrubPage(-0.5, 100), -100);
+  // a page boundary read back from the slider as text: off by rounding, still on the page it was turned to
+  const span = 5738.992815014797, edge = 2 * span, back = scrubRelease(edge, edge, span);
+  assert.equal(back, span); assert.equal(scrubWindow(+String(edge + 1e-11), back, span), back, 'turned back: stays');
+});
+
+test('time: with the Orbit span the slider page is the orbit the availability timeline shows', () => {
+  for (const t of [0, 1234, 5800, 50000, -3000]) {
+    const s = timeState({ t, scrub: 'orbit' }), tl = computeTimeline(s, 0, null, 8);
+    close(scrubWindow(t, NaN, scrubSpan(s.orbit)), tl.W0, 1e-9, `t=${t}`); close(scrubSpan(s.orbit), tl.T, 1e-9);
+  }
 });
 
 test('time: the slider span is one orbital period (Kepler, T = 2π √(a³/μ)), a day or 3 days; keys step 1 min, 1 s with Shift, a tenth of the span by page', () => {
@@ -506,8 +520,9 @@ test('time: holding the slider pauses playback and release resumes it, whatever 
   assert.equal(scrubEnd(h, o, 0, W), 0); assert.equal(o.playing, true, 'a second release (change after pointerup) changes nothing');
   o.playing = false; scrubPress(h, o); scrubEnd(h, o, 0, W); assert.equal(o.playing, false, 'paused before: stays paused');
   o.playing = true; scrubPress(h, o); o.playing = true; scrubCancelResume(h); o.playing = false; scrubEnd(h, o, 0, W); assert.equal(o.playing, false, 'Play then Pause during the hold: Pause wins');
-  o.t = 5700; scrubPress(h, o); assert.equal(scrubEnd(h, o, 0, W), 2850, 'pressed at the end without moving: the window moves on');
-  o.t = 5700; h.moved = true; assert.equal(scrubEnd(h, o, 0, W), 2850, 'keyboard End (input then change, no press)');
+  o.t = 5700; scrubPress(h, o); assert.equal(scrubEnd(h, o, 0, W), 5700, 'pressed at the end without moving: the next page');
+  o.t = 5700; h.moved = true; assert.equal(scrubEnd(h, o, 0, W), 5700, 'keyboard End (input then change, no press)');
+  o.t = 0; h.moved = true; assert.equal(scrubEnd(h, o, 0, W), -5700, 'keyboard Home: the page before');
 });
 
 test('time: scenarios accept negative and long times, not beyond the date range', () => {

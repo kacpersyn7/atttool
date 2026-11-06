@@ -46,7 +46,7 @@ export function orbitPanel(ctx) {
     timeScrubber(o),
     h('div', { class: 'kv' }, h('dt', null, 'From the epoch'), h('dd', null, liveText(() => tPlus(o.t)))),
     liveText(() => { const d = farFromEpoch(o); return d === null ? '' : `<p class="tip" style="color:var(--warn)">${d.toFixed(0)} days from the epoch: the Sun geometry and the plane drift still hold, the position along the orbit does not (no drag).</p>`; }),
-    tip('Moving the time keeps the orbit. Release the slider at either end to go further, or type a date.')));
+    tip('Moving the time keeps the orbit. The slider shows one page at a time, counted from the epoch; release it at either end to turn the page, or type a date.')));
 
   const sched = o.schedule || [];
   if (selChange && !sched.some(c => c.id === selChange)) selChange = null; // gone: deleted, another scenario
@@ -170,12 +170,13 @@ function scheduleCard(ctx, o) {
 }
 
 /* ---------------- Time slider: a window that follows the current time ---------------- */
-let scrubW0 = 0; // kept here so that a rail rebuild doesn't move the window
+let scrubW0 = NaN, scrubSpanW = NaN; // the window and the span it was made for, kept here so that a rail rebuild doesn't move it
 const hold = scrubHold(); // shared with the Play button, which cancels a pending resume
 
 function timeScrubber(o) {
   const keys = 'Arrow keys: 1 min (with Shift: 1 s). Page Up / Down: a tenth of the span.';
-  const r = h('input', { type: 'range', id: 'time-r', step: 1, 'aria-label': 'Time, within the span shown', title: keys });
+  // step any: the ends of a page are exact (an orbit is not whole seconds)
+  const r = h('input', { type: 'range', id: 'time-r', step: 'any', 'aria-label': 'Time, within the span shown', title: keys });
   const n = h('input', { type: 'number', id: 'time-n', step: 1, 'aria-label': 'Seconds from the epoch', title: 'Seconds from the epoch', style: 'width:120px;flex:none' });
   let span = scrubSpan(o); // while held, the window stays still under the pointer
   const release = () => { scrubW0 = scrubEnd(hold, o, scrubW0, span); save(); syncAll(); };
@@ -194,10 +195,13 @@ function timeScrubber(o) {
   });
   n.addEventListener('change', () => { const x = +n.value; if (n.value !== '' && Number.isFinite(x)) { o.t = clampTime(o, x); save(); } n.value = o.t.toFixed(0); syncAll(); });
   onSync(() => {
-    if (!hold.held) { span = scrubSpan(o); scrubW0 = scrubWindow(o.t, scrubW0, span); r.min = scrubW0; r.max = scrubW0 + span; r.value = o.t; }
+    if (!hold.held) {
+      span = scrubSpan(o); if (span !== scrubSpanW) { scrubSpanW = span; scrubW0 = NaN; } // a new span (or orbit period): back on its pages
+      scrubW0 = scrubWindow(o.t, scrubW0, span); r.min = scrubW0; r.max = scrubW0 + span; r.value = o.t;
+    }
     if (document.activeElement !== n) n.value = o.t.toFixed(0);
   });
-  const spanSeg = seg(SCRUB_SPANS, () => o.scrub || 'orbit', v => { o.scrub = v; scrubW0 = Math.round(o.t - scrubSpan(o) / 2); save(); });
+  const spanSeg = seg(SCRUB_SPANS, () => o.scrub || 'orbit', v => { o.scrub = v; save(); }); // the sync puts the window on the page of t
   spanSeg.title = 'How much time the slider shows';
   return h('div', { style: 'display:flex;flex-direction:column;gap:6px' }, r,
     h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, spanSeg, h('span', { style: 'flex:1' }), n, h('span', { class: 'lbl' }, 's')));

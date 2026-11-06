@@ -8,6 +8,9 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 ### Added
 - **Mode schedule** (#39): change the guidance mode at set times within a scenario. Each change slews from the attitude before it over its own slew time (60 s by default, slerp with both attitudes worked out at each moment, so scrubbing works) and keeps its own mode settings and ground target. Times are UTC. The timeline shows a mode band with the slews, and the Mode schedule card lists the changes, marks the one flying and edits the one you pick. Kinematics only.
 
+### Fixed
+- The time slider behaved differently at the start than after a jump: T+0 was at the left end on load but in the middle after coming back to it. The slider now shows pages counted from the epoch (with the Orbit span, the same orbit as the availability timeline); releasing at either end turns to the next or the previous page. (#49)
+
 ## [0.8.0] - 2026-11-06
 
 ### Added
