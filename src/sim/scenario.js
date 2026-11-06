@@ -79,12 +79,36 @@ export function advanceTime(o, dt) {
   const t = o.t + dt * o.speed; o.t = clampTime(o, t); if (o.t !== t) o.playing = false;
 }
 
-/** Span of the time slider (s): it shows this much around the current time. */
-export const SCRUB_SPAN = 3 * 86400;
-/** Start of the slider window: `w0` while it holds t, else centred on t. Saves from before #47 (t in 0..3 d) keep the window from 0. */
-export const scrubWindow = (t, w0 = 0) => t >= w0 && t <= w0 + SCRUB_SPAN ? w0 : Math.round(t - SCRUB_SPAN / 2);
+/** Spans the time slider can show (o.scrub, a shared display setting) and their labels. */
+export const SCRUB_SPANS = [['orbit', 'Orbit'], ['day', 'Day'], ['3d', '3 days']];
+/** Span of the time slider (s): one orbital period, a day or 3 days. */
+export function scrubSpan(o) { return o.scrub === 'day' ? 86400 : o.scrub === '3d' ? 3 * 86400 : ENV.propagate(orbitElements(o), 0, false).period; }
+/** Start of the slider window: `w0` while it holds t, else centred on t. */
+export const scrubWindow = (t, w0, span) => t >= w0 && t <= w0 + span ? w0 : Math.round(t - span / 2);
 /** Start of the window after a slider move is released: centred on t if it ended at either end, so the next drag goes further. */
-export const scrubRelease = (t, w0) => { const m = SCRUB_SPAN * 0.01; return t <= w0 + m || t >= w0 + SCRUB_SPAN - m ? Math.round(t - SCRUB_SPAN / 2) : w0; };
+export const scrubRelease = (t, w0, span) => { const m = span * 0.01; return t <= w0 + m || t >= w0 + span - m ? Math.round(t - span / 2) : w0; };
+/** Time step (s) of a key on the slider: arrows 1 min (with Shift 1 s), Page Up/Down a tenth of the span; null for other keys. */
+export function scrubKey(key, shift, span) {
+  const dir = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1, PageUp: 1, PageDown: -1 }[key]; if (!dir) return null;
+  return dir * (key.startsWith('Page') ? Math.round(span / 10) : shift ? 1 : 60);
+}
+
+/*
+ * Holding the slider thumb pauses playback until release. The hold is { held, moved, resume }.
+ * Release can fire more than once (pointerup and change): the later calls change nothing.
+ */
+export const scrubHold = () => ({ held: false, moved: false, resume: false });
+/** Primary press on the slider. A second press during a hold (another finger) changes nothing. */
+export function scrubPress(h, o) { if (h.held) return; h.held = true; h.moved = false; h.resume = o.playing; o.playing = false; }
+/** Release: resumes playback if the press paused it, and returns the new window start (see scrubRelease). */
+export function scrubEnd(h, o, w0, span) {
+  // pressing a thumb already at an end changes nothing and fires no input, but must still move the window on
+  const w = h.held || h.moved ? scrubRelease(o.t, w0, span) : w0;
+  if (h.held && h.resume) o.playing = true;
+  h.held = h.moved = h.resume = false; return w;
+}
+/** Play or Pause pressed during a hold: that choice wins, release won't resume. */
+export function scrubCancelResume(h) { h.resume = false; }
 
 /** Days from the epoch if that is far enough for the model to lose the position along the orbit (no drag), else null. */
 export function farFromEpoch(o) {

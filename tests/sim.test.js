@@ -389,7 +389,7 @@ test('ground-relative velocity: equatorial prograde circular orbit loses ω_E·r
 });
 
 /* ---------- current time, separate from the epoch (#47) ---------- */
-import { T_MAX, SCRUB_SPAN, advanceTime, clampTime, currentDate, farFromEpoch, scrubRelease, scrubWindow, setCurrentDate, setEpoch } from '../src/sim/scenario.js';
+import { T_MAX, advanceTime, scrubCancelResume, scrubEnd, scrubHold, scrubKey, scrubPress, scrubSpan, clampTime, currentDate, farFromEpoch, scrubRelease, scrubWindow, setCurrentDate, setEpoch } from '../src/sim/scenario.js';
 import { sanitizeScenario } from '../src/sim/scenarioLibrary.js';
 import { plotWindow } from '../src/sim/signals.js';
 
@@ -481,10 +481,33 @@ test('time: a saved epoch outside the typed limits still means what it says', ()
 });
 
 test('time: the slider window holds t, follows it out, and moves on when released at an end', () => {
-  assert.equal(scrubWindow(0), 0); assert.equal(scrubWindow(3 * DAY), 0, 'old saves keep the 0..72 h slider');
-  assert.equal(scrubWindow(3 * DAY + 1, 0), 3 * DAY + 1 - SCRUB_SPAN / 2);
-  assert.equal(scrubWindow(-1, 0), -1 - SCRUB_SPAN / 2); assert.equal(scrubWindow(100, 50), 50);
-  assert.equal(scrubRelease(1.5 * DAY, 0), 0); assert.equal(scrubRelease(3 * DAY, 0), 1.5 * DAY); assert.equal(scrubRelease(0, 0), -1.5 * DAY);
+  const S3 = 3 * DAY;
+  assert.equal(scrubWindow(0, 0, S3), 0); assert.equal(scrubWindow(S3, 0, S3), 0);
+  assert.equal(scrubWindow(S3 + 1, 0, S3), S3 + 1 - S3 / 2);
+  assert.equal(scrubWindow(-1, 0, S3), -1 - S3 / 2); assert.equal(scrubWindow(100, 50, S3), 50);
+  assert.equal(scrubRelease(1.5 * DAY, 0, S3), 0); assert.equal(scrubRelease(S3, 0, S3), 1.5 * DAY); assert.equal(scrubRelease(0, 0, S3), -1.5 * DAY);
+  assert.equal(scrubRelease(3000, 0, 5700), 0); assert.equal(scrubRelease(5700, 0, 5700), 2850);
+});
+
+test('time: the slider span is one orbital period (Kepler, T = 2π √(a³/μ)), a day or 3 days; keys step 1 min, 1 s with Shift, a tenth of the span by page', () => {
+  const o = timeState({ scrub: 'orbit' }).orbit, a = orbitElements(o).a;
+  assert.equal(a, 6378.137 + 550); close(scrubSpan(o), 5738.99, 0.01); // 550 km circular: T = 2π √(a³/μ) = 5738.99 s, worked by hand
+  const iss = timeState({ def: 'tle', tle: ISS }).orbit; close(scrubSpan(iss), 86400 / 15.72125391, 1); // a TLE: one revolution of its mean motion
+  assert.equal(scrubSpan({ ...o, scrub: 'day' }), DAY); assert.equal(scrubSpan({ ...o, scrub: '3d' }), 3 * DAY); close(scrubSpan({ ...o, scrub: undefined }), scrubSpan(o), 1e-9);
+  assert.equal(scrubKey('ArrowRight', false, DAY), 60); assert.equal(scrubKey('ArrowLeft', true, DAY), -1); assert.equal(scrubKey('ArrowUp', false, DAY), 60);
+  assert.equal(scrubKey('PageDown', false, DAY), -8640); assert.equal(scrubKey('PageUp', false, 5738.99), 574, 'whole seconds'); assert.equal(scrubKey('Home', false, DAY), null); assert.equal(scrubKey('a', false, DAY), null);
+});
+
+test('time: holding the slider pauses playback and release resumes it, whatever else presses or releases', () => {
+  const o = timeState({ playing: true }).orbit, h = scrubHold(), W = 5700;
+  scrubPress(h, o); assert.equal(o.playing, false); o.t = 1000;
+  scrubPress(h, o); assert.equal(h.resume, true, 'a second finger keeps the pending resume');
+  assert.equal(scrubEnd(h, o, 0, W), 0); assert.equal(o.playing, true, 'resumed');
+  assert.equal(scrubEnd(h, o, 0, W), 0); assert.equal(o.playing, true, 'a second release (change after pointerup) changes nothing');
+  o.playing = false; scrubPress(h, o); scrubEnd(h, o, 0, W); assert.equal(o.playing, false, 'paused before: stays paused');
+  o.playing = true; scrubPress(h, o); o.playing = true; scrubCancelResume(h); o.playing = false; scrubEnd(h, o, 0, W); assert.equal(o.playing, false, 'Play then Pause during the hold: Pause wins');
+  o.t = 5700; scrubPress(h, o); assert.equal(scrubEnd(h, o, 0, W), 2850, 'pressed at the end without moving: the window moves on');
+  o.t = 5700; h.moved = true; assert.equal(scrubEnd(h, o, 0, W), 2850, 'keyboard End (input then change, no press)');
 });
 
 test('time: scenarios accept negative and long times, not beyond the date range', () => {
