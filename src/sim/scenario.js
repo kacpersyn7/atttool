@@ -90,8 +90,25 @@ export const scrubRelease = (t, w0, span) => { const m = span * 0.01; return t <
 /** Time step (s) of a key on the slider: arrows 1 min (with Shift 1 s), Page Up/Down a tenth of the span; null for other keys. */
 export function scrubKey(key, shift, span) {
   const dir = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1, PageUp: 1, PageDown: -1 }[key]; if (!dir) return null;
-  return dir * (key.startsWith('Page') ? span / 10 : shift ? 1 : 60);
+  return dir * (key.startsWith('Page') ? Math.round(span / 10) : shift ? 1 : 60);
 }
+
+/*
+ * Holding the slider thumb pauses playback until release. The hold is { held, moved, resume }.
+ * Release can fire more than once (pointerup and change): the later calls change nothing.
+ */
+export const scrubHold = () => ({ held: false, moved: false, resume: false });
+/** Primary press on the slider. A second press during a hold (another finger) changes nothing. */
+export function scrubPress(h, o) { if (h.held) return; h.held = true; h.moved = false; h.resume = o.playing; o.playing = false; }
+/** Release: resumes playback if the press paused it, and returns the new window start (see scrubRelease). */
+export function scrubEnd(h, o, w0, span) {
+  // pressing a thumb already at an end changes nothing and fires no input, but must still move the window on
+  const w = h.held || h.moved ? scrubRelease(o.t, w0, span) : w0;
+  if (h.held && h.resume) o.playing = true;
+  h.held = h.moved = h.resume = false; return w;
+}
+/** Play or Pause pressed during a hold: that choice wins, release won't resume. */
+export function scrubCancelResume(h) { h.resume = false; }
 
 /** Days from the epoch if that is far enough for the model to lose the position along the orbit (no drag), else null. */
 export function farFromEpoch(o) {

@@ -6,7 +6,7 @@ import { deg, esc, fmt, hhmm, tPlus } from '../../ui/format.js';
 import { TYPES } from '../../spacecraft/componentTypes.js';
 import { activeItem, selectSpacecraft } from '../../spacecraft/library.js';
 import { activeScenario, addScenario, deleteScenario, duplicateScenario, exportScenario, importScenario, newScenarioOrbit, renameScenario, selectScenario } from '../../sim/scenarioLibrary.js';
-import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, DATE_MAX, DATE_MIN, PRESETS, SCRUB_SPANS, clampTime, currentDate, epochDate, farFromEpoch, formatEpoch, ltanOf, orbitElements, scrubKey, scrubRelease, scrubSpan, scrubWindow, setCurrentDate, setEpoch, switchDefinition, restartFromState, definitionError, tleOf } from '../../sim/scenario.js';
+import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, DATE_MAX, DATE_MIN, PRESETS, SCRUB_SPANS, clampTime, currentDate, epochDate, farFromEpoch, formatEpoch, ltanOf, orbitElements, scrubCancelResume, scrubEnd, scrubHold, scrubKey, scrubPress, scrubSpan, scrubWindow, setCurrentDate, setEpoch, switchDefinition, restartFromState, definitionError, tleOf } from '../../sim/scenario.js';
 import { copyText, showModal, closeModal, toast } from '../../ui/overlay.js';
 import { payloadComp } from '../../sim/guidance.js';
 import { sensorEval } from '../../sim/sensors.js';
@@ -29,7 +29,7 @@ export function orbitPanel(ctx) {
   out.push(scenarioCard(ctx));
   out.push(orbitCard(ctx, o, sl));
 
-  const playBtn = h('button', { class: 'btn primary', style: 'min-width:84px', onclick: () => { o.playing = !o.playing; save(); syncAll(); } });
+  const playBtn = h('button', { class: 'btn primary', style: 'min-width:84px', onclick: () => { scrubCancelResume(hold); o.playing = !o.playing; save(); syncAll(); } });
   onSync(() => playBtn.textContent = o.playing ? '❚❚ Pause' : '▶ Play');
   const nowInput = dateInput('now');
   const showNow = () => nowInput.value = formatEpoch(new Date(Math.floor(currentDate(o).getTime() / 1000) * 1000));
@@ -119,33 +119,30 @@ const refused = () => toast(`Enter a date from ${DATE_MIN.slice(0, 4)} to ${DATE
 
 /* ---------------- Time slider: a window that follows the current time ---------------- */
 let scrubW0 = 0; // kept here so that a rail rebuild doesn't move the window
+const hold = scrubHold(); // shared with the Play button, which cancels a pending resume
 
 function timeScrubber(o) {
   const keys = 'Arrow keys: 1 min (with Shift: 1 s). Page Up / Down: a tenth of the span.';
   const r = h('input', { type: 'range', id: 'time-r', step: 1, 'aria-label': 'Time, within the span shown', title: keys });
   const n = h('input', { type: 'number', id: 'time-n', step: 1, 'aria-label': 'Seconds from the epoch', title: 'Seconds from the epoch', style: 'width:120px;flex:none' });
-  let held = false, moved = false, resume = false, span = scrubSpan(o); // while held the window stays still under the pointer
-  // pressing a thumb already at an end changes nothing and fires no input, but must still move the window on
-  const release = () => {
-    if (held || moved) scrubW0 = scrubRelease(o.t, scrubW0, span);
-    if (held && resume) o.playing = true;
-    held = moved = resume = false; save(); syncAll();
-  };
-  r.addEventListener('pointerdown', () => {
-    held = true; moved = false; resume = o.playing; // the clock waits while the thumb is held
-    if (resume) { o.playing = false; syncAll(); }
+  let span = scrubSpan(o); // while held, the window stays still under the pointer
+  const release = () => { scrubW0 = scrubEnd(hold, o, scrubW0, span); save(); syncAll(); };
+  r.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || !e.isPrimary || hold.held) return; // right-click, another finger, a press during a hold
+    scrubPress(hold, o); syncAll();
     const up = () => { release(); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); };
     addEventListener('pointerup', up); addEventListener('pointercancel', up); // on the window: the pointer may end anywhere
   });
-  r.addEventListener('input', () => { moved = true; o.t = clampTime(o, +r.value); save(); syncAll(); });
+  r.addEventListener('input', () => { hold.moved = true; o.t = clampTime(o, +r.value); save(); syncAll(); });
   r.addEventListener('change', release);
   r.addEventListener('keydown', e => {
     const d = scrubKey(e.key, e.shiftKey, span); if (d === null) return;
-    e.preventDefault(); o.t = clampTime(o, o.t + d); save(); syncAll(); // past an end the window follows (sync)
+    e.preventDefault(); if (hold.held) return; // the thumb follows the pointer while held
+    o.t = clampTime(o, o.t + d); save(); syncAll(); // past an end the window follows (sync)
   });
   n.addEventListener('change', () => { const x = +n.value; if (n.value !== '' && Number.isFinite(x)) { o.t = clampTime(o, x); save(); } n.value = o.t.toFixed(0); syncAll(); });
   onSync(() => {
-    if (!held) { span = scrubSpan(o); scrubW0 = scrubWindow(o.t, scrubW0, span); r.min = scrubW0; r.max = scrubW0 + span; r.value = o.t; }
+    if (!hold.held) { span = scrubSpan(o); scrubW0 = scrubWindow(o.t, scrubW0, span); r.min = scrubW0; r.max = scrubW0 + span; r.value = o.t; }
     if (document.activeElement !== n) n.value = o.t.toFixed(0);
   });
   const spanSeg = seg(SCRUB_SPANS, () => o.scrub || 'orbit', v => { o.scrub = v; scrubW0 = Math.round(o.t - scrubSpan(o) / 2); save(); });
