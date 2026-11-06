@@ -17,11 +17,12 @@ import * as ENV from '../env/index.js';
 import { newId } from '../spacecraft/component.js';
 import { activeItem as activeSC, selectSpacecraft, uniqueName, validateAxes } from '../spacecraft/library.js';
 import * as AM from '../core/attitude.js';
-import { PRESETS, T_MAX, applyPreset, parseEpoch } from './scenario.js';
+import { PRESETS, T_MAX, applyPreset, parseEpoch, validDate } from './scenario.js';
+import { SEGMENT_KEYS } from './guidance.js';
 
 /** The fields of state.orbit that make up a scenario. refFrame only picks the frame shown, but it goes with the mode's offsets. */
 export const SCENARIO_KEYS = ['preset', 'def', 'r', 'v', 'tle', 'epoch', 'hp', 'ha', 'i', 'raan', 'argp', 'nu0', 'j2', 't',
-  'mode', 'refFrame', 'roll', 'pitch', 'yaw', 'sunAxis', 'sunSec', 'sunSecAxis', 'tgtLat', 'tgtLon', 'tgtAlt', 'tgtComp'];
+  'mode', 'refFrame', 'roll', 'pitch', 'yaw', 'sunAxis', 'sunSec', 'sunSecAxis', 'tgtLat', 'tgtLon', 'tgtAlt', 'tgtComp', 'schedule'];
 /** Those that name parts of a spacecraft: only valid on the spacecraft they were saved with. */
 const PART_KEYS = ['tgtComp', 'sunAxis', 'sunSecAxis'];
 
@@ -111,6 +112,7 @@ const VALID = {
   mode: oneOf('offsets', 'target', 'sun', 'inertial'), refFrame: x => isStr(x) && Object.hasOwn(ENV.ORBIT_FRAMES, x), roll: angle, pitch: angle, yaw: angle,
   sunAxis: axis, sunSec: oneOf('nadir', 'zenith', 'velocity', 'normal', 'antinormal'), sunSecAxis: axis,
   tgtLat: inRange(-90, 90), tgtLon: angle, tgtAlt: isNum, tgtComp: isStr,
+  schedule: Array.isArray, // and then cleaned change by change (cleanSchedule)
 };
 /** Orbit fields from untrusted JSON: only the known ones, each valid or the default. */
 export function sanitizeScenario(orbit, defaults) {
@@ -119,7 +121,30 @@ export function sanitizeScenario(orbit, defaults) {
   if (o.def === 'rv' && !(vec3(o.r) && vec3(o.v))) o.def = 'elements'; // the state vector fields need all six numbers
   const q = src.inertialQ;
   if (q && [q.w, q.x, q.y, q.z].every(isNum) && AM.q.norm(q) > 1e-9) o.inertialQ = AM.q.unit({ w: q.w, x: q.x, y: q.y, z: q.z });
+  o.schedule = cleanSchedule(o.schedule, o, o.inertialQ);
   return o;
+}
+
+/** Most changes a schedule keeps. */
+export const MAX_CHANGES = 100;
+const quat = q => q && typeof q === 'object' && [q.w, q.x, q.y, q.z].every(isNum) && AM.q.norm(q) > 1e-9;
+/**
+ * Schedule changes from untrusted JSON: a change needs a valid start and mode, or it is dropped; other
+ * settings that fail take the scenario's own (`base`); slew 0..3600 s, else 60. Ids are made unique. An inertial
+ * change without a valid attitude gets `q0` (the scenario's inertial attitude), else the identity.
+ */
+export function cleanSchedule(x, base, q0 = null) {
+  if (!Array.isArray(x)) return [];
+  const ids = new Set(), out = [];
+  for (const c of x.slice(0, MAX_CHANGES)) {
+    if (!c || typeof c !== 'object' || !isStr(c.start) || !validDate(c.start) || !VALID.mode(c.mode)) continue;
+    const id = isStr(c.id) ? c.id.slice(0, 40) : '';
+    const seg = { id: id && !ids.has(id) ? id : newId(), start: c.start, slew: inRange(0, 3600)(c.slew) ? c.slew : 60 };
+    for (const k of SEGMENT_KEYS) seg[k] = VALID[k](c[k]) ? c[k] : base[k];
+    if (seg.mode === 'inertial') { const q = quat(c.q) ? c.q : q0 || AM.q.id(); seg.q = AM.q.unit({ w: q.w, x: q.x, y: q.y, z: q.z }); }
+    ids.add(seg.id); out.push(seg);
+  }
+  return out;
 }
 
 const cleanName = (x, fallback) => (isStr(x) && x.trim() ? x.trim().slice(0, 32) : fallback);

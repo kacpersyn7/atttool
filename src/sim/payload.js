@@ -29,7 +29,8 @@ export function groundRelVel(r, vel) { return v.sub(vel, v.cross([0, 0, ENV.WE],
 export function payloadCI(c, CBI) { return m.mul(AM.q2C(c.q), CBI); }
 
 /**
- * Pointing of the payload against the ground target (state.orbit.tgtLat / tgtLon / tgtAlt) at attitude A.
+ * Pointing of the payload against the ground target in force at attitude A (tgtLat / tgtLon / tgtAlt of
+ * state.orbit, or of the schedule change A.seg flying).
  * CBI defaults to A.CBI; pass another attitude (e.g. with knowledge / performance errors) to compare.
  * @returns null without a payload, else {
  *   c, CCI, bore (ECI unit), hit (ECI km | null: boresight misses the Earth, i.e. the sphere at height 0
@@ -45,7 +46,7 @@ export function payloadCI(c, CBI) { return m.mul(AM.q2C(c.q), CBI); }
  */
 export function pointing(state, A, CBI = A.CBI) {
   const c = payloadComp(state); if (!c) return null;
-  const o = state.orbit, r = A.st.r;
+  const o = (A.seg && (state.orbit.schedule || []).find(c => c.id === A.seg.id)) || state.orbit, r = A.st.r; // the settings in force at A
   const CCI = payloadCI(c, CBI), bore = CCI[2];
   const h = targetHeight(o), Rt = ENV.RE + h;
   const hit = ENV.rayEarth(r, bore), slant = hit ? v.norm(v.sub(hit, r)) : null;

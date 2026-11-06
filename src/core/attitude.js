@@ -42,6 +42,13 @@ export const q = {
   }),
   /** Canonical sign: scalar part >= 0. */
   canon: p => (p.w < 0 ? q.neg(p) : p),
+  /** Spherical interpolation of unit quaternions, a at f = 0 to b at f = 1, the short way round (constant rate in f). */
+  slerp: (a, b, f) => {
+    let d = a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z; if (d < 0) { b = q.neg(b); d = -d; }
+    if (d > 0.9999995) return q.unit({ w: a.w + (b.w - a.w) * f, x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, z: a.z + (b.z - a.z) * f });
+    const th = Math.acos(Math.min(1, d)), s = Math.sin(th), ka = Math.sin((1 - f) * th) / s, kb = Math.sin(f * th) / s;
+    return { w: ka * a.w + kb * b.w, x: ka * a.x + kb * b.x, y: ka * a.y + kb * b.y, z: ka * a.z + kb * b.z };
+  },
 };
 
 /** q -> C_BR (Shuster attitude matrix A(q)). */

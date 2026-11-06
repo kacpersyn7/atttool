@@ -45,6 +45,8 @@ export function epochDate(o) {
 export const DATE_MIN = '1900-01-01T00:00', DATE_MAX = '2200-01-01T00:00';
 const MS_MIN = Date.UTC(1900, 0, 1), MS_MAX = Date.UTC(2200, 0, 1);
 const inDates = d => !!d && d.getTime() >= MS_MIN && d.getTime() <= MS_MAX;
+/** A UTC date string in the epoch format within the limits. */
+export const validDate = str => inDates(parseEpoch(str));
 /** Largest |o.t| that those dates allow (s). */
 export const T_MAX = (MS_MAX - MS_MIN) / 1000;
 /** t limited so that the current date of orbit settings `o` stays within the dates. */

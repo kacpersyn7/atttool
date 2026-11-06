@@ -36,7 +36,7 @@ Keeping `sim/` independent of the global state is deliberate. Functions such as 
 
 `S.sc` is always the **active** spacecraft, and everything reads that. `S.fleet` is the library (`spacecraft/library.js`): names, plus the other spacecraft parked with their own pointing axis. Changing the active one replaces `S.sc`, then calls `scChanged()`.
 
-`S.orbit` is likewise the **active** scenario, plus display settings that aren't part of one (`show`, `plot`, `speed`, …). `S.scenarios` is the library (`sim/scenarioLibrary.js`): names, the parked scenarios (`SCENARIO_KEYS` of `S.orbit`), and which spacecraft each flies. Views keep a reference to `S.orbit`, so switching writes the fields into it in place. A new orbit or guidance setting that belongs to a scenario must be added to `SCENARIO_KEYS` (a test checks the list against `defaultState()`).
+`S.orbit` is likewise the **active** scenario, plus display settings that aren't part of one (`show`, `plot`, `speed`, `scrub`, …). `S.scenarios` is the library (`sim/scenarioLibrary.js`): names, the parked scenarios (`SCENARIO_KEYS` of `S.orbit`), and which spacecraft each flies. Views keep a reference to `S.orbit`, so switching writes the fields into it in place. A new orbit or guidance setting that belongs to a scenario must be added to `SCENARIO_KEYS` (a test checks the list against `defaultState()`).
 
 - Mutate it in place, then call `save()`, which is debounced.
 - If you change spacecraft geometry (`S.sc`), call `scChanged()` instead. It bumps `scVersion()`, and each view compares that number with the version it last built, then rebuilds its 3D model.

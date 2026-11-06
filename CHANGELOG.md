@@ -5,6 +5,9 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 
 ## [Unreleased]
 
+### Added
+- **Mode schedule** (#39): change the guidance mode at set times within a scenario. Each change slews from the attitude before it over its own slew time (60 s by default, slerp with both attitudes worked out at each moment, so scrubbing works) and keeps its own mode settings and ground target. Times are UTC. The timeline shows a mode band with the slews, and the Mode schedule card lists the changes, marks the one flying and edits the one you pick. Kinematics only.
+
 ## [0.8.0] - 2026-11-06
 
 ### Added

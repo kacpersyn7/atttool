@@ -4,12 +4,13 @@
  */
 import * as ENV from '../env/index.js';
 import { orbitElements } from './scenario.js';
-import { attitudeAt, payloadComp } from './guidance.js';
+import { MODES, attitudeAt, payloadComp } from './guidance.js';
 import { sensorEval } from './sensors.js';
 
 export function timelineRows(state) {
   const comps = state.sc.comps;
   const rows = [{ name: 'Eclipse', kind: 'ecl' }];
+  if (state.orbit.schedule && state.orbit.schedule.length) rows.unshift({ name: 'Mode', kind: 'mode' });
   comps.filter(c => c.type === 'str').forEach(c => rows.push({ name: c.name, kind: 'str', c }));
   if (comps.some(c => c.type === 'css')) rows.push({ name: 'Sun sensors', kind: 'css' });
   const sa = comps.filter(c => c.type === 'sa'); if (sa.length) rows.push({ name: 'Array power', kind: 'sa', cs: sa });
@@ -20,12 +21,12 @@ export function timelineRows(state) {
 /** Cache key: everything the timeline depends on. */
 export function timelineKey(state, scVersion, W0) {
   const o = state.orbit;
-  return JSON.stringify([orbitElements(o), o.mode, o.refFrame, o.roll, o.pitch, o.yaw, o.sunAxis, o.sunSecAxis, o.sunSec, o.tgtLat, o.tgtLon, o.tgtAlt, o.tgtComp, o.epoch, o.j2, scVersion, W0, o.mode === 'inertial' ? state.rot.q : 0]);
+  return JSON.stringify([orbitElements(o), o.mode, o.refFrame, o.roll, o.pitch, o.yaw, o.sunAxis, o.sunSecAxis, o.sunSec, o.tgtLat, o.tgtLon, o.tgtAlt, o.tgtComp, o.schedule || [], o.epoch, o.j2, scVersion, W0, o.mode === 'inertial' || (o.schedule || []).some(c => c.mode === 'inertial' && !c.q) ? state.rot.q : 0]);
 }
 
 /**
  * Sample the orbit that contains state.orbit.t at N points.
- * Row values: ecl 0/1 · str 0 ok / 2 Sun-blind / 3 Earth-blind / 4 Moon-blind (first cause that applies) · css 0/1 · sa 0..1 · pl 0/1.
+ * Row values: mode index in MODES (+ 10 while slewing into it) · ecl 0/1 · str 0 ok / 2 Sun-blind / 3 Earth-blind / 4 Moon-blind (first cause that applies) · css 0/1 · sa 0..1 · pl 0/1.
  * Returns the previous result unchanged if nothing relevant changed.
  */
 export function computeTimeline(state, scVersion, prev, N = 360) {
@@ -38,14 +39,15 @@ export function computeTimeline(state, scVersion, prev, N = 360) {
   for (let n = 0; n < N; n++) {
     const A = attitudeAt(state, W0 + (n + .5) / N * T, E);
     for (const r of tl.rows) {
-      if (r.kind === 'ecl') r.v[n] = A.ecl ? 1 : 0;
+      if (r.kind === 'mode') r.v[n] = MODES.indexOf(A.g.mode) + (A.seg && A.seg.slew !== null ? 10 : 0);
+      else if (r.kind === 'ecl') r.v[n] = A.ecl ? 1 : 0;
       else if (r.kind === 'str') { const s = sensorEval(r.c, A); r.v[n] = s.sunBlind ? 2 : s.earthBlind ? 3 : s.moonBlind ? 4 : 0; }
       else if (r.kind === 'css') r.v[n] = css.some(c => sensorEval(c, A).sees) ? 1 : 0;
       else if (r.kind === 'sa') r.v[n] = r.cs.reduce((s, c) => s + sensorEval(c, A).cosInc * c.w * c.h, 0) / r.cs.reduce((s, c) => s + c.w * c.h, 0);
       else if (r.kind === 'pl') r.v[n] = sensorEval(r.c, A).onGround ? 1 : 0;
     }
   }
-  // percentage per row: STR = % tracking, SA = mean power fraction, others = % of samples "on"
-  tl.stats = tl.rows.map(r => r.kind === 'str' ? (100 * r.v.filter(x => x === 0).length / N) : r.kind === 'sa' ? (100 * r.v.reduce((s, x) => s + x, 0) / N) : (100 * r.v.filter(x => x).length / N));
+  // percentage per row: STR = % tracking, SA = mean power fraction, others = % of samples "on"; the mode band has none
+  tl.stats = tl.rows.map(r => r.kind === 'mode' ? null : r.kind === 'str' ? (100 * r.v.filter(x => x === 0).length / N) : r.kind === 'sa' ? (100 * r.v.reduce((s, x) => s + x, 0) / N) : (100 * r.v.filter(x => x).length / N));
   return tl;
 }

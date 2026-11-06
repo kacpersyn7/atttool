@@ -148,9 +148,10 @@ export function createOrbitView({ renderRail }) {
         foot.scale.setScalar(Math.max(footR, 0.025)); footLbl.position.copy(foot.position).addScaledVector(n, 0.02);
       }
     } else ray.visible = foot.visible = footLbl.visible = false;
-    tgt.visible = o.mode === 'target' || (!!o.show.plView && !!pc); // the payload view measures the error against it in every mode
+    tgt.visible = A.g.mode === 'target' || (!!o.show.plView && !!pc); // the payload view measures the error against it in every mode
     plEl.hidden = !(o.show.plView && pc);
-    if (tgt.visible) { const p = AM.v.scale(targetECEF(o), U); tgt.position.set(...p); tgt.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), V3(AM.v.unit(p))); }
+    // the target in force: a schedule change may have its own
+    if (tgt.visible) { const p = AM.v.scale(targetECEF(A.g), U); tgt.position.set(...p); tgt.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), V3(AM.v.unit(p))); }
     V.scene.updateMatrixWorld(); [scModel, orbTriad, sunArrow, moonArrow, bArrow, vArrow].forEach(fixLabels);
     // follow camera
     if (o.show.follow) { if (prevScPos) { const d = pos.clone().sub(prevScPos); V.camera.position.add(d); } V.controls.target.copy(pos); }
