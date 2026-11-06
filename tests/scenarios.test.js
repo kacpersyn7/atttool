@@ -13,7 +13,7 @@ import { SCENARIO_KEYS, activeScenario, addScenario, deleteScenario, duplicateSc
 const fresh = () => { const s = defaultState(); migrate(s); return s; };
 
 test('scenarios: the key list matches the orbit settings: everything is either in a scenario or a known display setting', () => {
-  const display = new Set(['show', 'plot', 'playing', 'speed', 'scale', 'hideInset', '_init']);
+  const display = new Set(['show', 'plot', 'playing', 'speed', 'scrub', 'scale', 'hideInset', '_init']);
   for (const k of Object.keys(defaultState().orbit)) assert.ok(SCENARIO_KEYS.includes(k) || display.has(k), `orbit.${k} is in neither list`);
   for (const k of SCENARIO_KEYS) { assert.ok(!display.has(k), k); assert.ok(k in defaultState().orbit, `no default for ${k}`); }
 });

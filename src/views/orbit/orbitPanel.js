@@ -6,7 +6,7 @@ import { deg, esc, fmt, hhmm, tPlus } from '../../ui/format.js';
 import { TYPES } from '../../spacecraft/componentTypes.js';
 import { activeItem, selectSpacecraft } from '../../spacecraft/library.js';
 import { activeScenario, addScenario, deleteScenario, duplicateScenario, exportScenario, importScenario, newScenarioOrbit, renameScenario, selectScenario } from '../../sim/scenarioLibrary.js';
-import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, DATE_MAX, DATE_MIN, PRESETS, SCRUB_SPAN, clampTime, currentDate, epochDate, farFromEpoch, formatEpoch, ltanOf, orbitElements, scrubRelease, scrubWindow, setCurrentDate, setEpoch, switchDefinition, restartFromState, definitionError, tleOf } from '../../sim/scenario.js';
+import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, DATE_MAX, DATE_MIN, PRESETS, SCRUB_SPANS, clampTime, currentDate, epochDate, farFromEpoch, formatEpoch, ltanOf, orbitElements, scrubKey, scrubRelease, scrubSpan, scrubWindow, setCurrentDate, setEpoch, switchDefinition, restartFromState, definitionError, tleOf } from '../../sim/scenario.js';
 import { copyText, showModal, closeModal, toast } from '../../ui/overlay.js';
 import { payloadComp } from '../../sim/guidance.js';
 import { sensorEval } from '../../sim/sensors.js';
@@ -45,7 +45,7 @@ export function orbitPanel(ctx) {
     timeScrubber(o),
     h('div', { class: 'kv' }, h('dt', null, 'From the epoch'), h('dd', null, liveText(() => tPlus(o.t)))),
     liveText(() => { const d = farFromEpoch(o); return d === null ? '' : `<p class="tip" style="color:var(--warn)">${d.toFixed(0)} days from the epoch: the Sun geometry and the plane drift still hold, the position along the orbit does not (no drag).</p>`; }),
-    tip('Moving the time keeps the orbit. The slider shows 3 days; drag to either end to go further, or type a date.')));
+    tip('Moving the time keeps the orbit. Release the slider at either end to go further, or type a date.')));
 
   const modeCtl = [];
   const axLbl = (name, color, ax) => h('span', null, name + ' · ', h('span', { class: 'ax', style: 'color:var(--ax-' + color + ')' }, ax));
@@ -121,25 +121,37 @@ const refused = () => toast(`Enter a date from ${DATE_MIN.slice(0, 4)} to ${DATE
 let scrubW0 = 0; // kept here so that a rail rebuild doesn't move the window
 
 function timeScrubber(o) {
-  const r = h('input', { type: 'range', id: 'time-r', step: 1, 'aria-label': 'Time, within the 3 days shown' });
-  const n = h('input', { type: 'number', id: 'time-n', step: 1, 'aria-label': 'Seconds from the epoch' });
-  let held = false, moved = false; // while held the window stays still under the pointer
-  const place = () => { r.min = scrubW0; r.max = scrubW0 + SCRUB_SPAN; r.value = o.t; };
+  const keys = 'Arrow keys: 1 min (with Shift: 1 s). Page Up / Down: a tenth of the span.';
+  const r = h('input', { type: 'range', id: 'time-r', step: 1, 'aria-label': 'Time, within the span shown', title: keys });
+  const n = h('input', { type: 'number', id: 'time-n', step: 1, 'aria-label': 'Seconds from the epoch', title: 'Seconds from the epoch', style: 'width:120px;flex:none' });
+  let held = false, moved = false, resume = false, span = scrubSpan(o); // while held the window stays still under the pointer
   // pressing a thumb already at an end changes nothing and fires no input, but must still move the window on
-  const release = () => { if (held || moved) scrubW0 = scrubRelease(o.t, scrubW0); held = moved = false; syncAll(); };
+  const release = () => {
+    if (held || moved) scrubW0 = scrubRelease(o.t, scrubW0, span);
+    if (held && resume) o.playing = true;
+    held = moved = resume = false; save(); syncAll();
+  };
   r.addEventListener('pointerdown', () => {
-    held = true; moved = false;
+    held = true; moved = false; resume = o.playing; // the clock waits while the thumb is held
+    if (resume) { o.playing = false; syncAll(); }
     const up = () => { release(); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); };
     addEventListener('pointerup', up); addEventListener('pointercancel', up); // on the window: the pointer may end anywhere
   });
   r.addEventListener('input', () => { moved = true; o.t = clampTime(o, +r.value); save(); syncAll(); });
   r.addEventListener('change', release);
+  r.addEventListener('keydown', e => {
+    const d = scrubKey(e.key, e.shiftKey, span); if (d === null) return;
+    e.preventDefault(); o.t = clampTime(o, o.t + d); save(); syncAll(); // past an end the window follows (sync)
+  });
   n.addEventListener('change', () => { const x = +n.value; if (n.value !== '' && Number.isFinite(x)) { o.t = clampTime(o, x); save(); } n.value = o.t.toFixed(0); syncAll(); });
   onSync(() => {
-    if (!held) { scrubW0 = scrubWindow(o.t, scrubW0); place(); }
+    if (!held) { span = scrubSpan(o); scrubW0 = scrubWindow(o.t, scrubW0, span); r.min = scrubW0; r.max = scrubW0 + span; r.value = o.t; }
     if (document.activeElement !== n) n.value = o.t.toFixed(0);
   });
-  return h('div', { class: 'row wide' }, h('label', { for: 'time-n' }, 'From epoch, s'), r, n);
+  const spanSeg = seg(SCRUB_SPANS, () => o.scrub || 'orbit', v => { o.scrub = v; scrubW0 = Math.round(o.t - scrubSpan(o) / 2); save(); });
+  spanSeg.title = 'How much time the slider shows';
+  return h('div', { style: 'display:flex;flex-direction:column;gap:6px' }, r,
+    h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, spanSeg, h('span', { style: 'flex:1' }), n, h('span', { class: 'lbl' }, 's')));
 }
 
 /* ---------------- Scenario card: library, and which spacecraft flies ---------------- */
