@@ -73,9 +73,16 @@ Plotted Euler angles are the 3-2-1 sequence of the relative attitude, listed as 
 
 Component orientation `c.q` is q_BC: `q2C(c.q) = C_CB`.
 
+## Mode schedule
+
+- **What it is:** a list of changes of guidance mode (`orbit.schedule`), each `{ id, start, slew, mode, …settings }`. The scenario's own settings fly before the first change. Each change keeps its own mode settings and ground target; the payload part (`tgtComp`) and the shown frame stay scenario-wide, and an inertial change keeps its own attitude `q`.
+- **Times are UTC** (the epoch format, 1900 to 2200), so a change stays at the same moment when the epoch moves. The change in force is the one with the latest start ≤ now; for equal starts the later in the list wins.
+- **Slews:** over `slew` seconds (0 to 3600) after its start, a change blends from the attitude before it to its own by slerp, linear in time, with **both attitudes evaluated at t**. A 90° slew over 60 s with two fixed attitudes turns at a constant 1.5°/s. It ends exactly on the new attitude; a change inside the previous slew blends from that slew, so the attitude never jumps (the rate does, at the ends).
+- **Kinematics only:** no wheels, torque or rate limits, so a slew can ask for more than real hardware gives.
+
 ## Payload pointing error and the payload view
 
-- **Reference:** the ground target (`orbit.tgtLat`, `tgtLon` geocentric; `tgtAlt` in m above the sphere, −500 to 9000) in every guidance mode, while the spacecraft is above the target's local horizontal (elevation > 0; for a high peak the line of sight clears the Earth slightly earlier than that). In *Ground target tracking* it is zero by construction.
+- **Reference:** the ground target in force (`orbit.tgtLat`, `tgtLon` geocentric, or those of the schedule change flying; `tgtAlt` in m above the sphere, −500 to 9000) in every guidance mode, while the spacecraft is above the target's local horizontal (elevation > 0; for a high peak the line of sight clears the Earth slightly earlier than that). In *Ground target tracking* it is zero by construction.
 - **Sign:** errors are *boresight minus target*.
 - **Axes:** *along* = ground-relative velocity `v − ω_E × r` (the direction the ground track moves), *cross* = along × up, i.e. **right of the track** looking forward (−orbit normal for a nadir-looking spacecraft).
   - Angular error: in the frame z = boresight, x = along ⊥ z, y = z × x. `along = −atan2(los·x, los·z)`, `cross = −atan2(los·y, los·z)`; total = angle(boresight, line of sight). *along* and *cross* are separate tangent-plane angles: they add up (√(along² + cross²) = total) only for small errors, and lose their meaning beyond 90°.

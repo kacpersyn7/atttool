@@ -142,6 +142,8 @@ const D = () => scenarioData(defaultState().orbit);
 test('import: hostile fields never reach the sim; the result runs through guidance, signals and the timeline', () => {
   const bad = [
     { def: 'rv' }, { def: 'rv', r: [7000, 0, 0] }, { refFrame: ['vvlh'] }, { refFrame: 'constructor' }, { refFrame: '__proto__' }, { mode: 'sun', sunAxis: ['+X'] }, { mode: 'sun', sunSecAxis: ['+X'] },
+    { schedule: 'soon' }, { schedule: [null, 7, { start: 'x', mode: 'sun' }, { start: '2026-10-05T10:10', mode: 'warp' }, { start: '2300-01-01T00:00', mode: 'sun' }] },
+    { schedule: [{ start: '2026-10-05T10:00:30', mode: 'sun', slew: 1e9, sunAxis: ['+X'], roll: 'a', tgtLat: 500, id: { x: 1 } }, { start: '2026-10-05T10:01', mode: 'inertial', slew: -5, q: { w: 0, x: 0, y: 0, z: 0 } }, { start: '2026-10-05T10:02', mode: 'target', tgtLat: NaN }] },
     { t: 1e15 }, { preset: 'nope' }, { preset: 'constructor' }, { hp: 1e308, ha: 1e308 }, { epoch: ['2026-10-05T10:00'] }, { sunSec: 'junk' }, { tle: 7 }, { i: 'x', raan: {}, argp: null, nu0: [] }, { roll: Infinity, pitch: NaN, yaw: '1' }, { tgtLat: 91, tgtLon: 1e9 }, { mode: 'constructor' }, { mode: 'inertial', inertialQ: { w: 0, x: 0, y: 0, z: 0 } }, { mode: 'inertial', inertialQ: 'x' },
   ];
   for (const orbit of bad) {

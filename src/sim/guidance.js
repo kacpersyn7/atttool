@@ -9,17 +9,27 @@
  *   inertial — fixed in ECI using the Rotation Lab attitude (state.rot.q)
  *   target   — payload boresight tracks a ground point, +X kept toward velocity
  *
- * To add a mode: add a branch in `attitudeAt`, an option + controls in views/orbit/orbitPanel.js.
+ * Mode schedule (state.orbit.schedule): a list of changes { id, start (UTC, epoch format), slew (s), mode,
+ * and that mode's settings (SEGMENT_KEYS; an inertial change keeps its own attitude q) }. The settings in
+ * state.orbit fly before the first change. A change slews from the attitude before it to its own over `slew`
+ * seconds: both attitudes are evaluated at t and blended by slerp, linear in time. Kinematics only.
+ *
+ * To add a mode: add a branch in `modeAttitude`, an option + controls in views/orbit/orbitPanel.js.
  */
 import * as AM from '../core/attitude.js';
 import * as ENV from '../env/index.js';
 import { compAxis } from '../spacecraft/component.js';
 import { alignMatrix, defaultAlign } from '../spacecraft/alignment.js';
-import { epochDate, orbitElements, targetECEF } from './scenario.js';
+import { epochDate, orbitElements, parseEpoch, targetECEF } from './scenario.js';
 
 const D2R = AM.D2R;
 
-/** Body axis from a spec: '+X', '-Z', or 'comp:<id>' (that component's +Z). */
+/** Guidance modes, in the order the UI lists them. */
+export const MODES = ['offsets', 'target', 'sun', 'inertial'];
+/** Settings a schedule change keeps. The payload part (tgtComp) and the shown frame stay scenario-wide. */
+export const SEGMENT_KEYS = ['mode', 'roll', 'pitch', 'yaw', 'sunAxis', 'sunSec', 'sunSecAxis', 'tgtLat', 'tgtLon', 'tgtAlt'];
+
+/** Body axis from a spec: '+X', '-Z', or 'comp:<id>' (that component's +Z; +Z if the part is not on this spacecraft). */
 export function axisSpec(spec, comps) {
   if (!spec) return [0, 0, 1];
   if (spec.startsWith('comp:')) { const c = comps.find(c => 'comp:' + c.id === spec); return c ? compAxis(c) : [0, 0, 1]; }
@@ -32,12 +42,46 @@ export function payloadComp(state) {
 }
 
 /**
+ * The schedule's changes in time order: [{ i (index in the list), ms (UTC) }]. Changes with an unreadable
+ * start are left out. Equal starts: the later in the list comes later, so it wins.
+ */
+export function scheduleOrder(sched) {
+  if (!Array.isArray(sched)) return [];
+  const out = []; sched.forEach((s, i) => { const d = s && parseEpoch(s.start); if (d) out.push({ i, ms: d.getTime() }); });
+  return out.sort((a, b) => a.ms - b.ms || a.i - b.i);
+}
+
+/** Attitude C_Body←ECI and mode info for guidance settings g (state.orbit or a schedule change) in geometry ctx. */
+function modeAttitude(state, g, x) {
+  const o = state.orbit;
+  if (g.mode === 'sun') {
+    const b1 = axisSpec(g.sunAxis, state.sc.comps); let b2 = axisSpec(g.sunSecAxis || '+X', state.sc.comps);
+    if (AM.v.norm(AM.v.cross(b1, b2)) < 1e-3) b2 = Math.abs(b1[0]) < .9 ? [1, 0, 0] : [0, 1, 0];
+    return { CBI: AM.triad(b1, b2, x.sun, x.refVec(g.sunSec)), flag: null };
+  }
+  if (g.mode === 'inertial') return { CBI: AM.q2C(AM.q.unit(g !== o && g.q ? g.q : state.rot.q)), flag: null };
+  if (g.mode === 'target') {
+    const tI = ENV.ecef2eci(targetECEF(g), x.date); const los = AM.v.sub(tI, x.st.r);
+    const elev = Math.PI / 2 - AM.v.angle(tI, AM.v.scale(los, -1));
+    const pc = payloadComp(state); const b1 = pc ? compAxis(pc) : [0, 0, 1];
+    if (elev > 0) { let b2 = [1, 0, 0]; if (AM.v.norm(AM.v.cross(b1, b2)) < 1e-3) b2 = [0, 1, 0]; return { CBI: AM.triad(b1, b2, los, x.st.v), flag: { elev } }; }
+    return { CBI: x.CNI, flag: { elev, below: true } }; // hold the nominal attitude
+  }
+  return { CBI: AM.m.mul(AM.euler2C('321', [(g.yaw || 0) * D2R, (g.pitch || 0) * D2R, (g.roll || 0) * D2R]), x.CNI), flag: null }; // offsets
+}
+
+/** Attitude blended from Ca (f = 0) to Cb (f = 1) along the shortest rotation, at a constant rate in f. */
+export function blendAttitude(Ca, Cb, f) { return AM.q2C(AM.q.slerp(AM.C2q(Ca), AM.C2q(Cb), f)); }
+
+/**
  * Full geometric state at t seconds after epoch.
- * @returns {{t, date, st, sun, moon, moonUp, CRI, CVI, CNI, CBI, ecl, flag}} st = propagated orbit state (ECI km, km/s),
+ * @returns {{t, date, st, sun, moon, moonUp, CRI, CVI, CNI, CBI, ecl, flag, g, seg}} st = propagated orbit state (ECI km, km/s),
  *   sun = unit Sun vector (ECI), moon = unit vector from the spacecraft to the Moon (ECI, includes parallax),
  *   moonUp = the Moon is not hidden behind the Earth,
  *   CRI = C_ref←ECI for the displayed orbital frame (o.refFrame), CVI = C_VVLH←ECI,
- *   CNI = nominal attitude C_SCF←ECI, CBI = C_Body←ECI, ecl = in eclipse, flag = mode-specific info (target elevation).
+ *   CNI = nominal attitude C_SCF←ECI, CBI = C_Body←ECI, ecl = in eclipse, flag = mode-specific info (target elevation),
+ *   g = the guidance settings in force (state.orbit, or the schedule change), seg = null before the first change,
+ *   else { i (index in the schedule), id, slew (0..1 while slewing into it, else null) }.
  */
 export function attitudeAt(state, t, E = orbitElements(state.orbit)) {
   const o = state.orbit;
@@ -48,26 +92,26 @@ export function attitudeAt(state, t, E = orbitElements(state.orbit)) {
   const CRI = ENV.orbitFrame(o.refFrame, st.r, st.v);
   const al = state.sc.align || defaultAlign();
   const CNI = AM.m.mul(alignMatrix(al), ENV.orbitFrame(al.ref, st.r, st.v));
-  let CBI, flag = null;
   const nadirI = AM.v.unit(AM.v.scale(st.r, -1)), hI = AM.v.unit(AM.v.cross(st.r, st.v));
   const refVec = k => k === 'nadir' ? nadirI : k === 'normal' ? hI : k === 'antinormal' ? AM.v.scale(hI, -1) : k === 'velocity' ? AM.v.unit(st.v) : k === 'zenith' ? AM.v.scale(nadirI, -1) : nadirI;
-  if (o.mode === 'offsets') CBI = AM.m.mul(AM.euler2C('321', [o.yaw * D2R, o.pitch * D2R, o.roll * D2R]), CNI);
-  else if (o.mode === 'sun') {
-    const b1 = axisSpec(o.sunAxis, state.sc.comps); let b2 = axisSpec(o.sunSecAxis || '+X', state.sc.comps);
-    if (AM.v.norm(AM.v.cross(b1, b2)) < 1e-3) b2 = Math.abs(b1[0]) < .9 ? [1, 0, 0] : [0, 1, 0];
-    CBI = AM.triad(b1, b2, sun, refVec(o.sunSec));
-  }
-  else if (o.mode === 'inertial') CBI = AM.q2C(AM.q.unit(state.rot.q));
-  else if (o.mode === 'target') {
-    const tI = ENV.ecef2eci(targetECEF(o), date); const los = AM.v.sub(tI, st.r);
-    const elev = Math.PI / 2 - AM.v.angle(tI, AM.v.scale(los, -1));
-    const pc = payloadComp(state); const b1 = pc ? compAxis(pc) : [0, 0, 1];
-    if (elev > 0) { let b2 = [1, 0, 0]; if (AM.v.norm(AM.v.cross(b1, b2)) < 1e-3) b2 = [0, 1, 0]; CBI = AM.triad(b1, b2, los, st.v); flag = { elev }; }
-    else { CBI = CNI; flag = { elev, below: true }; } // hold the nominal attitude
-  }
+  const x = { date, st, sun, CNI, refVec };
+
+  const sched = o.schedule, order = scheduleOrder(sched), now = date.getTime();
+  let p = -1; for (let j = 0; j < order.length; j++) if (order[j].ms <= now) p = j;
+  // attitude of change j (-1: the initial settings) at this t; a change still slewing blends from the one before
+  const att = j => {
+    const g = j < 0 ? o : sched[order[j].i], a = modeAttitude(state, g, x);
+    if (j < 0) return a;
+    const dur = Math.max(0, +g.slew || 0) * 1000, f = dur ? (now - order[j].ms) / dur : 1;
+    if (f >= 1) return a; // ends exactly on the new attitude
+    return { CBI: blendAttitude(att(j - 1).CBI, a.CBI, f), flag: a.flag, slew: f };
+  };
+  const r = att(p), g = p < 0 ? o : sched[order[p].i];
+  const seg = p < 0 ? null : { i: order[p].i, id: g.id, slew: r.slew ?? null };
+
   const ecl = ENV.eclipse(st.r, sun);
   const moon = AM.v.unit(AM.v.sub(ENV.moonECI(date), st.r)), moonUp = !ENV.behindEarth(st.r, moon);
-  return { t, date, st, sun, moon, moonUp, CRI, CVI, CNI, CBI, ecl, flag };
+  return { t, date, st, sun, moon, moonUp, CRI, CVI, CNI, CBI: r.CBI, ecl, flag: r.flag, g, seg };
 }
 
 /** Body angular rate (rad/s, body axes) by finite difference over 1 s. */

@@ -5,6 +5,8 @@ import { clampTime } from '../../sim/scenario.js';
 import { computeTimeline } from '../../sim/timeline.js';
 
 const LEFT = 112, RIGHT = 52; // px reserved for row names / percentages
+/** Mode band colours and short names, by index in MODES (offsets, target, sun, inertial); slews are drawn faded. */
+const MODE_COL = ['#4f8cff', '#46d38a', '#f2a93b', '#a99fe0'], MODE_NAME = ['Nominal', 'Target', 'Sun', 'Inertial'];
 
 export function createTimelineView(tlc) {
   let tl = null;
@@ -23,14 +25,21 @@ export function createTimelineView(tlc) {
       x.fillStyle = '#162232'; x.fillRect(L, y + 2, w, rowH - 4);
       for (let n = 0; n < tl.N; n++) {
         const val = r.v[n]; let col = null;
-        if (r.kind === 'ecl') col = val ? '#33496b' : null;
+        if (r.kind === 'mode') col = MODE_COL[val % 10] ? MODE_COL[val % 10] + (val >= 10 ? '55' : 'b0') : null;
+        else if (r.kind === 'ecl') col = val ? '#33496b' : null;
         else if (r.kind === 'str') col = val === 0 ? '#2f8f5f' : val === 2 ? '#f2a93b' : val === 4 ? '#a99fe0' : '#d65050';
         else if (r.kind === 'css') col = val ? '#d8b23e' : null;
         else if (r.kind === 'sa') col = `rgba(79,140,255,${0.15 + 0.85 * val})`;
         else if (r.kind === 'pl') col = val ? '#9fb0c8' : null;
         if (col) { x.fillStyle = col; x.fillRect(L + n / tl.N * w, y + 2, w / tl.N + .6, rowH - 4); }
       }
-      x.fillStyle = '#8697ae'; x.textAlign = 'right'; x.fillText(tl.stats[i].toFixed(0) + '%', W, y + rowH / 2); x.textAlign = 'left';
+      if (r.kind === 'mode') { // name each run of one mode where it fits
+        x.fillStyle = '#0a1018'; x.font = '600 10px "JetBrains Mono", monospace';
+        for (let n = 0; n < tl.N;) { let m = n; while (m < tl.N && r.v[m] % 10 === r.v[n] % 10) m++; const px = (m - n) / tl.N * w, nm = MODE_NAME[r.v[n] % 10] || '';
+          if (px > x.measureText(nm).width + 8) x.fillText(nm, L + n / tl.N * w + 4, y + rowH / 2); n = m; }
+        x.font = '500 11px "JetBrains Mono", monospace';
+      }
+      x.fillStyle = '#8697ae'; x.textAlign = 'right'; x.fillText(tl.stats[i] === null ? '' : tl.stats[i].toFixed(0) + '%', W, y + rowH / 2); x.textAlign = 'left';
     });
     const cx = L + ((S.orbit.t - tl.W0) / tl.T) * w; x.fillStyle = '#ffffff'; x.fillRect(cx - 1, top - 4, 2, Hh - top + 4);
   }
