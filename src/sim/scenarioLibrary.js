@@ -94,14 +94,17 @@ export function deleteScenario(s, id) {
 }
 
 /**
- * Scenario JSON format: 1, or 2 with a mode schedule. AttTool 0.8 and older read format 1 and refuse anything
- * newer, so a schedule is never dropped there without a word; a scenario without one stays readable by them.
+ * Scenario JSON format: 1, or FORMAT_SCHEDULE with a mode schedule. AttTool 0.8 and older read format 1 and refuse
+ * anything newer, so JSON copied from this version on never loses its schedule there without a word, and a scenario
+ * without one stays readable by them. (AttTool 0.9.0 wrote format 1 with a schedule; it is still read here.)
  */
-export const SCENARIO_FORMAT = 2;
+export const FORMAT_SCHEDULE = 2;
+/** The newest format this version reads. */
+export const SCENARIO_FORMAT = FORMAT_SCHEDULE;
 
 /** The active scenario as plain JSON. The spacecraft is only named. */
 export function exportScenario(s) {
-  const orbit = parked(s), format = orbit.schedule && orbit.schedule.length ? 2 : 1;
+  const orbit = parked(s), format = orbit.schedule && orbit.schedule.length ? FORMAT_SCHEDULE : 1;
   return copy({ atttool: format, kind: 'scenario', name: activeScenario(s).name, orbit, spacecraft: activeSC(s).name });
 }
 
