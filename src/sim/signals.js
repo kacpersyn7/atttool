@@ -50,7 +50,8 @@ export function signalCatalog(state) {
     { id: 'beta', group: 'Environment', label: 'β angle', unit: '°', comps: ['β'], cols: [''], kind: 'value', f: A => [ENV.betaAngle(A.st.r, A.st.v, A.sun) * R2D] },
     { id: 'alt', group: 'Environment', label: 'Altitude', unit: 'km', comps: ['h'], cols: [''], kind: 'value', f: A => [AM.v.norm(A.st.r) - ENV.RE] },
   ];
-  if (payloadComp(state)) {
+  const o = state.orbit;
+  if ([o, ...(o.schedule || [])].some(g => payloadComp(state, g))) { // a payload in the initial settings or any change
     const pe = A => { const p = pointing(state, A); return p && p.tgtUp ? p : null; };
     list.push({ id: 'plAng', group: 'Payload', label: 'Pointing error vs target', unit: '°', comps: ['along', 'cross', 'total'], kind: 'value', f: A => { const p = pe(A); return p ? [p.along, p.cross, p.ang] : [NaN, NaN, NaN]; } });
     list.push({ id: 'plGnd', group: 'Payload', label: 'Ground error vs target', unit: 'km', comps: ['along', 'cross', 'total'], kind: 'value', f: A => { const p = pe(A); return p && p.gnd !== null ? [p.gAlong, p.gCross, p.gnd] : [NaN, NaN, NaN]; } });

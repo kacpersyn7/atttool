@@ -125,6 +125,15 @@ export function sanitizeScenario(orbit, defaults) {
   return o;
 }
 
+/**
+ * Give each schedule change of orbit settings `o` the change settings it lacks (saves from before a setting was
+ * per change), from o itself: what such a change flew then.
+ */
+export function fillChanges(o) {
+  if (o && Array.isArray(o.schedule)) for (const c of o.schedule) if (c && typeof c === 'object') for (const k of SEGMENT_KEYS) if (!(k in c)) c[k] = o[k];
+  return o;
+}
+
 /** Most changes a schedule keeps. */
 export const MAX_CHANGES = 100;
 const quat = q => q && typeof q === 'object' && [q.w, q.x, q.y, q.z].every(isNum) && AM.q.norm(q) > 1e-9;

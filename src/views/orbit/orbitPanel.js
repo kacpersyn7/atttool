@@ -8,8 +8,8 @@ import { activeItem, selectSpacecraft } from '../../spacecraft/library.js';
 import { MAX_CHANGES, activeScenario, addScenario, deleteScenario, duplicateScenario, exportScenario, importScenario, newScenarioOrbit, renameScenario, selectScenario } from '../../sim/scenarioLibrary.js';
 import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, DATE_MAX, DATE_MIN, PRESETS, SCRUB_SPANS, clampTime, currentDate, epochDate, farFromEpoch, formatEpoch, ltanOf, orbitElements, scrubCancelResume, scrubEnd, scrubHold, scrubKey, scrubPress, scrubSpan, scrubWindowAt, setCurrentDate, setEpoch, switchDefinition, restartFromState, definitionError, tleOf, parseEpoch } from '../../sim/scenario.js';
 import { copyText, showModal, closeModal, toast } from '../../ui/overlay.js';
-import { payloadComp, scheduleOrder } from '../../sim/guidance.js';
-import { addChange, deleteChange, setChangeMode, setChangeStart, takeRotation } from '../../sim/schedule.js';
+import { changeTurn, payloadComp, scheduleOrder } from '../../sim/guidance.js';
+import { addChange, deleteChange, scheduleNotes, setChangeMode, setChangeStart, takeRotation } from '../../sim/schedule.js';
 import { sensorEval } from '../../sim/sensors.js';
 import { pointing } from '../../sim/payload.js';
 
@@ -71,7 +71,7 @@ export function orbitPanel(ctx) {
   const altCell = (id, label) => numCell(id, label, () => targetHeight(g) * 1000, x => { g.tgtAlt = Math.max(TGT_ALT_MIN, Math.min(TGT_ALT_MAX, x)); save(); }, 100, 0);
   if (g.mode === 'target') modeCtl.push(
     h('div', { class: 'grid2' }, numCell('tlat', 'Latitude °', () => g.tgtLat, x => { g.tgtLat = x; save(); }, .1, 2), numCell('tlon', 'Longitude °', () => g.tgtLon, x => { g.tgtLon = x; save(); }, .1, 2), altCell('talt', 'Height m')),
-    selectRow({ id: 'tgtComp', label: 'Pointing axis', options: S.sc.comps.filter(c => TYPES[c.type].cone).map(c => [c.id, c.name]), get: () => (payloadComp(S) || {}).id, set: v => { o.tgtComp = v; save(); } }),
+    selectRow({ id: 'tgtComp', label: 'Pointing axis', options: S.sc.comps.filter(c => TYPES[c.type].cone).map(c => [c.id, c.name]), get: () => (payloadComp(S, g) || {}).id, set: v => { g.tgtComp = v; save(); ctx.renderRail(); } }),
     h('div', { class: 'status' }, liveText(() => { const cur = ctx.cur(); if (cur && cur.g !== g && sched.length) return `<span class="chip dim">Not flying now: ${g === o ? 'a change is' : 'it starts at ' + esc(showUTC(g.start))}</span>`; return !cur || !cur.flag ? '' : cur.flag.below ? `<span class="chip dim">Target below horizon · holding nadir</span>` : `<span class="chip ok">Tracking · elevation ${deg(cur.flag.elev).toFixed(1)}°</span>`; })),
     tip('Boresight → line of sight to the ground point, body +X kept toward velocity. Watch the body rate rise near closest approach.'));
   if (g.mode === 'inertial' && g === o) modeCtl.push(tip('Body frame fixed in ECI using the attitude from <b>Rotation Lab</b> (reference R = ECI). Watch the Sun and Earth sweep around the spacecraft once per orbit.'));
@@ -79,17 +79,17 @@ export function orbitPanel(ctx) {
     tip('This change keeps the attitude Rotation Lab had when it was made inertial (reference R = ECI). Set another one there, then take it here.'),
     h('div', { class: 'btns' }, h('button', { class: 'btn', onclick: () => { takeRotation(g, S.rot.q); save(); toast('Rotation Lab attitude taken'); } }, 'Take the Rotation Lab attitude')));
   out.push(scheduleCard(ctx, o));
-  out.push(card('Attitude guidance', g === o ? null : 'change at ' + showUTC(g.start),
+  out.push(card('Attitude guidance', g === o ? null : liveText(() => 'change at ' + esc(showUTC(g.start))),
     sched.length ? h('p', { class: 'tip', style: 'margin:0' }, g === o ? 'Editing the initial settings, flown before the first change.' : 'Editing the change selected in Mode schedule.') : null,
     selectRow({ id: 'mode', label: 'Mode', options: [['offsets', 'Nominal attitude + offsets'], ['target', 'Ground target tracking'], ['sun', 'Sun pointing'], ['inertial', 'Inertial (from Rotation Lab)']], get: () => g.mode, set: v => { if (g === o) o.mode = v; else setChangeMode(g, v, S.rot.q); save(); ctx.renderRail(); } }),
     selectRow({ id: 'refFrame', label: 'Shown orbital frame', options: Object.entries(ENV.ORBIT_FRAMES).map(([k, f]) => [k, f.label]), get: () => o.refFrame, set: v => { o.refFrame = v; save(); ctx.renderRail(); } }),
     ...modeCtl));
 
-  if (payloadComp(S)) out.push(card('Payload pointing', payloadComp(S).name + ' vs ground target',
+  if (payloadComp(S, g)) out.push(card('Payload pointing', payloadComp(S, g).name + ' vs ground target',
     g.mode === 'target' ? null : h('div', { class: 'grid2' }, numCell('ptlat', 'Target lat °', () => g.tgtLat, x => { g.tgtLat = x; save(); }, .1, 2), numCell('ptlon', 'Target lon °', () => g.tgtLon, x => { g.tgtLon = x; save(); }, .1, 2), altCell('ptalt', 'Target height m')),
     liveText(() => {
       const cur = ctx.cur(); if (!cur) return ''; const p = pointing(S, cur); if (!p) return '';
-      const note = sched.length && cur.g !== g ? `<p class="tip" style="margin:0 0 4px">Now flying: ${cur.seg ? 'the change at ' + esc(showUTC(cur.g.start)) : 'the initial settings'}. The numbers are for that target.</p>` : '';
+      const note = sched.length && cur.g !== g ? `<p class="tip" style="margin:0 0 4px">Now flying: ${cur.seg ? 'the change at ' + esc(showUTC(cur.g.start)) : 'the initial settings'}. The numbers are for its payload and target.</p>` : '';
       if (!p.tgtUp) return note + `<span class="chip dim">Target below horizon · elevation ${deg(p.elev).toFixed(1)}°</span>`;
       const kmT = x => x === null ? '—' : Math.abs(x) < 1 ? fmt(x * 1000, 0) + ' m' : fmt(x, 2) + ' km';
       const row = (k, val) => `<div style="display:flex;justify-content:space-between"><span>${k}</span><span style="font-family:var(--f-mono)">${val}</span></div>`;
@@ -106,7 +106,7 @@ export function orbitPanel(ctx) {
         rows.push(`<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span>${esc(c.name)}</span><span class="lbl" style="font-family:var(--f-mono);font-size:11.5px">☉ ${s.sunAng.toFixed(0)}° · ☾ ${s.moonUp ? s.moonAng.toFixed(0) + '°' : '–'} · limb ${s.limb.toFixed(0)}°</span>${s.ok ? '<span class="chip ok">Tracking</span>' : s.sunBlind ? '<span class="chip warn">Sun-blinded</span>' : s.earthBlind ? '<span class="chip bad">Earth in FOV</span>' : '<span class="chip moon">Moon-blinded</span>'}</div>`);
       }
       const css = S.sc.comps.filter(c => c.type === 'css'); if (css.length) { const n = css.filter(c => sensorEval(c, cur).sees).length; rows.push(`<div style="display:flex;justify-content:space-between"><span>Sun sensors seeing Sun</span><span class="chip ${n ? 'ok' : 'dim'}">${n}/${css.length}</span></div>`); }
-      const pc = payloadComp(S); if (pc) { const s = sensorEval(pc, cur); rows.push(`<div style="display:flex;justify-content:space-between"><span>${esc(pc.name)} off-nadir</span><span style="font-family:var(--f-mono)">${s.nadAng.toFixed(1)}°</span></div>`); }
+      const pc = payloadComp(S, cur.g); if (pc) { const s = sensorEval(pc, cur); rows.push(`<div style="display:flex;justify-content:space-between"><span>${esc(pc.name)} off-nadir</span><span style="font-family:var(--f-mono)">${s.nadAng.toFixed(1)}°</span></div>`); }
       return `<div style="display:flex;flex-direction:column;gap:6px">${rows.join('')}</div>`;
     }),
     tip('Star tracker is blinded if the Sun is inside its exclusion angle, the Earth limb is closer than its Earth exclusion, or the Moon (when not behind the Earth) is inside its Moon exclusion. ☾ – = Moon behind the Earth. Edit the angles in <b>Spacecraft Layout</b>.')));
@@ -130,6 +130,8 @@ const refused = () => toast(`Enter a date from ${DATE_MIN.slice(0, 4)} to ${DATE
 /* ---------------- Mode schedule: changes of guidance mode at set times, with slews ---------------- */
 let selChange = null; // id of the change the guidance controls edit; null: the initial settings
 const MODE_SHORT = { offsets: 'Nominal', target: 'Target', sun: 'Sun', inertial: 'Inertial' };
+/** Warning text for scheduleNotes entries. */
+const noteText = ns => (ns || []).map(n => n === 'tie' ? 'Same start as another change: this one flies, as the later in the list' : n === 'overridden' ? 'Never flies: a later change in the list starts at the same moment' : 'Starts during the slew before it, so it blends from that slew').join('. ');
 /** A start for display: always with seconds, without fractions. */
 const showUTC = str => { const d = parseEpoch(str); return d ? d.toISOString().slice(0, 19).replace('T', ' ') : str; };
 
@@ -140,11 +142,23 @@ function scheduleCard(ctx, o) {
     const c = sched.find(c => c.id === id); if (c) setCurrentDate(o, c.start); // jump to its start
     save(); ctx.renderRail();
   };
-  const list = h('div', { onclick: e => { const b = e.target.closest('[data-id]'); if (b) pick(b.dataset.id); } },
+  // the live list may be redrawn between press and release (a start applied on blur changes it), and then the
+  // browser fires no click: a pointer picks the row the press started on when it is released over the list;
+  // click is left for the keyboard (Enter / Space on a row)
+  let pressed = null;
+  const rowOf = e => { const b = e.target.closest('[data-id]'); return b ? b.dataset.id : null; };
+  const list = h('div', {
+    onpointerdown: e => { pressed = e.button === 0 ? rowOf(e) : null; },
+    onpointerup: e => { const id = pressed; pressed = null; if (id !== null && e.button === 0) pick(id); },
+    onclick: e => { if (e.detail === 0) { const id = rowOf(e); if (id !== null) pick(id); } },
+  },
     liveText(() => {
       const cur = ctx.cur(), now = cur && cur.seg ? cur.seg.id : '';
-      const row = (id, start, mode, slew) => `<button type="button" class="srow${(selChange || '') === id ? ' on' : ''}" data-id="${esc(id)}" title="${id ? 'Edit this change and go to its start' : 'Edit the initial settings'}"><span class="dot${now === id ? ' now' : ''}"></span><span class="st">${start}</span><span>${MODE_SHORT[mode] || ''}</span><span class="sl">${slew}</span></button>`;
-      return row('', 'Initial', o.mode, '') + scheduleOrder(sched).map(({ i }) => { const c = sched[i]; return row(c.id, esc(showUTC(c.start)), c.mode, c.slew + ' s'); }).join('');
+      const notes = scheduleNotes(o);
+      const row = (id, start, mode, slew, warn = '', info = '') => `<button type="button" class="srow${(selChange || '') === id ? ' on' : ''}" data-id="${esc(id)}" title="${warn ? esc(warn) + '. ' : ''}${info ? esc(info) + '. ' : ''}${id ? 'Edit this change and go to its start' : 'Edit the initial settings'}"><span class="dot${now === id ? ' now' : ''}"></span><span class="st">${start}${warn ? ' <span class="warn">⚠</span>' : ''}</span><span>${MODE_SHORT[mode] || ''}</span><span class="sl">${slew}</span></button>`;
+      const first = scheduleOrder(sched)[0], until = first ? showUTC(sched[first.i].start) : '';
+      const today = until && cur && cur.date.toISOString().slice(0, 10) === until.slice(0, 10); // the date only when it isn't the current one
+      return row('', until ? 'Initial · until ' + (today ? until.slice(11) : until.slice(0, 16)) : 'Initial', o.mode, '', '', until ? 'Flies before the first change, until ' + until : '') + scheduleOrder(sched).map(({ i }) => { const c = sched[i]; return row(c.id, esc(showUTC(c.start)), c.mode, c.slew ? c.slew + ' s' : 'jump', noteText(notes[c.id])); }).join('');
     }, 'sched'));
   const kids = [list,
     h('div', { class: 'status' }, liveText(() => { const cur = ctx.cur(); if (!cur) return ''; const s = cur.seg; const m = MODE_SHORT[cur.g.mode];
@@ -160,12 +174,26 @@ function scheduleCard(ctx, o) {
     const start = dateInput('chStart'), slew = h('input', { type: 'number', id: 'chSlew', min: 0, max: 3600, step: 1 });
     slew.addEventListener('change', () => { const x = +slew.value; if (slew.value !== '' && Number.isFinite(x)) { sel.slew = Math.max(0, Math.min(3600, Math.round(x))); save(); } slew.value = sel.slew; syncAll(); });
     onSync(() => { if (document.activeElement !== slew) slew.value = sel.slew; });
-    start.addEventListener('change', () => { if (setChangeStart(o, sel.id, start.value)) { save(); ctx.renderRail(); } else refused(); });
-    start.addEventListener('blur', () => syncAll());
-    onSync(() => { if (document.activeElement !== start) start.value = sel.start; });
-    kids.push(h('div', { class: 'row two' }, h('label', { for: 'chStart' }, 'Starts (UTC)'), start), h('div', { class: 'row two' }, h('label', { for: 'chSlew', title: 'From the attitude before it, 0 to 3600 s' }, 'Slew (s)'), slew));
+    // a typed start applies on Enter or on leaving the field, not while the date is half typed (change fires per part)
+    const pending = h('span', { class: 'lbl', hidden: true }, 'Enter to apply · Esc to undo');
+    const shown = () => { start.value = sel.start; pending.hidden = true; };
+    const commit = () => { if (pending.hidden) return; pending.hidden = true; if (setChangeStart(o, sel.id, start.value)) save(); else { refused(); start.value = sel.start; } syncAll(); };
+    start.addEventListener('input', () => { pending.hidden = start.value === sel.start; });
+    start.addEventListener('change', () => { pending.hidden = start.value === sel.start; });
+    start.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); commit(); } else if (e.key === 'Escape') { e.preventDefault(); shown(); } });
+    start.addEventListener('blur', commit);
+    onSync(() => { if (document.activeElement !== start) shown(); });
+    kids.push(h('div', { class: 'row two' }, h('label', { for: 'chStart' }, 'Starts (UTC)'), start),
+      h('div', { style: 'display:flex;justify-content:space-between;gap:8px' }, pending, h('span', { class: 'lbl', style: 'margin-left:auto' }, liveText(() => { const d = parseEpoch(pending.hidden ? sel.start : start.value); return d ? tPlus((d.getTime() - epochDate(o).getTime()) / 1000) + ' from the epoch' : ''; }))),
+      h('div', { class: 'row two' }, h('label', { for: 'chSlew', title: 'From the attitude before it, 0 to 3600 s (0: a jump)' }, 'Slew (s)'), slew),
+      h('div', { class: 'status' }, liveText(() => {
+        const tr = changeTurn(S, sel.id), n = noteText(scheduleNotes(o)[sel.id]); if (!tr) return '';
+        if (tr.overridden) return `<span class="chip warn">${esc(n)}</span>`;
+        const turn = tr.rate === null ? `Jumps ${tr.angle.toFixed(1)}°` : `Turns ${tr.angle.toFixed(1)}° in ${sel.slew} s · ${tr.rate.toFixed(2)}°/s on average`;
+        return `<span class="chip dim" title="At its start, from the attitude before it. Kinematics only: real wheels may not turn this fast.">${turn}</span>${n ? ` <span class="chip warn">${esc(n)}</span>` : ''}`;
+      })));
   }
-  kids.push(tip('Each change slews from the attitude before it to its own over the slew time; both are worked out at every moment, so scrubbing works. Kinematics only: no wheels or torque limits. Times are UTC, so they stay put when the epoch moves. Click a row to edit it in <b>Attitude guidance</b>.'));
+  kids.push(tip('Each change slews from the attitude before it to its own over the slew time; both are worked out at every moment, so scrubbing works. Kinematics only: no wheels or torque limits. Times are UTC, so they stay put when the epoch moves. Click a row to edit it in <b>Attitude guidance</b>; a typed start applies on Enter.'));
   return card('Mode schedule', sched.length ? sched.length + (sched.length === 1 ? ' change' : ' changes') : 'none', ...kids);
 }
 

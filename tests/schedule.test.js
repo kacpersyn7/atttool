@@ -3,13 +3,16 @@ import assert from 'node:assert/strict';
 import * as AM from '../src/core/attitude.js';
 import * as ENV from '../src/env/index.js';
 import { close, closeArr } from './helpers.js';
-import { attitudeAt, bodyRate, blendAttitude, relativeQ, scheduleOrder } from '../src/sim/guidance.js';
-import { addChange, deleteChange, setChangeMode, setChangeStart, takeRotation, DEFAULT_SLEW } from '../src/sim/schedule.js';
+import { attitudeAt, bodyRate, blendAttitude, changeTurn, payloadComp, relativeQ, scheduleOrder } from '../src/sim/guidance.js';
+import { addChange, deleteChange, scheduleNotes, setChangeMode, setChangeStart, takeRotation, DEFAULT_SLEW } from '../src/sim/schedule.js';
 import { computeTimeline, timelineKey } from '../src/sim/timeline.js';
 import { pointing } from '../src/sim/payload.js';
 import { applyPreset, currentDate, epochDate, parseEpoch, restartFromState, setEpoch, targetECEF } from '../src/sim/scenario.js';
 import { MAX_CHANGES, addScenario, cleanSchedule, exportScenario, importScenario, scenarioData, selectScenario } from '../src/sim/scenarioLibrary.js';
 import { defaultState, migrate } from '../src/state/store.js';
+import { signalCatalog } from '../src/sim/signals.js';
+import { addSpacecraft, selectSpacecraft, validateAxes } from '../src/spacecraft/library.js';
+import { sensorEval } from '../src/sim/sensors.js';
 
 const D2R = Math.PI / 180, R2D = 180 / Math.PI;
 const fresh = () => { const s = defaultState(); migrate(s); s.orbit.t = 0; return s; };
@@ -162,4 +165,104 @@ test('schedule in scenarios: kept per scenario, never shared, cleaned on import,
   const long = cleanSchedule(['1', '2'].map(k => ({ id: 'a'.repeat(40) + k, start: at(s, 5), mode: 'sun' })), s.orbit); assert.notEqual(long[0].id, long[1].id, 'unique after trimming');
   const qi = cleanSchedule([{ start: at(s, 5), mode: 'inertial', q: 'x' }], s.orbit, qz(30)); assert.deepEqual(qi[0].q, AM.q.unit(qz(30)), 'the scenario inertial attitude');
   assert.deepEqual(cleanSchedule([{ start: at(s, 5), mode: 'inertial' }], s.orbit)[0].q, AM.q.id(), 'else the identity: never Rotation Lab at the moment');
+});
+
+test('schedule: the turn a change asks for at its start, and its mean rate (90° in 60 s = 1.5°/s)', () => {
+  const s = inertialPair(); const tr = changeTurn(s, 'a'); close(tr.angle, 90, 1e-6); close(tr.rate, 1.5, 1e-8);
+  assert.equal(changeTurn(inertialPair(0), 'a').rate, null, 'slew 0: a jump'); assert.equal(changeTurn(s, 'nope'), null);
+  // a change during the slew before it turns from that slew: halfway, 45° are left
+  s.orbit.schedule.push({ id: 'b', start: at(s, 630), slew: 30, mode: 'inertial', q: qz(90) }); close(changeTurn(s, 'b').angle, 45, 1e-6); close(changeTurn(s, 'b').rate, 1.5, 1e-8);
+  // the half turn reads 180°
+  const h = fresh(); Object.assign(h.orbit, { mode: 'sun', sunAxis: '-Z', sunSecAxis: '+X', sunSec: 'nadir' });
+  h.orbit.schedule = [{ id: 'h', start: at(h, 600), slew: 60, mode: 'sun', sunAxis: '+Z', sunSecAxis: '+X', sunSec: 'nadir' }]; close(changeTurn(h, 'h').angle, 180, 1e-6);
+});
+
+test('schedule notes: a change that starts during the slew before it, and changes with the same start', () => {
+  const s = inertialPair(); const o = s.orbit;
+  assert.deepEqual(scheduleNotes(o), {});
+  o.schedule = [...o.schedule, { id: 'b', start: at(s, 630), slew: 60, mode: 'inertial', q: qz(0) }, { id: 'c', start: at(s, 900), slew: 0, mode: 'offsets' }, { id: 'd', start: at(s, 900), slew: 0, mode: 'sun' }];
+  assert.deepEqual(scheduleNotes(o), { b: ['overlap'], c: ['overridden'], d: ['tie'] }, 'c never flies: d, later in the list, starts with it');
+  o.schedule = [{ id: 'p', start: at(s, 100), slew: 600, mode: 'offsets' }, ...['x', 'y', 'z'].map(id => ({ id, start: at(s, 300), slew: 0, mode: 'sun' }))];
+  assert.deepEqual(scheduleNotes(o), { x: ['overridden'], y: ['overridden'], z: ['tie', 'overlap'] }, 'three at once: each note once; the one that flies is checked against what flew before');
+  o.schedule = [{ id: 'a', start: at(s, 600), slew: 60, mode: 'offsets' }, { id: 'b', start: at(s, 660), slew: 0, mode: 'offsets' }];
+  assert.deepEqual(scheduleNotes(o), {}, 'starting just as the slew ends is fine');
+});
+
+test('schedule edits: moving a start keeps the change object (the controls stay bound to it), replaces the array', () => {
+  const s = inertialPair(), o = s.orbit, c = o.schedule[0], arr = o.schedule;
+  assert.equal(setChangeStart(o, 'a', at(s, 1200)), true); assert.equal(o.schedule[0], c); assert.notEqual(o.schedule, arr); assert.equal(c.start, at(s, 1200));
+});
+
+test('schedule: changes at the same moment: only the last flies, and it slews from what flew before, not from the ones it overrides', () => {
+  const s = inertialPair(); // 0°, then 90° at 600 s over 60 s
+  s.orbit.schedule = [{ id: 'lose', start: at(s, 600), slew: 0, mode: 'inertial', q: qz(170) }, { id: 'win', start: at(s, 600), slew: 60, mode: 'inertial', q: qz(90) }];
+  close(angleBetween(attitudeAt(s, 630).CBI, AM.q2C(qz(45))), 0, 1e-5, 'halfway from 0° to 90°: the 170° one never flew');
+  assert.deepEqual(changeTurn(s, 'lose'), { overridden: true }); close(changeTurn(s, 'win').angle, 90, 1e-6);
+});
+
+test('changeTurn: from initial inertial settings (Rotation Lab), and into target tracking while the target is below the horizon', () => {
+  const s = inertialPair(); s.rot.q = qz(-30); close(changeTurn(s, 'a').angle, 120, 1e-6, 'from Rotation Lab −30° to 90°');
+  const t = fresh(); applyPreset(t.orbit, 'sso1030'); Object.assign(t.orbit, { mode: 'offsets', roll: 20, pitch: 0, yaw: 0 });
+  t.orbit.schedule = [{ id: 'g', start: at(t, 600), slew: 60, mode: 'target', tgtLat: -80, tgtLon: 0, tgtAlt: 0 }];
+  assert.ok(attitudeAt(t, 700).flag.below, 'set up: the target is below the horizon');
+  close(changeTurn(t, 'g').angle, 20, 1e-6, 'it holds the nominal attitude: the 20° roll comes off');
+});
+
+test('schedule: a chain of overlapping slews stays cheap (each change worked out once per time)', () => {
+  const s = inertialPair(); s.orbit.schedule = Array.from({ length: 40 }, (_, k) => ({ id: 'c' + k, start: at(s, 600 + k), slew: 3600, mode: 'inertial', q: qz(k * 7) }));
+  const t0 = performance.now(); for (let n = 0; n < 20; n++) attitudeAt(s, 1000 + n); changeTurn(s, 'c39');
+  assert.ok(performance.now() - t0 < 500, `${(performance.now() - t0).toFixed(0)} ms for 20 samples of a 40-deep chain`);
+});
+
+test('schedule: each change has its own pointing payload; tracking, pointing and the timeline use the one flying', () => {
+  const s = fresh(); applyPreset(s.orbit, 'sso1030');
+  const cam = s.sc.comps.find(c => c.type === 'payload'), q90 = AM.q.unit({ w: Math.SQRT1_2, x: Math.SQRT1_2, y: 0, z: 0 }); // the second camera looks along body ±Y
+  const cam2 = { ...structuredClone(cam), id: 'cam2', name: 'Side cam', q: q90 }; s.sc.comps.push(cam2);
+  const sub = ENV.ecef2ll(ENV.eci2ecef(attitudeAt(s, 900).st.r, attitudeAt(s, 900).date));
+  Object.assign(s.orbit, { mode: 'target', tgtComp: cam.id, tgtLat: sub.lat * R2D, tgtLon: sub.lon * R2D, tgtAlt: 0 });
+  s.orbit.schedule = [{ id: 'side', start: at(s, 850), slew: 0, mode: 'target', tgtComp: 'cam2', tgtLat: sub.lat * R2D, tgtLon: sub.lon * R2D, tgtAlt: 0 }];
+  assert.equal(payloadComp(s).id, cam.id, 'the initial settings keep theirs'); assert.equal(payloadComp(s, s.orbit.schedule[0]).id, 'cam2');
+  const A = attitudeAt(s, 900), p = pointing(s, A); assert.equal(p.c.id, 'cam2', 'pointing uses the payload flying'); close(p.ang, 0, 1e-6, 'the side camera is on the target');
+  const bore = AM.m.mulv(AM.m.T(A.CBI), AM.m.mulv(AM.m.T(AM.q2C(cam2.q)), [0, 0, 1])); close(AM.v.dot(bore, AM.v.unit(AM.v.sub(p.tgt, A.st.r))), 1, 1e-9);
+  assert.equal(pointing(s, attitudeAt(s, 800)).c.id, cam.id, 'before the change: the first camera');
+  const tl = computeTimeline(s, 0, null, 12); assert.equal(tl.rows.find(r => r.kind === 'pl').name, 'Payload on ground', 'two payloads in the schedule');
+  s.orbit.schedule[0].tgtComp = cam.id; assert.equal(computeTimeline(s, 0, null, 12).rows.find(r => r.kind === 'pl').name, cam.name + ' on ground');
+  s.orbit.schedule[0].tgtComp = 'gone'; assert.equal(payloadComp(s, s.orbit.schedule[0]).id, cam.id, 'a part that is not there: the first payload camera');
+});
+
+/** A scenario whose spacecraft has a second camera looking along body Y, and the ground point under it at t = 900 s. */
+function twoCameras() {
+  const s = fresh(); applyPreset(s.orbit, 'sso1030');
+  const cam = s.sc.comps.find(c => c.type === 'payload'), cam2 = { ...structuredClone(cam), id: 'cam2', name: 'Side cam', q: AM.q.unit({ w: Math.SQRT1_2, x: Math.SQRT1_2, y: 0, z: 0 }) };
+  s.sc.comps.push(cam2); const A = attitudeAt(s, 900), ll = ENV.ecef2ll(ENV.eci2ecef(A.st.r, A.date));
+  return { s, cam, cam2, lat: ll.lat * R2D, lon: ll.lon * R2D };
+}
+
+test('old saves: a change without its own payload keeps flying the one its scenario had', () => {
+  const { s } = twoCameras(); s.orbit.tgtComp = 'cam2'; s.orbit.schedule = [{ id: 'old', start: at(s, 600), slew: 0, mode: 'target', tgtLat: 0, tgtLon: 0, tgtAlt: 0 }];
+  addScenario(s, { ...scenarioData(s.orbit), schedule: [{ id: 'p', start: at(s, 600), slew: 0, mode: 'sun' }] }, 'Parked'); selectScenario(s, s.scenarios.items[0].id);
+  migrate(s);
+  assert.equal(s.orbit.schedule[0].tgtComp, 'cam2'); assert.equal(payloadComp(s, s.orbit.schedule[0]).id, 'cam2');
+  assert.equal(s.scenarios.items.find(i => i.data).data.schedule[0].tgtComp, 'cam2', 'parked scenarios too'); assert.equal(s.scenarios.items.find(i => i.data).data.schedule[0].sunSec, s.orbit.sunSec);
+  assert.equal(cleanSchedule([{ start: at(s, 5), mode: 'target' }], { ...s.orbit, tgtComp: 'cam2' })[0].tgtComp, 'cam2', 'import: from its scenario');
+});
+
+test('a payload chosen only on a change still gets its plots and timeline row; the row follows the payload flying', () => {
+  const { s, lat, lon } = twoCameras(); s.sc.comps = s.sc.comps.filter(c => c.type !== 'payload'); // no payload camera: only the change picks a part
+  const str = s.sc.comps.find(c => c.type === 'str');
+  Object.assign(s.orbit, { mode: 'offsets', tgtComp: '' }); assert.equal(payloadComp(s), null);
+  s.orbit.schedule = [{ id: 'c', start: at(s, 850), slew: 0, mode: 'target', tgtComp: str.id, tgtLat: lat, tgtLon: lon, tgtAlt: 0 }];
+  assert.ok(signalCatalog(s).some(x => x.id === 'plAng'), 'pointing-error signals');
+  const tl = computeTimeline(s, 0, null, 120), r = tl.rows.find(x => x.kind === 'pl'); assert.ok(r, 'on-ground row'); assert.equal(r.name, str.name + ' on ground');
+  const val = t => r.v[Math.floor((t - tl.W0) / (tl.T / 120))];
+  assert.equal(val(600), 0, 'before the change: no payload flies');
+  close(pointing(s, attitudeAt(s, 900)).ang, 0, 1e-6, 'the star tracker boresight is on the target'); assert.equal(val(900), sensorEval(str, attitudeAt(s, 900)).onGround ? 1 : 0);
+});
+
+test('parts: a change keeps its parts while the spacecraft is switched, and forgets a part that is deleted', () => {
+  const { s } = twoCameras(); s.orbit.schedule = [{ id: 'c', start: at(s, 600), slew: 0, mode: 'sun', tgtComp: 'cam2', sunAxis: 'comp:cam2', sunSecAxis: '+X', sunSec: 'nadir' }];
+  const a = s.fleet.active; addSpacecraft(s, structuredClone(s.sc), 'Other'); // a copy: its parts get the same ids? check below
+  selectSpacecraft(s, a); assert.equal(s.orbit.schedule[0].tgtComp, 'cam2', 'kept across a switch and back');
+  s.sc.comps = s.sc.comps.filter(c => c.id !== 'cam2'); validateAxes(s);
+  assert.equal(s.orbit.schedule[0].tgtComp, ''); assert.equal(s.orbit.schedule[0].sunAxis, '-Z', 'reset like the initial settings');
 });

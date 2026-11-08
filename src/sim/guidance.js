@@ -26,8 +26,8 @@ const D2R = AM.D2R;
 
 /** Guidance modes, in the order the UI lists them. */
 export const MODES = ['offsets', 'target', 'sun', 'inertial'];
-/** Settings a schedule change keeps. The payload part (tgtComp) and the shown frame stay scenario-wide. */
-export const SEGMENT_KEYS = ['mode', 'roll', 'pitch', 'yaw', 'sunAxis', 'sunSec', 'sunSecAxis', 'tgtLat', 'tgtLon', 'tgtAlt'];
+/** Settings a schedule change keeps, its pointing payload (tgtComp) included. The shown frame stays scenario-wide. */
+export const SEGMENT_KEYS = ['mode', 'roll', 'pitch', 'yaw', 'sunAxis', 'sunSec', 'sunSecAxis', 'tgtLat', 'tgtLon', 'tgtAlt', 'tgtComp'];
 
 /** Body axis from a spec: '+X', '-Z', or 'comp:<id>' (that component's +Z; `missing` if the part is not on this spacecraft). */
 export function axisSpec(spec, comps, missing = [0, 0, 1]) {
@@ -36,9 +36,12 @@ export function axisSpec(spec, comps, missing = [0, 0, 1]) {
   const s = spec[0] === '-' ? -1 : 1, k = 'XYZ'.indexOf(spec[1]); const a = [0, 0, 0]; a[k] = s; return a;
 }
 
-/** The pointing payload: the selected target component, else the first payload camera. */
-export function payloadComp(state) {
-  return state.sc.comps.find(c => c.id === state.orbit.tgtComp) || state.sc.comps.find(c => c.type === 'payload') || null;
+/**
+ * The pointing payload of guidance settings g (state.orbit, or a schedule change; A.g for what flies at A):
+ * the part it selects, else the first payload camera.
+ */
+export function payloadComp(state, g = state.orbit) {
+  return state.sc.comps.find(c => c.id === g.tgtComp) || state.sc.comps.find(c => c.type === 'payload') || null;
 }
 
 /**
@@ -64,7 +67,7 @@ function modeAttitude(state, g, x) {
   if (g.mode === 'target') {
     const tI = ENV.ecef2eci(targetECEF(g), x.date); const los = AM.v.sub(tI, x.st.r);
     const elev = Math.PI / 2 - AM.v.angle(tI, AM.v.scale(los, -1));
-    const pc = payloadComp(state); const b1 = pc ? compAxis(pc) : [0, 0, 1];
+    const pc = payloadComp(state, g); const b1 = pc ? compAxis(pc) : [0, 0, 1];
     if (elev > 0) { let b2 = [1, 0, 0]; if (AM.v.norm(AM.v.cross(b1, b2)) < 1e-3) b2 = [0, 1, 0]; return { CBI: AM.triad(b1, b2, los, x.st.v), flag: { elev } }; }
     return { CBI: x.CNI, flag: { elev, below: true } }; // hold the nominal attitude
   }
@@ -102,29 +105,62 @@ export function blendAttitude(Ca, Cb, f, ref = null) {
  *   else { i (index in the schedule), id, slew (0..1 while slewing into it, else null) }.
  */
 export function attitudeAt(state, t, E = orbitElements(state.orbit)) {
-  const o = state.orbit, e0 = epochDate(o).getTime(), now = e0 + t * 1000;
-  const x = geometry(state, E, now);
-  const sched = o.schedule, order = scheduleOrder(sched);
-  let p = -1; for (let j = 0; j < order.length; j++) if (order[j].ms <= now) p = j;
-  const geo = new Map([[now, x]]), at = ms => { if (!geo.has(ms)) geo.set(ms, geometry(state, E, ms)); return geo.get(ms); };
-  // attitude of change j (-1: the initial settings) at UTC ms; a change still slewing blends from the one before
-  const att = (j, ms) => {
-    const g = j < 0 ? o : sched[order[j].i], a = modeAttitude(state, g, at(ms));
-    if (j < 0) return a;
-    const t0 = order[j].ms, dur = Math.max(0, +g.slew || 0) * 1000, f = dur ? (ms - t0) / dur : 1;
-    if (f >= 1) return a; // ends exactly on the new attitude
-    const from = att(j - 1, ms).CBI;
-    if (ms === t0) return { CBI: from, flag: a.flag, slew: 0 };
-    const ref = relativeQ(att(j - 1, t0).CBI, modeAttitude(state, g, at(t0)).CBI); // which way it turns: fixed at the start
-    return { CBI: blendAttitude(from, a.CBI, f, ref), flag: a.flag, slew: f };
-  };
-  const r = att(p, now), g = p < 0 ? o : sched[order[p].i];
-  const seg = p < 0 ? null : { i: order[p].i, id: g.id, slew: r.slew ?? null };
+  const o = state.orbit, now = epochDate(o).getTime() + t * 1000, sc = scheduler(state, E), x = sc.at(now);
+  let p = -1; for (let j = 0; j < sc.order.length; j++) if (sc.order[j].ms <= now) p = j;
+  const r = sc.att(p, now), g = p < 0 ? o : o.schedule[sc.order[p].i];
+  const seg = p < 0 ? null : { i: sc.order[p].i, id: g.id, slew: r.slew ?? null };
   const { date, st, sun, CNI } = x;
   const CVI = ENV.vvlh(st.r, st.v), CRI = ENV.orbitFrame(o.refFrame, st.r, st.v);
   const ecl = ENV.eclipse(st.r, sun);
   const moon = AM.v.unit(AM.v.sub(ENV.moonECI(date), st.r)), moonUp = !ENV.behindEarth(st.r, moon);
   return { t, date, st, sun, moon, moonUp, CRI, CVI, CNI, CBI: r.CBI, ecl, flag: r.flag, g, seg };
+}
+
+/**
+ * The position in scheduleOrder of what flies before change j: the last change with an earlier start (changes
+ * at the same moment as j never fly before it), or -1, the initial settings.
+ */
+export function flownBefore(order, j) { let k = j - 1; while (k >= 0 && order[k].ms === order[j].ms) k--; return k; }
+
+/**
+ * The schedule worked out for one call: order (scheduleOrder), at(ms) the geometry at UTC ms, and att(j, ms) the
+ * attitude of change j (-1: the initial settings) at ms; a change still slewing blends from what flew before it.
+ * Both are cached, so a chain of overlapping slews costs one evaluation per change and time.
+ */
+function scheduler(state, E) {
+  const o = state.orbit, sched = o.schedule, order = scheduleOrder(sched);
+  const geo = new Map(), at = ms => { if (!geo.has(ms)) geo.set(ms, geometry(state, E, ms)); return geo.get(ms); };
+  const own = (j, ms) => modeAttitude(state, j < 0 ? o : sched[order[j].i], at(ms));
+  const memo = new Map();
+  const att = (j, ms) => {
+    const key = j + '|' + ms; if (memo.has(key)) return memo.get(key);
+    const r = attOf(j, ms); memo.set(key, r); return r;
+  };
+  const attOf = (j, ms) => {
+    const a = own(j, ms); if (j < 0) return a;
+    const g = sched[order[j].i], t0 = order[j].ms, dur = Math.max(0, +g.slew || 0) * 1000, f = dur ? (ms - t0) / dur : 1;
+    if (f >= 1) return a; // ends exactly on the new attitude
+    const k = flownBefore(order, j), from = att(k, ms).CBI;
+    if (ms === t0) return { CBI: from, flag: a.flag, slew: 0 };
+    const ref = relativeQ(att(k, t0).CBI, own(j, t0).CBI); // which way it turns: fixed at the start
+    return { CBI: blendAttitude(from, a.CBI, f, ref), flag: a.flag, slew: f };
+  };
+  return { order, at, own, att };
+}
+
+/**
+ * The turn change `id` asks for at its start: angle (deg) from the attitude flown before it to its own, and the
+ * mean rate over its slew (deg/s; null for a jump). Both ends may move during the slew, so this is the turn at
+ * the start, not a limit. { overridden: true } for a change that never flies (a later one in the list starts at
+ * the same moment); null for an unknown change.
+ */
+export function changeTurn(state, id, E = orbitElements(state.orbit)) {
+  const o = state.orbit, sc = scheduler(state, E), j = sc.order.findIndex(x => o.schedule[x.i].id === id);
+  if (j < 0) return null;
+  if (j + 1 < sc.order.length && sc.order[j + 1].ms === sc.order[j].ms) return { overridden: true };
+  const t0 = sc.order[j].ms, q = relativeQ(sc.att(flownBefore(sc.order, j), t0).CBI, sc.own(j, t0).CBI);
+  const angle = 2 * Math.acos(Math.min(1, Math.abs(q.w))) / D2R, slew = Math.max(0, +o.schedule[sc.order[j].i].slew || 0);
+  return { angle, rate: slew ? angle / slew : null };
 }
 
 /** What the guidance modes need at UTC ms: date, orbit state, Sun, nominal attitude, reference directions. */

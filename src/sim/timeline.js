@@ -14,7 +14,9 @@ export function timelineRows(state) {
   comps.filter(c => c.type === 'str').forEach(c => rows.push({ name: c.name, kind: 'str', c }));
   if (comps.some(c => c.type === 'css')) rows.push({ name: 'Sun sensors', kind: 'css' });
   const sa = comps.filter(c => c.type === 'sa'); if (sa.length) rows.push({ name: 'Array power', kind: 'sa', cs: sa });
-  const pc = payloadComp(state); if (pc) rows.push({ name: pc.name + ' on ground', kind: 'pl', c: pc });
+  // the payload of what flies at each sample; the row is named after it when the whole schedule uses one
+  const o = state.orbit, pcs = [o, ...(o.schedule || [])].map(g => payloadComp(state, g)).filter(Boolean), pc = pcs[0];
+  if (pc) rows.push({ name: pcs.every(c => c === pc) ? pc.name + ' on ground' : 'Payload on ground', kind: 'pl' });
   return rows;
 }
 
@@ -44,7 +46,7 @@ export function computeTimeline(state, scVersion, prev, N = 360) {
       else if (r.kind === 'str') { const s = sensorEval(r.c, A); r.v[n] = s.sunBlind ? 2 : s.earthBlind ? 3 : s.moonBlind ? 4 : 0; }
       else if (r.kind === 'css') r.v[n] = css.some(c => sensorEval(c, A).sees) ? 1 : 0;
       else if (r.kind === 'sa') r.v[n] = r.cs.reduce((s, c) => s + sensorEval(c, A).cosInc * c.w * c.h, 0) / r.cs.reduce((s, c) => s + c.w * c.h, 0);
-      else if (r.kind === 'pl') r.v[n] = sensorEval(r.c, A).onGround ? 1 : 0;
+      else if (r.kind === 'pl') { const c = payloadComp(state, A.g); r.v[n] = c && sensorEval(c, A).onGround ? 1 : 0; }
     }
   }
   // percentage per row: STR = % tracking, SA = mean power fraction, others = % of samples "on"; the mode band has none

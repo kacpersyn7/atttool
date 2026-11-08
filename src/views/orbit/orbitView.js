@@ -137,7 +137,7 @@ export function createOrbitView({ renderRail }) {
     bArrow.visible = o.show.bv; bArrow.position.copy(pos); bArrow.setDir(BI); bArrow.scale.setScalar(vs); bArrow.setLength(L * .8 / vs);
     vArrow.visible = o.show.orbFrame; vArrow.position.copy(pos); vArrow.setDir(A.st.v); vArrow.scale.setScalar(vs); vArrow.setLength(L * .9 / vs);
     // payload ray & footprint
-    const pc = payloadComp(S);
+    const pc = payloadComp(S, A.g); // the payload of what flies now
     if (pc) {
       const bI = AM.m.mulv(AM.m.T(A.CBI), compAxis(pc)); const hit = ENV.rayEarth(A.st.r, bI);
       ray.visible = foot.visible = footLbl.visible = !!hit;
@@ -208,7 +208,7 @@ export function createOrbitView({ renderRail }) {
 
   /* ---------- lifecycle ---------- */
   function init() { if (!S.orbit._init) { doPreset(S.orbit.preset); S.orbit._init = true; } }
-  function enter() { insetEl.hidden = !!S.orbit.hideInset; plEl.hidden = !(S.orbit.show.plView && payloadComp(S)); $('#timeline').hidden = false; }
+  function enter() { insetEl.hidden = !!S.orbit.hideInset; plEl.hidden = !(S.orbit.show.plView && [S.orbit, ...(S.orbit.schedule || [])].some(g => payloadComp(S, g))); $('#timeline').hidden = false; }
   function leave() { insetEl.hidden = true; plEl.hidden = true; $('#timeline').hidden = true; }
   /** Called ~10×/s: timeline redraw and inset placement above it. */
   function tick() {

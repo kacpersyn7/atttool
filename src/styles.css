@@ -238,3 +238,4 @@ table.parts td.empty{color:var(--muted);text-align:center;padding:24px}
 .srow .sl{color:var(--muted);text-align:right;font-family:var(--f-mono);font-size:12px}
 .srow .dot{width:7px;height:7px;border-radius:50%}
 .srow .dot.now{background:var(--ok)}
+.srow .warn{color:var(--warn);font-family:var(--f-ui, inherit)}
