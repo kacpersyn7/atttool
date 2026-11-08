@@ -202,5 +202,5 @@ test('scenario JSON format: 1 without a schedule (older AttTool reads it), 2 wit
   const refusedBy08 = json => json.atttool > 1; // AttTool 0.8.0 importScenario, verbatim (git show v0.8.0:src/sim/scenarioLibrary.js)
   assert.equal(refusedBy08(j), true, 'with a schedule: 0.8 says it comes from a newer version'); assert.equal(refusedBy08(exportScenario(fresh())), false, 'without: 0.8 reads it');
   const t = fresh(); importScenario(t, j, D()); assert.equal(t.orbit.schedule.length, 1, 'read here');
-  importScenario(t, { ...j, atttool: 1 }, D()); assert.equal(t.orbit.schedule.length, 1, 'format 1 with a schedule (as AttTool 0.9.0 wrote it) is still read');
+  importScenario(t, { ...j, atttool: 1 }, D()); assert.equal(t.orbit.schedule.length, 1, 'format 1 with a schedule (as the withdrawn first 0.9.0 build wrote it) is still read');
 });
