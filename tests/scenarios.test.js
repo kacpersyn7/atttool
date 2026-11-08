@@ -8,7 +8,7 @@ import { computeTimeline } from '../src/sim/timeline.js';
 import { signalCatalog } from '../src/sim/signals.js';
 import { defaultState, migrate } from '../src/state/store.js';
 import { orbitElements } from '../src/sim/scenario.js';
-import { SCENARIO_KEYS, activeScenario, addScenario, deleteScenario, duplicateScenario, ensureScenarios, exportScenario, importScenario, newScenarioOrbit, renameScenario, sanitizeScenario, scenarioData, selectScenario } from '../src/sim/scenarioLibrary.js';
+import { SCENARIO_KEYS, activeScenario, addScenario, deleteScenario, duplicateScenario, ensureScenarios, exportScenario, importScenario, newScenarioOrbit, renameScenario, sanitizeScenario, scenarioData, selectScenario, SCENARIO_FORMAT } from '../src/sim/scenarioLibrary.js';
 
 const fresh = () => { const s = defaultState(); migrate(s); return s; };
 
@@ -160,7 +160,7 @@ test('import: hostile fields never reach the sim; the result runs through guidan
 
 test('import: refused files change nothing; odd names are replaced', () => {
   const s = fresh(), snap = () => JSON.stringify([s.fleet, s.scenarios, s.orbit]), before = snap();
-  for (const j of [{ kind: 'scenario', orbit: 7 }, { kind: 'scenario', atttool: 2, orbit: {} }]) { assert.throws(() => importScenario(s, j, D())); assert.equal(snap(), before); }
+  for (const j of [{ kind: 'scenario', orbit: 7 }, { kind: 'scenario', atttool: SCENARIO_FORMAT + 1, orbit: {} }]) { assert.throws(() => importScenario(s, j, D())); assert.equal(snap(), before); }
   importScenario(s, { kind: 'scenario', name: { toString: 1 }, orbit: {} }, D()); assert.equal(activeScenario(s).name, 'Imported scenario');
   importScenario(s, { kind: 'scenario', name: 'x'.repeat(99), orbit: {} }, D()); assert.equal(activeScenario(s).name.length, 32);
 });
@@ -193,4 +193,14 @@ test('scenarios: parts deleted, reset or replaced while parked fall back to the 
 test('scenarios: a new one starts from the default orbit with the preset applied', () => {
   const d = defaultState().orbit, o = newScenarioOrbit(d);
   assert.deepEqual(Object.keys(o), SCENARIO_KEYS); assert.equal(o.t, 0); assert.ok(o.i > 97 && o.i < 98, 'SSO inclination'); assert.notEqual(o.raan, 0, 'RAAN set for the LTAN');
+});
+
+test('scenario JSON format: 1 without a schedule (older AttTool reads it), 2 with one (older AttTool refuses it rather than dropping it)', () => {
+  const s = fresh(); assert.equal(exportScenario(s).atttool, 1);
+  s.orbit.schedule = [{ id: 'c', start: '2026-10-05T10:10', slew: 60, mode: 'sun', sunAxis: '-Z', sunSecAxis: '+X', sunSec: 'nadir' }];
+  const j = JSON.parse(JSON.stringify(exportScenario(s))); assert.equal(j.atttool, 2);
+  const refusedBy08 = json => json.atttool > 1; // AttTool 0.8.0 importScenario, verbatim (git show v0.8.0:src/sim/scenarioLibrary.js)
+  assert.equal(refusedBy08(j), true, 'with a schedule: 0.8 says it comes from a newer version'); assert.equal(refusedBy08(exportScenario(fresh())), false, 'without: 0.8 reads it');
+  const t = fresh(); importScenario(t, j, D()); assert.equal(t.orbit.schedule.length, 1, 'read here');
+  importScenario(t, { ...j, atttool: 1 }, D()); assert.equal(t.orbit.schedule.length, 1, 'format 1 with a schedule (as AttTool 0.9.0 wrote it) is still read');
 });

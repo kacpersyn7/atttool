@@ -10,6 +10,7 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 - **Mode schedule: easier editing** (#39): a typed start applies on Enter or on leaving the field (Esc undoes it), so the list no longer reorders while a date is half typed. The editor shows the start as T+ from the epoch and the turn a change asks for at its start, with its mean rate over the slew. Changes that start during the slew before them, or at the same moment as another, are marked; a slew of 0 s reads "jump". Each change now has its own pointing payload too (it was shared by the whole scenario), and the payload readouts follow the one flying; the Initial row says until when it flies.
 
 ### Fixed
+- A scenario with a mode schedule is now copied as JSON format 2, so AttTool 0.8 and older refuse it ("comes from a newer version") instead of importing it without its schedule. Scenarios without a schedule stay format 1. JSON copied from 0.9.0 has format 1 even with a schedule: import it here, not into 0.8. (#39)
 - The time slider behaved differently at the start than after a jump: T+0 was at the left end on load but in the middle after coming back to it. The slider now shows pages counted from the epoch, on the same pages as the availability timeline with the Orbit span; releasing at either end turns to the next or the previous page. (#49)
 
 ## [0.8.0] - 2026-11-06
