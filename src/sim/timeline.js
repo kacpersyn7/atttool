@@ -15,7 +15,7 @@ export function timelineRows(state) {
   if (comps.some(c => c.type === 'css')) rows.push({ name: 'Sun sensors', kind: 'css' });
   const sa = comps.filter(c => c.type === 'sa'); if (sa.length) rows.push({ name: 'Array power', kind: 'sa', cs: sa });
   // the payload of what flies at each sample; the row is named after it when the whole schedule uses one
-  const o = state.orbit, pcs = [o, ...(o.schedule || [])].map(g => payloadComp(state, g)), pc = pcs[0];
+  const o = state.orbit, pcs = [o, ...(o.schedule || [])].map(g => payloadComp(state, g)).filter(Boolean), pc = pcs[0];
   if (pc) rows.push({ name: pcs.every(c => c === pc) ? pc.name + ' on ground' : 'Payload on ground', kind: 'pl' });
   return rows;
 }

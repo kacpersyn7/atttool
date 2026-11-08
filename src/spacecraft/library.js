@@ -4,7 +4,9 @@
  * state.sc stays THE active spacecraft, so everything else reads it as before. state.fleet holds
  * { active: id, items: [{ id, name, sc, axes }] }: the active item's sc is null (its data is in
  * state.sc), the others are parked there with their own pointing axes (orbit.tgtComp, sunAxis and
- * sunSecAxis can refer to a part ID, so they belong to the spacecraft).
+ * sunSecAxis can refer to a part ID, so they belong to the spacecraft). Mode schedule changes keep their own;
+ * they stay when the spacecraft is switched (a part that isn't there falls back as below) and are reset by
+ * validateAxes, like the initial ones, when a part is gone.
  * Pure functions on the state object; the caller calls scChanged() after a change of state.sc.
  */
 import { newId } from './component.js';
@@ -63,8 +65,11 @@ export function duplicateSpacecraft(s) {
 /** Reset any pointing axis that names a part the active spacecraft doesn't have (deleted, or another spacecraft's). */
 export function validateAxes(s) {
   const has = id => s.sc.comps.some(c => c.id === id), o = s.orbit;
-  if (o.tgtComp && !has(o.tgtComp)) o.tgtComp = AXES.tgtComp;
-  for (const k of ['sunAxis', 'sunSecAxis']) if (typeof o[k] === 'string' && o[k].startsWith('comp:') && !has(o[k].slice(5))) o[k] = AXES[k];
+  for (const g of [o, ...(Array.isArray(o.schedule) ? o.schedule : [])]) {
+    if (!g || typeof g !== 'object') continue;
+    if (g.tgtComp && !has(g.tgtComp)) g.tgtComp = AXES.tgtComp;
+    for (const k of ['sunAxis', 'sunSecAxis']) if (typeof g[k] === 'string' && g[k].startsWith('comp:') && !has(g[k].slice(5))) g[k] = AXES[k];
+  }
 }
 
 /** Replace the active spacecraft's data (import, reset); its parts are new, so its pointing axes start over. */

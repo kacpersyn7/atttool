@@ -208,7 +208,7 @@ export function createOrbitView({ renderRail }) {
 
   /* ---------- lifecycle ---------- */
   function init() { if (!S.orbit._init) { doPreset(S.orbit.preset); S.orbit._init = true; } }
-  function enter() { insetEl.hidden = !!S.orbit.hideInset; plEl.hidden = !(S.orbit.show.plView && payloadComp(S)); $('#timeline').hidden = false; }
+  function enter() { insetEl.hidden = !!S.orbit.hideInset; plEl.hidden = !(S.orbit.show.plView && [S.orbit, ...(S.orbit.schedule || [])].some(g => payloadComp(S, g))); $('#timeline').hidden = false; }
   function leave() { insetEl.hidden = true; plEl.hidden = true; $('#timeline').hidden = true; }
   /** Called ~10×/s: timeline redraw and inset placement above it. */
   function tick() {

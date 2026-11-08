@@ -15,7 +15,7 @@
 import * as AM from '../core/attitude.js';
 import { defaultSC } from '../spacecraft/exampleSpacecraft.js';
 import { ensureFleet } from '../spacecraft/library.js';
-import { ensureScenarios, scenarioData } from '../sim/scenarioLibrary.js';
+import { ensureScenarios, scenarioData, fillChanges } from '../sim/scenarioLibrary.js';
 import { normalizeBus, convertLegacyFrame } from '../spacecraft/bus.js';
 import { defaultAlign } from '../spacecraft/alignment.js';
 import { fillParams } from '../spacecraft/component.js';
@@ -72,6 +72,8 @@ export function migrate(s) {
   ensureScenarios(s);
   const d = JSON.stringify(scenarioData(defaultState().orbit));
   for (const it of s.scenarios.items) if (it.data) it.data = { ...JSON.parse(d), ...it.data }; // a fresh copy each: no shared arrays
+  // v0.9: the pointing payload became a setting of each schedule change; older changes flew the scenario's
+  fillChanges(s.orbit); for (const it of s.scenarios.items) fillChanges(it.data);
   if ('lvlh' in s.orbit.show) { s.orbit.show.orbFrame = s.orbit.show.lvlh; delete s.orbit.show.lvlh; }
 }
 

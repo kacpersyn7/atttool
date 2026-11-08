@@ -10,6 +10,9 @@ import { pointing } from '../src/sim/payload.js';
 import { applyPreset, currentDate, epochDate, parseEpoch, restartFromState, setEpoch, targetECEF } from '../src/sim/scenario.js';
 import { MAX_CHANGES, addScenario, cleanSchedule, exportScenario, importScenario, scenarioData, selectScenario } from '../src/sim/scenarioLibrary.js';
 import { defaultState, migrate } from '../src/state/store.js';
+import { signalCatalog } from '../src/sim/signals.js';
+import { addSpacecraft, selectSpacecraft, validateAxes } from '../src/spacecraft/library.js';
+import { sensorEval } from '../src/sim/sensors.js';
 
 const D2R = Math.PI / 180, R2D = 180 / Math.PI;
 const fresh = () => { const s = defaultState(); migrate(s); s.orbit.t = 0; return s; };
@@ -225,4 +228,41 @@ test('schedule: each change has its own pointing payload; tracking, pointing and
   const tl = computeTimeline(s, 0, null, 12); assert.equal(tl.rows.find(r => r.kind === 'pl').name, 'Payload on ground', 'two payloads in the schedule');
   s.orbit.schedule[0].tgtComp = cam.id; assert.equal(computeTimeline(s, 0, null, 12).rows.find(r => r.kind === 'pl').name, cam.name + ' on ground');
   s.orbit.schedule[0].tgtComp = 'gone'; assert.equal(payloadComp(s, s.orbit.schedule[0]).id, cam.id, 'a part that is not there: the first payload camera');
+});
+
+/** A scenario whose spacecraft has a second camera looking along body Y, and the ground point under it at t = 900 s. */
+function twoCameras() {
+  const s = fresh(); applyPreset(s.orbit, 'sso1030');
+  const cam = s.sc.comps.find(c => c.type === 'payload'), cam2 = { ...structuredClone(cam), id: 'cam2', name: 'Side cam', q: AM.q.unit({ w: Math.SQRT1_2, x: Math.SQRT1_2, y: 0, z: 0 }) };
+  s.sc.comps.push(cam2); const A = attitudeAt(s, 900), ll = ENV.ecef2ll(ENV.eci2ecef(A.st.r, A.date));
+  return { s, cam, cam2, lat: ll.lat * R2D, lon: ll.lon * R2D };
+}
+
+test('old saves: a change without its own payload keeps flying the one its scenario had', () => {
+  const { s } = twoCameras(); s.orbit.tgtComp = 'cam2'; s.orbit.schedule = [{ id: 'old', start: at(s, 600), slew: 0, mode: 'target', tgtLat: 0, tgtLon: 0, tgtAlt: 0 }];
+  addScenario(s, { ...scenarioData(s.orbit), schedule: [{ id: 'p', start: at(s, 600), slew: 0, mode: 'sun' }] }, 'Parked'); selectScenario(s, s.scenarios.items[0].id);
+  migrate(s);
+  assert.equal(s.orbit.schedule[0].tgtComp, 'cam2'); assert.equal(payloadComp(s, s.orbit.schedule[0]).id, 'cam2');
+  assert.equal(s.scenarios.items.find(i => i.data).data.schedule[0].tgtComp, 'cam2', 'parked scenarios too'); assert.equal(s.scenarios.items.find(i => i.data).data.schedule[0].sunSec, s.orbit.sunSec);
+  assert.equal(cleanSchedule([{ start: at(s, 5), mode: 'target' }], { ...s.orbit, tgtComp: 'cam2' })[0].tgtComp, 'cam2', 'import: from its scenario');
+});
+
+test('a payload chosen only on a change still gets its plots and timeline row; the row follows the payload flying', () => {
+  const { s, lat, lon } = twoCameras(); s.sc.comps = s.sc.comps.filter(c => c.type !== 'payload'); // no payload camera: only the change picks a part
+  const str = s.sc.comps.find(c => c.type === 'str');
+  Object.assign(s.orbit, { mode: 'offsets', tgtComp: '' }); assert.equal(payloadComp(s), null);
+  s.orbit.schedule = [{ id: 'c', start: at(s, 850), slew: 0, mode: 'target', tgtComp: str.id, tgtLat: lat, tgtLon: lon, tgtAlt: 0 }];
+  assert.ok(signalCatalog(s).some(x => x.id === 'plAng'), 'pointing-error signals');
+  const tl = computeTimeline(s, 0, null, 120), r = tl.rows.find(x => x.kind === 'pl'); assert.ok(r, 'on-ground row'); assert.equal(r.name, str.name + ' on ground');
+  const val = t => r.v[Math.floor((t - tl.W0) / (tl.T / 120))];
+  assert.equal(val(600), 0, 'before the change: no payload flies');
+  close(pointing(s, attitudeAt(s, 900)).ang, 0, 1e-6, 'the star tracker boresight is on the target'); assert.equal(val(900), sensorEval(str, attitudeAt(s, 900)).onGround ? 1 : 0);
+});
+
+test('parts: a change keeps its parts while the spacecraft is switched, and forgets a part that is deleted', () => {
+  const { s } = twoCameras(); s.orbit.schedule = [{ id: 'c', start: at(s, 600), slew: 0, mode: 'sun', tgtComp: 'cam2', sunAxis: 'comp:cam2', sunSecAxis: '+X', sunSec: 'nadir' }];
+  const a = s.fleet.active; addSpacecraft(s, structuredClone(s.sc), 'Other'); // a copy: its parts get the same ids? check below
+  selectSpacecraft(s, a); assert.equal(s.orbit.schedule[0].tgtComp, 'cam2', 'kept across a switch and back');
+  s.sc.comps = s.sc.comps.filter(c => c.id !== 'cam2'); validateAxes(s);
+  assert.equal(s.orbit.schedule[0].tgtComp, ''); assert.equal(s.orbit.schedule[0].sunAxis, '-Z', 'reset like the initial settings');
 });

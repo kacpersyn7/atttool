@@ -71,7 +71,7 @@ export function orbitPanel(ctx) {
   const altCell = (id, label) => numCell(id, label, () => targetHeight(g) * 1000, x => { g.tgtAlt = Math.max(TGT_ALT_MIN, Math.min(TGT_ALT_MAX, x)); save(); }, 100, 0);
   if (g.mode === 'target') modeCtl.push(
     h('div', { class: 'grid2' }, numCell('tlat', 'Latitude °', () => g.tgtLat, x => { g.tgtLat = x; save(); }, .1, 2), numCell('tlon', 'Longitude °', () => g.tgtLon, x => { g.tgtLon = x; save(); }, .1, 2), altCell('talt', 'Height m')),
-    selectRow({ id: 'tgtComp', label: 'Pointing axis', options: S.sc.comps.filter(c => TYPES[c.type].cone).map(c => [c.id, c.name]), get: () => (payloadComp(S, g) || {}).id, set: v => { g.tgtComp = v; save(); } }),
+    selectRow({ id: 'tgtComp', label: 'Pointing axis', options: S.sc.comps.filter(c => TYPES[c.type].cone).map(c => [c.id, c.name]), get: () => (payloadComp(S, g) || {}).id, set: v => { g.tgtComp = v; save(); ctx.renderRail(); } }),
     h('div', { class: 'status' }, liveText(() => { const cur = ctx.cur(); if (cur && cur.g !== g && sched.length) return `<span class="chip dim">Not flying now: ${g === o ? 'a change is' : 'it starts at ' + esc(showUTC(g.start))}</span>`; return !cur || !cur.flag ? '' : cur.flag.below ? `<span class="chip dim">Target below horizon · holding nadir</span>` : `<span class="chip ok">Tracking · elevation ${deg(cur.flag.elev).toFixed(1)}°</span>`; })),
     tip('Boresight → line of sight to the ground point, body +X kept toward velocity. Watch the body rate rise near closest approach.'));
   if (g.mode === 'inertial' && g === o) modeCtl.push(tip('Body frame fixed in ECI using the attitude from <b>Rotation Lab</b> (reference R = ECI). Watch the Sun and Earth sweep around the spacecraft once per orbit.'));
@@ -89,7 +89,7 @@ export function orbitPanel(ctx) {
     g.mode === 'target' ? null : h('div', { class: 'grid2' }, numCell('ptlat', 'Target lat °', () => g.tgtLat, x => { g.tgtLat = x; save(); }, .1, 2), numCell('ptlon', 'Target lon °', () => g.tgtLon, x => { g.tgtLon = x; save(); }, .1, 2), altCell('ptalt', 'Target height m')),
     liveText(() => {
       const cur = ctx.cur(); if (!cur) return ''; const p = pointing(S, cur); if (!p) return '';
-      const note = sched.length && cur.g !== g ? `<p class="tip" style="margin:0 0 4px">Now flying: ${cur.seg ? 'the change at ' + esc(showUTC(cur.g.start)) : 'the initial settings'}. The numbers are for that target.</p>` : '';
+      const note = sched.length && cur.g !== g ? `<p class="tip" style="margin:0 0 4px">Now flying: ${cur.seg ? 'the change at ' + esc(showUTC(cur.g.start)) : 'the initial settings'}. The numbers are for its payload and target.</p>` : '';
       if (!p.tgtUp) return note + `<span class="chip dim">Target below horizon · elevation ${deg(p.elev).toFixed(1)}°</span>`;
       const kmT = x => x === null ? '—' : Math.abs(x) < 1 ? fmt(x * 1000, 0) + ' m' : fmt(x, 2) + ' km';
       const row = (k, val) => `<div style="display:flex;justify-content:space-between"><span>${k}</span><span style="font-family:var(--f-mono)">${val}</span></div>`;
@@ -157,7 +157,8 @@ function scheduleCard(ctx, o) {
       const notes = scheduleNotes(o);
       const row = (id, start, mode, slew, warn = '', info = '') => `<button type="button" class="srow${(selChange || '') === id ? ' on' : ''}" data-id="${esc(id)}" title="${warn ? esc(warn) + '. ' : ''}${info ? esc(info) + '. ' : ''}${id ? 'Edit this change and go to its start' : 'Edit the initial settings'}"><span class="dot${now === id ? ' now' : ''}"></span><span class="st">${start}${warn ? ' <span class="warn">⚠</span>' : ''}</span><span>${MODE_SHORT[mode] || ''}</span><span class="sl">${slew}</span></button>`;
       const first = scheduleOrder(sched)[0], until = first ? showUTC(sched[first.i].start) : '';
-      return row('', until ? 'Initial · until ' + until.slice(11) : 'Initial', o.mode, '', '', until ? 'Flies before the first change, until ' + until : '') + scheduleOrder(sched).map(({ i }) => { const c = sched[i]; return row(c.id, esc(showUTC(c.start)), c.mode, c.slew ? c.slew + ' s' : 'jump', noteText(notes[c.id])); }).join('');
+      const today = until && cur && cur.date.toISOString().slice(0, 10) === until.slice(0, 10); // the date only when it isn't the current one
+      return row('', until ? 'Initial · until ' + (today ? until.slice(11) : until.slice(0, 16)) : 'Initial', o.mode, '', '', until ? 'Flies before the first change, until ' + until : '') + scheduleOrder(sched).map(({ i }) => { const c = sched[i]; return row(c.id, esc(showUTC(c.start)), c.mode, c.slew ? c.slew + ' s' : 'jump', noteText(notes[c.id])); }).join('');
     }, 'sched'));
   const kids = [list,
     h('div', { class: 'status' }, liveText(() => { const cur = ctx.cur(); if (!cur) return ''; const s = cur.seg; const m = MODE_SHORT[cur.g.mode];
