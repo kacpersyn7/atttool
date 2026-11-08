@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as AM from '../src/core/attitude.js';
 import * as ENV from '../src/env/index.js';
 import { close, closeArr } from './helpers.js';
-import { attitudeAt, bodyRate, blendAttitude, changeTurn, relativeQ, scheduleOrder } from '../src/sim/guidance.js';
+import { attitudeAt, bodyRate, blendAttitude, changeTurn, payloadComp, relativeQ, scheduleOrder } from '../src/sim/guidance.js';
 import { addChange, deleteChange, scheduleNotes, setChangeMode, setChangeStart, takeRotation, DEFAULT_SLEW } from '../src/sim/schedule.js';
 import { computeTimeline, timelineKey } from '../src/sim/timeline.js';
 import { pointing } from '../src/sim/payload.js';
@@ -209,4 +209,20 @@ test('schedule: a chain of overlapping slews stays cheap (each change worked out
   const s = inertialPair(); s.orbit.schedule = Array.from({ length: 40 }, (_, k) => ({ id: 'c' + k, start: at(s, 600 + k), slew: 3600, mode: 'inertial', q: qz(k * 7) }));
   const t0 = performance.now(); for (let n = 0; n < 20; n++) attitudeAt(s, 1000 + n); changeTurn(s, 'c39');
   assert.ok(performance.now() - t0 < 500, `${(performance.now() - t0).toFixed(0)} ms for 20 samples of a 40-deep chain`);
+});
+
+test('schedule: each change has its own pointing payload; tracking, pointing and the timeline use the one flying', () => {
+  const s = fresh(); applyPreset(s.orbit, 'sso1030');
+  const cam = s.sc.comps.find(c => c.type === 'payload'), q90 = AM.q.unit({ w: Math.SQRT1_2, x: Math.SQRT1_2, y: 0, z: 0 }); // the second camera looks along body ±Y
+  const cam2 = { ...structuredClone(cam), id: 'cam2', name: 'Side cam', q: q90 }; s.sc.comps.push(cam2);
+  const sub = ENV.ecef2ll(ENV.eci2ecef(attitudeAt(s, 900).st.r, attitudeAt(s, 900).date));
+  Object.assign(s.orbit, { mode: 'target', tgtComp: cam.id, tgtLat: sub.lat * R2D, tgtLon: sub.lon * R2D, tgtAlt: 0 });
+  s.orbit.schedule = [{ id: 'side', start: at(s, 850), slew: 0, mode: 'target', tgtComp: 'cam2', tgtLat: sub.lat * R2D, tgtLon: sub.lon * R2D, tgtAlt: 0 }];
+  assert.equal(payloadComp(s).id, cam.id, 'the initial settings keep theirs'); assert.equal(payloadComp(s, s.orbit.schedule[0]).id, 'cam2');
+  const A = attitudeAt(s, 900), p = pointing(s, A); assert.equal(p.c.id, 'cam2', 'pointing uses the payload flying'); close(p.ang, 0, 1e-6, 'the side camera is on the target');
+  const bore = AM.m.mulv(AM.m.T(A.CBI), AM.m.mulv(AM.m.T(AM.q2C(cam2.q)), [0, 0, 1])); close(AM.v.dot(bore, AM.v.unit(AM.v.sub(p.tgt, A.st.r))), 1, 1e-9);
+  assert.equal(pointing(s, attitudeAt(s, 800)).c.id, cam.id, 'before the change: the first camera');
+  const tl = computeTimeline(s, 0, null, 12); assert.equal(tl.rows.find(r => r.kind === 'pl').name, 'Payload on ground', 'two payloads in the schedule');
+  s.orbit.schedule[0].tgtComp = cam.id; assert.equal(computeTimeline(s, 0, null, 12).rows.find(r => r.kind === 'pl').name, cam.name + ' on ground');
+  s.orbit.schedule[0].tgtComp = 'gone'; assert.equal(payloadComp(s, s.orbit.schedule[0]).id, cam.id, 'a part that is not there: the first payload camera');
 });

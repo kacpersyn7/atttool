@@ -137,7 +137,7 @@ export function createOrbitView({ renderRail }) {
     bArrow.visible = o.show.bv; bArrow.position.copy(pos); bArrow.setDir(BI); bArrow.scale.setScalar(vs); bArrow.setLength(L * .8 / vs);
     vArrow.visible = o.show.orbFrame; vArrow.position.copy(pos); vArrow.setDir(A.st.v); vArrow.scale.setScalar(vs); vArrow.setLength(L * .9 / vs);
     // payload ray & footprint
-    const pc = payloadComp(S);
+    const pc = payloadComp(S, A.g); // the payload of what flies now
     if (pc) {
       const bI = AM.m.mulv(AM.m.T(A.CBI), compAxis(pc)); const hit = ENV.rayEarth(A.st.r, bI);
       ray.visible = foot.visible = footLbl.visible = !!hit;

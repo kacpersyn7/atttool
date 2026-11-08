@@ -26,8 +26,8 @@ const D2R = AM.D2R;
 
 /** Guidance modes, in the order the UI lists them. */
 export const MODES = ['offsets', 'target', 'sun', 'inertial'];
-/** Settings a schedule change keeps. The payload part (tgtComp) and the shown frame stay scenario-wide. */
-export const SEGMENT_KEYS = ['mode', 'roll', 'pitch', 'yaw', 'sunAxis', 'sunSec', 'sunSecAxis', 'tgtLat', 'tgtLon', 'tgtAlt'];
+/** Settings a schedule change keeps, its pointing payload (tgtComp) included. The shown frame stays scenario-wide. */
+export const SEGMENT_KEYS = ['mode', 'roll', 'pitch', 'yaw', 'sunAxis', 'sunSec', 'sunSecAxis', 'tgtLat', 'tgtLon', 'tgtAlt', 'tgtComp'];
 
 /** Body axis from a spec: '+X', '-Z', or 'comp:<id>' (that component's +Z; `missing` if the part is not on this spacecraft). */
 export function axisSpec(spec, comps, missing = [0, 0, 1]) {
@@ -36,9 +36,12 @@ export function axisSpec(spec, comps, missing = [0, 0, 1]) {
   const s = spec[0] === '-' ? -1 : 1, k = 'XYZ'.indexOf(spec[1]); const a = [0, 0, 0]; a[k] = s; return a;
 }
 
-/** The pointing payload: the selected target component, else the first payload camera. */
-export function payloadComp(state) {
-  return state.sc.comps.find(c => c.id === state.orbit.tgtComp) || state.sc.comps.find(c => c.type === 'payload') || null;
+/**
+ * The pointing payload of guidance settings g (state.orbit, or a schedule change; A.g for what flies at A):
+ * the part it selects, else the first payload camera.
+ */
+export function payloadComp(state, g = state.orbit) {
+  return state.sc.comps.find(c => c.id === g.tgtComp) || state.sc.comps.find(c => c.type === 'payload') || null;
 }
 
 /**
@@ -64,7 +67,7 @@ function modeAttitude(state, g, x) {
   if (g.mode === 'target') {
     const tI = ENV.ecef2eci(targetECEF(g), x.date); const los = AM.v.sub(tI, x.st.r);
     const elev = Math.PI / 2 - AM.v.angle(tI, AM.v.scale(los, -1));
-    const pc = payloadComp(state); const b1 = pc ? compAxis(pc) : [0, 0, 1];
+    const pc = payloadComp(state, g); const b1 = pc ? compAxis(pc) : [0, 0, 1];
     if (elev > 0) { let b2 = [1, 0, 0]; if (AM.v.norm(AM.v.cross(b1, b2)) < 1e-3) b2 = [0, 1, 0]; return { CBI: AM.triad(b1, b2, los, x.st.v), flag: { elev } }; }
     return { CBI: x.CNI, flag: { elev, below: true } }; // hold the nominal attitude
   }
