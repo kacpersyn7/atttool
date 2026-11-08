@@ -3,7 +3,7 @@
  * Pure computation; drawing lives in views/orbit/timelineView.js.
  */
 import * as ENV from '../env/index.js';
-import { orbitElements } from './scenario.js';
+import { orbitElements, scrubPage } from './scenario.js';
 import { MODES, attitudeAt, payloadComp } from './guidance.js';
 import { sensorEval } from './sensors.js';
 
@@ -30,7 +30,7 @@ export function timelineKey(state, scVersion, W0) {
  * Returns the previous result unchanged if nothing relevant changed.
  */
 export function computeTimeline(state, scVersion, prev, N = 360) {
-  const E = orbitElements(state.orbit); const T = ENV.propagate(E, 0, false).period; const W0 = Math.floor(state.orbit.t / T) * T;
+  const E = orbitElements(state.orbit); const T = ENV.propagate(E, 0, false).period; const W0 = scrubPage(state.orbit.t, T); // the same pages as the time slider
   const key = timelineKey(state, scVersion, W0);
   if (prev && key === prev.key) return prev;
   const tl = { key, W0, T, rows: timelineRows(state), N };
