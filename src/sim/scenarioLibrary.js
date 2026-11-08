@@ -93,9 +93,16 @@ export function deleteScenario(s, id) {
   f.items.splice(f.items.findIndex(i => i.id === id), 1); return true;
 }
 
+/**
+ * Scenario JSON format: 1, or 2 with a mode schedule. AttTool 0.8 and older read format 1 and refuse anything
+ * newer, so a schedule is never dropped there without a word; a scenario without one stays readable by them.
+ */
+export const SCENARIO_FORMAT = 2;
+
 /** The active scenario as plain JSON. The spacecraft is only named. */
 export function exportScenario(s) {
-  return copy({ atttool: 1, kind: 'scenario', name: activeScenario(s).name, orbit: parked(s), spacecraft: activeSC(s).name });
+  const orbit = parked(s), format = orbit.schedule && orbit.schedule.length ? 2 : 1;
+  return copy({ atttool: format, kind: 'scenario', name: activeScenario(s).name, orbit, spacecraft: activeSC(s).name });
 }
 
 const isStr = x => typeof x === 'string', isNum = Number.isFinite;
@@ -167,7 +174,7 @@ const cleanName = (x, fallback) => (isStr(x) && x.trim() ? x.trim().slice(0, 32)
  */
 export function importScenario(s, json, defaults) {
   if (!json || json.kind !== 'scenario' || !json.orbit || typeof json.orbit !== 'object') throw new Error('Expected a scenario copied from AttTool ("kind": "scenario").');
-  if (json.atttool > 1) throw new Error('This scenario comes from a newer version of AttTool.');
+  if (json.atttool > SCENARIO_FORMAT) throw new Error('This scenario comes from a newer version of AttTool.');
   const orbit = sanitizeScenario(json.orbit, defaults), want = isStr(json.spacecraft) ? json.spacecraft : null;
   const found = want === null ? null : s.fleet.items.find(i => i.name === want);
   const id = addScenario(s, orbit, cleanName(json.name, 'Imported scenario'), found ? found.id : s.fleet.active);
