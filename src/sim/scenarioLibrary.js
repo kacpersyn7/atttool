@@ -96,7 +96,7 @@ export function deleteScenario(s, id) {
 /**
  * Scenario JSON format: 1, or FORMAT_SCHEDULE with a mode schedule. AttTool 0.8 and older read format 1 and refuse
  * anything newer, so JSON copied from this version on never loses its schedule there without a word, and a scenario
- * without one stays readable by them. (AttTool 0.9.0 wrote format 1 with a schedule; it is still read here.)
+ * without one stays readable by them. (The withdrawn first build of 0.9.0 wrote format 1 with a schedule; it is still read here.)
  */
 export const FORMAT_SCHEDULE = 2;
 /** The newest format this version reads. */
