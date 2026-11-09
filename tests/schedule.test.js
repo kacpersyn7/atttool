@@ -7,7 +7,7 @@ import { attitudeAt, bodyRate, blendAttitude, changeTurn, payloadComp, relativeQ
 import { AUTO_END_MARGIN, addChange, deleteChange, runProgress, runStep, scenarioSpan, scheduleNotes, setChangeMode, setChangeStart, startRun, takeRotation, DEFAULT_SLEW } from '../src/sim/schedule.js';
 import { computeTimeline, timelineKey } from '../src/sim/timeline.js';
 import { pointing } from '../src/sim/payload.js';
-import { applyPreset, currentDate, epochDate, orbitElements, parseEpoch, restartFromState, setEpoch, targetECEF } from '../src/sim/scenario.js';
+import { advanceTime, applyPreset, currentDate, epochDate, orbitElements, parseEpoch, restartFromState, setEpoch, targetECEF } from '../src/sim/scenario.js';
 import { MAX_CHANGES, addScenario, cleanSchedule, exportScenario, importScenario, scenarioData, selectScenario } from '../src/sim/scenarioLibrary.js';
 import { defaultState, migrate } from '../src/state/store.js';
 import { signalCatalog } from '../src/sim/signals.js';
@@ -360,19 +360,18 @@ test('scenario span: automatic end after the last slew + 5 min, one orbit withou
   const s = fresh(), o = s.orbit, T = 2 * Math.PI * Math.sqrt(orbitElements(o).a ** 3 / 398600.4418);
   let sp = scenarioSpan(o); assert.equal(sp.start, 0); close(sp.end, T, 1e-6, 'one orbit'); assert.equal(sp.auto, true);
   o.schedule = [{ id: 'a', start: at(s, 600), slew: 60, mode: 'sun' }, { id: 'b', start: at(s, 1800), slew: 120, mode: 'offsets' }, { id: 'c', start: at(s, 1850), slew: 0, mode: 'sun' }];
-  sp = scenarioSpan(o); close(sp.end, 1800 + 120 + AUTO_END_MARGIN, 1e-6, 'the latest slew end, not the latest start');
-  o.end = at(s, 7200); sp = scenarioSpan(o); close(sp.end, 7200, 1e-6); assert.equal(sp.auto, false); close(sp.autoEnd, 2220, 1e-6);
+  sp = scenarioSpan(o); close(sp.end, 1850 + 0 + AUTO_END_MARGIN, 1e-6, 'the last change: its jump at 1850 cuts the slew of the one before');
+  o.end = at(s, 7200); sp = scenarioSpan(o); close(sp.end, 7200, 1e-6); assert.equal(sp.auto, false); close(sp.autoEnd, 2150, 1e-6);
   o.end = at(s, -10); assert.equal(scenarioSpan(o).auto, true, 'before the start: automatic'); o.end = 'soon'; assert.equal(scenarioSpan(o).auto, true);
   o.end = ''; o.schedule = [{ id: 'early', start: at(s, -3000), slew: 0, mode: 'sun' }]; close(scenarioSpan(o).start, -3000, 1e-6, 'starts at a change before the epoch');
 });
 
-test('scenario run: starts at the start, stops at the end (or loops), only while playing', () => {
+test('scenario run: starts at the start, stops at the end (or loops) when a playback step reaches it', () => {
   const s = fresh(), o = s.orbit; o.schedule = [{ id: 'a', start: at(s, 600), slew: 60, mode: 'sun' }]; o.t = 5000; o.playing = false;
   startRun(o); assert.equal(o.t, 0); assert.equal(o.run, true); assert.equal(o.playing, true); assert.equal(runProgress(o), 0);
   o.t = 480; close(runProgress(o), 0.5, 1e-9, 'halfway to 600 + 60 + 300'); assert.equal(runStep(o), false);
-  o.t = 961; assert.equal(runStep(o), true); assert.equal(o.t, 960); assert.equal(o.playing, false); assert.equal(o.run, false, 'stopped at the end');
-  startRun(o); o.runLoop = true; o.t = 970; assert.equal(runStep(o), true); assert.equal(o.t, 0); assert.equal(o.playing, true, 'looped');
-  o.playing = false; o.t = 999; assert.equal(runStep(o), false, 'paused: nothing happens');
+  o.t = 961; assert.equal(runStep(o, 950), true); assert.equal(o.t, 960); assert.equal(o.playing, false); assert.equal(o.run, false, 'stopped at the end');
+  startRun(o); o.runLoop = true; o.t = 970; assert.equal(runStep(o, 955), true); assert.equal(o.t, 0); assert.equal(o.playing, true, 'looped');
   assert.equal(runProgress({ ...o, run: false }), null);
 });
 
@@ -380,4 +379,27 @@ test('scenario end: kept in scenarios and JSON, cleaned on import', () => {
   const s = fresh(); s.orbit.end = at(s, 3600); const j = JSON.parse(JSON.stringify(exportScenario(s))); assert.equal(j.orbit.end, at(s, 3600));
   const t = fresh(); importScenario(t, j, scenarioData(defaultState().orbit)); assert.equal(t.orbit.end, at(s, 3600));
   for (const bad of ['soon', 7, '2300-01-01T00:00', null]) { const u = fresh(); importScenario(u, { kind: 'scenario', orbit: { ...j.orbit, end: bad } }, scenarioData(defaultState().orbit)); assert.equal(u.orbit.end, '', String(bad)); }
+});
+
+test('scenario run: a time already past the end (moved there) ends the run without pulling the time back', () => {
+  const s = fresh(), o = s.orbit; o.schedule = [{ id: 'a', start: at(s, 600), slew: 60, mode: 'sun' }]; // end 960
+  startRun(o); o.playing = false; o.t = 5000; o.playing = true; // paused, seeked past the end, Play
+  assert.equal(runStep(o, 5000), true); assert.equal(o.t, 5000, 'the seek stays'); assert.equal(o.run, false); assert.equal(o.playing, true, 'and it plays on');
+  startRun(o); o.runLoop = true; o.t = 3000; assert.equal(runStep(o, 2999), true); assert.equal(o.t, 3000, 'with Loop too: no jump to the start');
+  startRun(o); o.t = 900; o.schedule = []; // the end moves to one orbit: still ahead
+  assert.equal(runStep(o, 899), false); o.schedule = [{ id: 'a', start: at(s, 100), slew: 0, mode: 'sun' }]; // end 400, behind
+  assert.equal(runStep(o, 900), true); assert.equal(o.t, 900, 'an end moved before the time: the time stays');
+});
+
+test('scenario run: at the last date (2200) it still stops, or loops; progress is defined when the end is the start', () => {
+  const s = fresh(), o = s.orbit; o.epoch = '2199-12-31T23:00'; o.schedule = []; o.speed = 1000; // auto end clamps to the limit, 3600 s
+  startRun(o); o.runLoop = true; o.t = 3500; let t0 = o.t; advanceTime(o, 1); assert.equal(o.playing, false, 'set up: the date limit paused it');
+  assert.equal(runStep(o, t0), true); assert.equal(o.t, scenarioSpan(o).start); assert.equal(o.playing, true, 'looped');
+  o.runLoop = false; o.t = 3500; t0 = o.t; advanceTime(o, 1); runStep(o, t0); assert.equal(o.run, false, 'ended');
+  o.epoch = '2200-01-01T00:00'; o.t = 0; o.run = true; const sp = scenarioSpan(o); assert.equal(sp.end, sp.start); assert.equal(runProgress(o), 1);
+});
+
+test('scenario span: changes at the same moment: the one that flies sets the automatic end', () => {
+  const s = fresh(), o = s.orbit; o.schedule = [{ id: 'a', start: at(s, 600), slew: 600, mode: 'sun' }, { id: 'b', start: at(s, 600), slew: 0, mode: 'offsets' }];
+  close(scenarioSpan(o).end, 600 + 0 + AUTO_END_MARGIN, 1e-6, 'a never flies');
 });

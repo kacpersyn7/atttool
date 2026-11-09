@@ -132,7 +132,14 @@ function scenarioRun(o) {
   const end = dateInput('scEnd'), pending = h('span', { class: 'lbl', hidden: true }, 'Enter to apply · Esc to undo');
   const shown = () => { end.value = formatEpoch(new Date(Math.floor(epochDate(o).getTime() / 1000 + scenarioSpan(o).end) * 1000)); pending.hidden = true; };
   // like a change's start: a typed end applies on Enter or on leaving the field
-  const commit = () => { if (pending.hidden) return; pending.hidden = true; if (validDate(end.value)) { o.end = end.value; save(); } else refused(); syncAll(); };
+  const commit = () => {
+    if (pending.hidden) return; pending.hidden = true;
+    if (end.value === '') { o.end = ''; save(); } // cleared: automatic
+    else if (!validDate(end.value)) refused();
+    else if ((parseEpoch(end.value).getTime() - epochDate(o).getTime()) / 1000 <= scenarioSpan(o).start) toast('The end must be after the start of the scenario');
+    else { o.end = end.value; save(); }
+    shown(); syncAll();
+  };
   end.addEventListener('input', () => { pending.hidden = false; });
   end.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); commit(); } else if (e.key === 'Escape') { e.preventDefault(); shown(); } });
   end.addEventListener('blur', commit);
@@ -272,7 +279,7 @@ function timeScrubber(o) {
 
 /* ---------------- Scenario card: library, and which spacecraft flies ---------------- */
 function scenarioCard(ctx) {
-  const items = S.scenarios.items, switched = () => { S.layout.sel = null; scChanged(); ctx.renderRail(); syncAll(); };
+  const items = S.scenarios.items, switched = () => { S.layout.sel = null; S.orbit.run = false; scChanged(); ctx.renderRail(); syncAll(); }; // a run belongs to the scenario it started in
   /** Default orbit fields for a new scenario, or for what an imported one lacks. */
   const defaults = () => newScenarioOrbit(defaultState().orbit);
   const pick = selectRow({ id: 'scenPick', label: 'Scenario', options: items.map(i => [i.id, i.name]), get: () => S.scenarios.active, set: id => { if (selectScenario(S, id)) switched(); } });

@@ -113,7 +113,7 @@ export function createOrbitView({ renderRail }) {
   const scDispScale = () => 0.13 * S.orbit.scale;
   function update(dt) {
     const o = S.orbit;
-    if (o.playing) { advanceTime(o, dt); if (runStep(o) || !o.playing) syncAll(); } // a scenario run stops or loops at its end
+    if (o.playing) { const t0 = o.t; advanceTime(o, dt); if (runStep(o, t0) || !o.playing) syncAll(); } // a scenario run stops or loops at its end
     const E = orbitElements(o); const A = attitudeAt(S, o.t, E); cur = A;
     const gm = ENV.gmst(A.date); earth.rotation.z = gm;
     sunLight.position.set(...AM.v.scale(A.sun, 100)); sunGlow.position.set(...AM.v.scale(A.sun, 700));
