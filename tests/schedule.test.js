@@ -4,10 +4,10 @@ import * as AM from '../src/core/attitude.js';
 import * as ENV from '../src/env/index.js';
 import { close, closeArr } from './helpers.js';
 import { attitudeAt, bodyRate, blendAttitude, changeTurn, payloadComp, relativeQ, scheduleOrder } from '../src/sim/guidance.js';
-import { addChange, deleteChange, scheduleNotes, setChangeMode, setChangeStart, takeRotation, DEFAULT_SLEW } from '../src/sim/schedule.js';
+import { AUTO_END_MARGIN, addChange, deleteChange, runProgress, runStep, scenarioSpan, scheduleNotes, setChangeMode, setChangeStart, startRun, takeRotation, DEFAULT_SLEW } from '../src/sim/schedule.js';
 import { computeTimeline, timelineKey } from '../src/sim/timeline.js';
 import { pointing } from '../src/sim/payload.js';
-import { applyPreset, currentDate, epochDate, parseEpoch, restartFromState, setEpoch, targetECEF } from '../src/sim/scenario.js';
+import { applyPreset, currentDate, epochDate, orbitElements, parseEpoch, restartFromState, setEpoch, targetECEF } from '../src/sim/scenario.js';
 import { MAX_CHANGES, addScenario, cleanSchedule, exportScenario, importScenario, scenarioData, selectScenario } from '../src/sim/scenarioLibrary.js';
 import { defaultState, migrate } from '../src/state/store.js';
 import { signalCatalog } from '../src/sim/signals.js';
@@ -354,4 +354,30 @@ test('target tracking: the slew time is in the timeline key, defaults for old sa
 test('target tracking: the slew time is limited to 900 s (the search grows with it)', () => {
   const s = fresh(); assert.equal(cleanSchedule([{ start: at(s, 5), mode: 'target', tgtSlew: 901 }], { ...s.orbit, tgtSlew: 60 })[0].tgtSlew, 60);
   const p = pass(900), q = pass(5000); close(attitudeAt(q.s, q.rise - 450).flag.slew.w, attitudeAt(p.s, p.rise - 450).flag.slew.w, 1e-9, 'a larger value flies as 900 s');
+});
+
+test('scenario span: automatic end after the last slew + 5 min, one orbit without a schedule; a typed end wins if it is after the start', () => {
+  const s = fresh(), o = s.orbit, T = 2 * Math.PI * Math.sqrt(orbitElements(o).a ** 3 / 398600.4418);
+  let sp = scenarioSpan(o); assert.equal(sp.start, 0); close(sp.end, T, 1e-6, 'one orbit'); assert.equal(sp.auto, true);
+  o.schedule = [{ id: 'a', start: at(s, 600), slew: 60, mode: 'sun' }, { id: 'b', start: at(s, 1800), slew: 120, mode: 'offsets' }, { id: 'c', start: at(s, 1850), slew: 0, mode: 'sun' }];
+  sp = scenarioSpan(o); close(sp.end, 1800 + 120 + AUTO_END_MARGIN, 1e-6, 'the latest slew end, not the latest start');
+  o.end = at(s, 7200); sp = scenarioSpan(o); close(sp.end, 7200, 1e-6); assert.equal(sp.auto, false); close(sp.autoEnd, 2220, 1e-6);
+  o.end = at(s, -10); assert.equal(scenarioSpan(o).auto, true, 'before the start: automatic'); o.end = 'soon'; assert.equal(scenarioSpan(o).auto, true);
+  o.end = ''; o.schedule = [{ id: 'early', start: at(s, -3000), slew: 0, mode: 'sun' }]; close(scenarioSpan(o).start, -3000, 1e-6, 'starts at a change before the epoch');
+});
+
+test('scenario run: starts at the start, stops at the end (or loops), only while playing', () => {
+  const s = fresh(), o = s.orbit; o.schedule = [{ id: 'a', start: at(s, 600), slew: 60, mode: 'sun' }]; o.t = 5000; o.playing = false;
+  startRun(o); assert.equal(o.t, 0); assert.equal(o.run, true); assert.equal(o.playing, true); assert.equal(runProgress(o), 0);
+  o.t = 480; close(runProgress(o), 0.5, 1e-9, 'halfway to 600 + 60 + 300'); assert.equal(runStep(o), false);
+  o.t = 961; assert.equal(runStep(o), true); assert.equal(o.t, 960); assert.equal(o.playing, false); assert.equal(o.run, false, 'stopped at the end');
+  startRun(o); o.runLoop = true; o.t = 970; assert.equal(runStep(o), true); assert.equal(o.t, 0); assert.equal(o.playing, true, 'looped');
+  o.playing = false; o.t = 999; assert.equal(runStep(o), false, 'paused: nothing happens');
+  assert.equal(runProgress({ ...o, run: false }), null);
+});
+
+test('scenario end: kept in scenarios and JSON, cleaned on import', () => {
+  const s = fresh(); s.orbit.end = at(s, 3600); const j = JSON.parse(JSON.stringify(exportScenario(s))); assert.equal(j.orbit.end, at(s, 3600));
+  const t = fresh(); importScenario(t, j, scenarioData(defaultState().orbit)); assert.equal(t.orbit.end, at(s, 3600));
+  for (const bad of ['soon', 7, '2300-01-01T00:00', null]) { const u = fresh(); importScenario(u, { kind: 'scenario', orbit: { ...j.orbit, end: bad } }, scenarioData(defaultState().orbit)); assert.equal(u.orbit.end, '', String(bad)); }
 });

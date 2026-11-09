@@ -18,6 +18,7 @@ import { earthTexture, earthGeometry, atmosphere, starfield, glowSprite } from '
 import { buildSC } from '../../gfx/spacecraftMesh.js';
 import { compAxis } from '../../spacecraft/component.js';
 import { advanceTime, epochDate, orbitElements, applyPreset, targetECEF } from '../../sim/scenario.js';
+import { runStep } from '../../sim/schedule.js';
 import { attitudeAt, bodyRate, payloadComp } from '../../sim/guidance.js';
 import { createBodyInset } from './bodyInset.js';
 import { createPayloadInset } from './payloadInset.js';
@@ -112,7 +113,7 @@ export function createOrbitView({ renderRail }) {
   const scDispScale = () => 0.13 * S.orbit.scale;
   function update(dt) {
     const o = S.orbit;
-    if (o.playing) { advanceTime(o, dt); if (!o.playing) syncAll(); }
+    if (o.playing) { advanceTime(o, dt); if (runStep(o) || !o.playing) syncAll(); } // a scenario run stops or loops at its end
     const E = orbitElements(o); const A = attitudeAt(S, o.t, E); cur = A;
     const gm = ENV.gmst(A.date); earth.rotation.z = gm;
     sunLight.position.set(...AM.v.scale(A.sun, 100)); sunGlow.position.set(...AM.v.scale(A.sun, 700));

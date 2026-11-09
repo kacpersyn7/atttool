@@ -4,7 +4,8 @@
  */
 import { newId } from '../spacecraft/component.js';
 import { SEGMENT_KEYS, flownBefore, scheduleOrder } from './guidance.js';
-import { currentDate, formatEpoch, parseEpoch, validDate } from './scenario.js';
+import * as ENV from '../env/index.js';
+import { clampTime, currentDate, epochDate, formatEpoch, orbitElements, parseEpoch, validDate } from './scenario.js';
 import { MAX_CHANGES } from './scenarioLibrary.js';
 
 /** Default slew time of a new change (s). */
@@ -65,3 +66,41 @@ export function setChangeMode(c, mode, rotQ) { c.mode = mode; if (mode === 'iner
 
 /** An inertial change takes Rotation Lab's attitude rotQ now. */
 export function takeRotation(c, rotQ) { c.q = qCopy(rotQ); }
+
+/* ---------- the scenario as a whole: its span, and playing it from start to end ---------- */
+
+/** Margin after the last change's slew for the automatic end (s). */
+export const AUTO_END_MARGIN = 300;
+
+/**
+ * The span of the scenario, in s from the epoch: start = the epoch, or the first change if that is earlier;
+ * end = o.end (UTC) if it is a valid date after the start, else automatic: when the last change has finished its
+ * slew plus AUTO_END_MARGIN, or one orbit without a schedule. Both within the date limits.
+ * @returns {{ start, end, auto (the end is automatic), autoEnd (what automatic would be) }}
+ */
+export function scenarioSpan(o) {
+  const e0 = epochDate(o).getTime(), sched = o.schedule || [], order = scheduleOrder(sched);
+  const start = clampTime(o, Math.min(0, order.length ? (order[0].ms - e0) / 1000 : 0));
+  const autoEnd = clampTime(o, order.length
+    ? Math.max(...order.map(x => (x.ms - e0) / 1000 + Math.max(0, +sched[x.i].slew || 0))) + AUTO_END_MARGIN
+    : start + ENV.propagate(orbitElements(o), 0, false).period);
+  const d = validDate(o.end) ? parseEpoch(o.end) : null, typed = d ? clampTime(o, (d.getTime() - e0) / 1000) : null;
+  const auto = typed === null || typed <= start;
+  return { start, end: auto ? autoEnd : typed, auto, autoEnd };
+}
+
+/** Play the scenario from its start: o.run makes playback stop (or loop, o.runLoop) at its end. */
+export function startRun(o) { o.t = scenarioSpan(o).start; o.run = true; o.playing = true; }
+
+/** After a playback step: at the end of a run, loop back or stop there. @returns true if it did either. */
+export function runStep(o) {
+  if (!o.run || !o.playing) return false;
+  const sp = scenarioSpan(o); if (o.t < sp.end) return false;
+  if (o.runLoop) { o.t = sp.start; return true; }
+  o.t = sp.end; o.playing = false; o.run = false; return true;
+}
+
+/** How far a run has got, 0..1 (null when no run is going). */
+export function runProgress(o) {
+  if (!o.run) return null; const sp = scenarioSpan(o); return Math.max(0, Math.min(1, (o.t - sp.start) / (sp.end - sp.start)));
+}

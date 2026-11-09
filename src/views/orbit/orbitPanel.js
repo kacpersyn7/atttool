@@ -6,10 +6,10 @@ import { deg, esc, fmt, hhmm, tPlus } from '../../ui/format.js';
 import { TYPES } from '../../spacecraft/componentTypes.js';
 import { activeItem, selectSpacecraft } from '../../spacecraft/library.js';
 import { MAX_CHANGES, activeScenario, addScenario, deleteScenario, duplicateScenario, exportScenario, importScenario, newScenarioOrbit, renameScenario, selectScenario } from '../../sim/scenarioLibrary.js';
-import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, DATE_MAX, DATE_MIN, PRESETS, SCRUB_SPANS, clampTime, currentDate, epochDate, farFromEpoch, formatEpoch, ltanOf, orbitElements, scrubCancelResume, scrubEnd, scrubHold, scrubKey, scrubPress, scrubSpan, scrubWindowAt, setCurrentDate, setEpoch, switchDefinition, restartFromState, definitionError, tleOf, parseEpoch } from '../../sim/scenario.js';
+import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, DATE_MAX, DATE_MIN, PRESETS, SCRUB_SPANS, clampTime, currentDate, epochDate, farFromEpoch, formatEpoch, ltanOf, orbitElements, scrubCancelResume, scrubEnd, scrubHold, scrubKey, scrubPress, scrubSpan, scrubWindowAt, setCurrentDate, setEpoch, switchDefinition, restartFromState, definitionError, tleOf, parseEpoch, validDate } from '../../sim/scenario.js';
 import { copyText, showModal, closeModal, toast } from '../../ui/overlay.js';
 import { TARGET_SLEW, TARGET_SLEW_MAX, changeTurn, payloadComp, scheduleOrder } from '../../sim/guidance.js';
-import { addChange, deleteChange, scheduleNotes, setChangeMode, setChangeStart, takeRotation } from '../../sim/schedule.js';
+import { addChange, deleteChange, runProgress, scenarioSpan, scheduleNotes, setChangeMode, setChangeStart, startRun, takeRotation } from '../../sim/schedule.js';
 import { sensorEval } from '../../sim/sensors.js';
 import { pointing } from '../../sim/payload.js';
 
@@ -41,7 +41,8 @@ export function orbitPanel(ctx) {
   onSync(() => { if (document.activeElement !== nowInput) showNow(); });
   out.push(card('Time', null,
     h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, playBtn,
-      seg([[1, '1×'], [60, '60×'], [300, '300×'], [1000, '1000×']], () => o.speed, v => { o.speed = v; save(); })),
+      seg([[1, '1×'], [10, '10×'], [30, '30×'], [60, '60×'], [300, '300×'], [1000, '1000×']], () => o.speed, v => { o.speed = v; save(); })),
+    ...scenarioRun(o),
     h('div', { class: 'row two' }, h('label', { for: 'now' }, 'Current time (UTC)'), nowInput),
     timeScrubber(o),
     h('div', { class: 'kv' }, h('dt', null, 'From the epoch'), h('dd', null, liveText(() => tPlus(o.t)))),
@@ -123,6 +124,30 @@ export function orbitPanel(ctx) {
     slider({ id: 'scscale', label: 'S/C size (×)', min: .1, max: 4, step: .05, dec: 2, get: () => o.scale, set: x => { o.scale = x; save(); } }),
     tip('The spacecraft is drawn hugely oversized (about 130 km per metre at 1×) so you can see it from orbit distance. The map in the payload view and on the Earth is Natural Earth 1:50m (public domain): schematic, good to a few km, so use it for orientation, not to measure pointing errors.')));
   return out;
+}
+
+/** Playing the whole scenario: the ▶ Scenario button, Loop, the progress, and the scenario end (UTC, or automatic). */
+function scenarioRun(o) {
+  const runBtn = h('button', { class: 'btn', title: 'Play the scenario from its start to its end at the chosen speed, then pause', onclick: () => { scrubCancelResume(hold); startRun(o); save(); syncAll(); } }, '▶ Scenario');
+  const end = dateInput('scEnd'), pending = h('span', { class: 'lbl', hidden: true }, 'Enter to apply · Esc to undo');
+  const shown = () => { end.value = formatEpoch(new Date(Math.floor(epochDate(o).getTime() / 1000 + scenarioSpan(o).end) * 1000)); pending.hidden = true; };
+  // like a change's start: a typed end applies on Enter or on leaving the field
+  const commit = () => { if (pending.hidden) return; pending.hidden = true; if (validDate(end.value)) { o.end = end.value; save(); } else refused(); syncAll(); };
+  end.addEventListener('input', () => { pending.hidden = false; });
+  end.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); commit(); } else if (e.key === 'Escape') { e.preventDefault(); shown(); } });
+  end.addEventListener('blur', commit);
+  onSync(() => { if (document.activeElement !== end) shown(); });
+  const autoBtn = h('button', { class: 'btn', title: 'End when the last change has finished its slew, plus 5 min (one orbit without a schedule)', onclick: () => { o.end = ''; save(); syncAll(); } }, 'Auto');
+  return [
+    h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, runBtn,
+      check('runLoop', 'Loop', () => !!o.runLoop, v => { o.runLoop = v; save(); }),
+      liveText(() => { const p = runProgress(o); return p === null ? '' : `<span class="lbl">Scenario · ${(100 * p).toFixed(0)} %</span>`; })),
+    liveText(() => { const p = runProgress(o); return p === null ? '' : `<div class="runbar"><span style="width:${(100 * p).toFixed(1)}%"></span></div>`; }),
+    h('div', { class: 'row two' }, h('label', { for: 'scEnd' }, 'Scenario ends (UTC)'), end),
+    h('div', { style: 'display:flex;justify-content:space-between;align-items:center;gap:8px' }, pending,
+      liveText(() => { const sp = scenarioSpan(o); return sp.auto ? `automatic: ${(o.schedule || []).length ? 'the last change + 5 min' : 'one orbit'}` : 'set by hand'; }, 'lbl'),
+      autoBtn),
+  ];
 }
 
 /** The slew to and from a ground target (s), for the settings g being edited. */

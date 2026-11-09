@@ -22,7 +22,7 @@ import { SEGMENT_KEYS } from './guidance.js';
 
 /** The fields of state.orbit that make up a scenario. refFrame only picks the frame shown, but it goes with the mode's offsets. */
 export const SCENARIO_KEYS = ['preset', 'def', 'r', 'v', 'tle', 'epoch', 'hp', 'ha', 'i', 'raan', 'argp', 'nu0', 'j2', 't',
-  'mode', 'refFrame', 'roll', 'pitch', 'yaw', 'sunAxis', 'sunSec', 'sunSecAxis', 'tgtLat', 'tgtLon', 'tgtAlt', 'tgtComp', 'tgtSlew', 'schedule'];
+  'mode', 'refFrame', 'roll', 'pitch', 'yaw', 'sunAxis', 'sunSec', 'sunSecAxis', 'tgtLat', 'tgtLon', 'tgtAlt', 'tgtComp', 'tgtSlew', 'schedule', 'end'];
 /** Those that name parts of a spacecraft: only valid on the spacecraft they were saved with. */
 const PART_KEYS = ['tgtComp', 'sunAxis', 'sunSecAxis'];
 
@@ -123,6 +123,7 @@ const VALID = {
   sunAxis: axis, sunSec: oneOf('nadir', 'zenith', 'velocity', 'normal', 'antinormal'), sunSecAxis: axis,
   tgtLat: inRange(-90, 90), tgtLon: angle, tgtAlt: isNum, tgtComp: isStr, tgtSlew: inRange(0, 900),
   schedule: Array.isArray, // and then cleaned change by change (cleanSchedule)
+  end: x => x === '' || (isStr(x) && validDate(x)), // '' = automatic
 };
 /** Orbit fields from untrusted JSON: only the known ones, each valid or the default. */
 export function sanitizeScenario(orbit, defaults) {
