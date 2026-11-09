@@ -213,7 +213,8 @@ test('import report: what was reset or dropped is told, in plain sentences; a cl
     { start: '2026-10-05T10:20', mode: 'sun', slew: 1e9, sunAxis: ['x'] }] };
   delete orbit.tgtSlew; delete orbit.end;
   const r = previewScenario(s, { ...clean, orbit }, D()).report.join(' | ');
-  for (const want of ['perigee altitude', 'guidance mode', 'roll', '2 settings were not in the file', 'no readable start time', 'outside 1900 to 2200', 'unknown guidance mode', 'not a change at all', 'slew', 'Sun axis']) assert.ok(r.includes(want), `report mentions "${want}": ${r}`);
+  for (const want of ['perigee altitude', 'guidance mode', 'roll', 'no readable start time', 'outside 1900 to 2200', 'unknown guidance mode', 'not a change at all', 'slew time', 'Sun axis']) assert.ok(r.includes(want), `report mentions "${want}": ${r}`);
+  assert.ok(previewScenario(s, { ...clean, orbit }, D()).info.join().includes('2 settings were not in the file'), 'missing fields are information, not a reset');
   assert.equal(previewScenario(s, { ...clean, orbit: { ...clean.orbit, def: 'rv', r: [1, 2] } }, D()).report.some(x => x.includes('state vector')), true);
 });
 
@@ -230,7 +231,19 @@ test('import replace: the new scenario takes the old one\'s name and place in th
   const old = s.scenarios.items.find(i => i.name === 'Pass A').id, n = s.scenarios.items.length;
   const j = { kind: 'scenario', atttool: 1, name: 'Pass A', orbit: { ...scenarioData(s.orbit), hp: 900 } };
   const res = importScenario(s, j, D(), { replace: old });
-  assert.equal(s.scenarios.items.length, n, 'one in, one out'); assert.ok(!s.scenarios.items.some(i => i.id === old));
+  assert.equal(s.scenarios.items.length, n, 'one in, one out'); assert.ok(!s.scenarios.items.some(i => i.id === old)); assert.equal(res.replaced, true);
+  assert.deepEqual(s.scenarios.items.map(i => i.name).slice(1), ['Pass A', 'Pass B'], 'in its place');
   assert.equal(activeScenario(s).name, 'Pass A'); assert.equal(s.scenarios.active, res.id); assert.equal(s.orbit.hp, 900);
   const added = importScenario(s, j, D()); assert.notEqual(s.scenarios.items.find(i => i.id === added.id).name, 'Pass A', 'added as new: a different name');
+});
+
+test('import report: invalid attitudes, parts the spacecraft does not have, long names, and old exports', () => {
+  const s = fresh(), j = JSON.parse(JSON.stringify(exportScenario(s))), r = o => previewScenario(s, { ...j, orbit: { ...j.orbit, ...o } }, D()).report.join(' | ');
+  assert.ok(r({ inertialQ: { w: 0, x: 0, y: 0, z: 0 } }).includes('inertial attitude'));
+  assert.ok(r({ schedule: [{ start: '2026-10-05T10:10', mode: 'inertial', q: { w: 'a' } }] }).includes('inertial attitude'));
+  assert.ok(r({ tgtComp: 'zzz' }).includes('pointing axis'), 'a part not on the spacecraft it flies');
+  assert.ok(r({ schedule: [{ start: '2026-10-05T10:10', mode: 'sun', sunAxis: 'comp:zzz' }] }).includes('Sun axis'));
+  const long = 'L'.repeat(40); addScenario(s, scenarioData(s.orbit), long); assert.equal(previewScenario(s, { ...j, name: long }, D()).sameName, s.scenarios.active, 'a long name still finds its match');
+  const old = { ...j, orbit: { ...j.orbit } }; delete old.orbit.tgtSlew; delete old.orbit.end; delete old.orbit.schedule;
+  const p = previewScenario(s, old, D()); assert.deepEqual(p.report, [], 'an export from 0.8 resets nothing'); assert.equal(p.info.length, 1);
 });

@@ -298,20 +298,22 @@ function scenarioCard(ctx) {
     const err = h('p', { class: 'tip', style: 'color:var(--bad)' }), prev = h('div', { class: 'imp-prev' }), act = h('div', { class: 'btns', style: 'margin-top:8px' });
     let json = null, p = null, tm = 0;
     const go = replace => {
+      clearTimeout(tm); check(); if (!p) return; // the text may have changed since the preview
       let res; try { res = importScenario(S, json, defaults(), replace ? { replace: p.sameName } : {}); } catch (e) { err.textContent = 'Could not import: ' + e.message; return; }
       closeModal(); switched();
-      toast((replace ? 'Scenario replaced' : 'Scenario added') + (res.missing ? `. No spacecraft named "${res.missing}" here, so it flies ${activeItem(S).name}` : '') + (res.report.length ? '. Some values were reset (see the preview)' : ''));
+      toast((res.replaced ? 'Scenario replaced' : 'Scenario added') + (res.missing ? `. No spacecraft named "${res.missing}" here, so it flies ${activeItem(S).name}` : '') + (res.report.length ? `. ${res.report.length} thing${res.report.length === 1 ? ' was' : 's were'} reset or dropped` : ''));
     };
     const check = () => {
       err.textContent = ''; prev.replaceChildren(); act.replaceChildren(); json = p = null;
       if (!ta.value.trim()) return;
       try { json = JSON.parse(ta.value); p = previewScenario(S, json, defaults()); } catch (e) { err.textContent = 'Cannot import: ' + e.message; return; }
-      const o = p.orbit, ch = (o.schedule || []).length, sc = p.spacecraft;
-      const orbitText = o.def === 'tle' ? 'TLE' : o.def === 'rv' ? 'state vector r, v' : `${o.hp} × ${o.ha} km · i ${o.i}°`;
+      const o = p.orbit, ch = (o.schedule || []).length, sc = p.spacecraft, E = orbitElements(o), alt = r => (r - ENV.RE).toFixed(0);
+      const orbitText = `${alt(E.a * (1 - E.e))} × ${alt(E.a * (1 + E.e))} km · i ${(E.i * 180 / Math.PI).toFixed(2)}°` + (o.def === 'tle' ? ' (TLE)' : o.def === 'rv' ? ' (state vector)' : '');
       const flies = sc.found ? `${esc(sc.name)} (in the library)` : sc.name ? `<span style="color:var(--warn)">${esc(sc.name)} is not here: it would fly ${esc(activeItem(S).name)}</span>` : esc(activeItem(S).name);
       prev.innerHTML = `<div class="kv"><dt>Name</dt><dd>${esc(p.name)}</dd><dt>Orbit</dt><dd>${esc(orbitText)}</dd><dt>Epoch</dt><dd>${o.def === 'tle' ? 'from the TLE' : esc(o.epoch)}</dd>`
         + `<dt>Mode</dt><dd>${esc(MODE_SHORT[o.mode] || o.mode)}${ch ? ` · ${ch} schedule change${ch === 1 ? '' : 's'}` : ''}</dd><dt>Flies</dt><dd>${flies}</dd></div>`
-        + (p.report.length ? `<ul class="imp-rep">${p.report.map(r => `<li>${esc(r)}</li>`).join('')}</ul>` : '<p class="tip" style="margin:4px 0 0">Everything was read as it is.</p>');
+        + (p.report.length ? `<ul class="imp-rep">${p.report.map(r => `<li>${esc(r)}</li>`).join('')}</ul>` : '<p class="tip" style="margin:4px 0 0">Everything was read as it is.</p>')
+        + p.info.map(r => `<p class="tip" style="margin:4px 0 0">${esc(r)}</p>`).join('');
       act.append(h('button', { class: 'btn primary', onclick: () => go(false) }, p.sameName ? 'Add as a new scenario' : 'Add scenario'));
       if (p.sameName) act.append(confirmButton(`Replace "${p.name}"`, 'Click again to replace it', () => go(true)));
     };
@@ -378,7 +380,7 @@ function orbitCard(ctx, o, sl) {
     body = [ta,
       h('div', { class: 'btns' }, h('button', { class: 'btn', onclick: () => { ta.value = ISS_TLE; o.tle = ISS_TLE; o.t = 0; changed(); } }, 'Example: ISS (2008)')),
       status(),
-      liveText(() => { const t = tleOf(o); if (!t) return ''; return `<div class="kv"><dt>Satellite</dt><dd>${(t.name || '—').replace(/</g, '&lt;')} · ${t.satnum}</dd><dt>Epoch</dt><dd>${t.epoch.toISOString().replace('T', ' ').slice(0, 23)}</dd><dt>Mean motion</dt><dd>${t.n.toFixed(8)} rev/day</dd></div>`
+      liveText(() => { const t = tleOf(o); if (!t) return ''; return `<div class="kv"><dt>Satellite</dt><dd>${esc(t.name || '—')} · ${esc(t.satnum)}</dd><dt>Epoch</dt><dd>${t.epoch.toISOString().replace('T', ' ').slice(0, 23)}</dd><dt>Mean motion</dt><dd>${t.n.toFixed(8)} rev/day</dd></div>`
         + t.warnings.map(w => `<p class="tip" style="color:var(--warn)">${w}</p>`).join(''); }),
       derived(),
       tip('<b>Approximation:</b> the TLE\'s mean elements are flown with Keplerian + J2 secular drift, not SGP4. Good near the TLE epoch; drifts by kilometres per day (no drag). The epoch comes from the TLE.')];

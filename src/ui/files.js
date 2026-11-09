@@ -13,11 +13,12 @@ export function downloadText(filename, text, type = 'application/json') {
 
 /** A file name from a name and a kind: "Image pass" + "scenario" → "Image_pass.scenario.json". */
 export function fileName(name, kind) {
-  const base = String(name || '').trim().replace(/[^\w.-]+/g, '_').replace(/^[_.]+|_+$/g, '');
+  const base = String(name || '').trim().replace(/[^\p{L}\p{N}._-]+/gu, '_').replace(/^[_.]+|[_.]+$/g, ''); // letters of any language
   return (base || kind) + '.' + kind + '.json';
 }
 
 async function readFile(f, onText) {
+  if (!/\.json$/i.test(f.name) && !/json/.test(f.type)) { toast(`${f.name} is not a .json file`); return; }
   if (f.size > MAX_BYTES) { toast(`${f.name} is too large to be AttTool JSON`); return; }
   try { onText(await f.text(), f.name); } catch (e) { toast('Could not read ' + f.name); }
 }
@@ -36,7 +37,18 @@ export function onFileDrop(el, onText) {
   el.addEventListener('dragleave', e => { if (!el.contains(e.relatedTarget)) el.classList.remove('dropping'); });
   el.addEventListener('drop', e => {
     if (!hasFile(e)) return; e.preventDefault(); e.stopPropagation(); el.classList.remove('dropping');
-    const f = e.dataTransfer.files[0]; if (f) readFile(f, onText);
+    const fs = e.dataTransfer.files; if (fs.length > 1) toast('One file at a time: the first one is read'); if (fs[0]) readFile(fs[0], onText);
   });
   return el;
+}
+
+/**
+ * Stop a file dropped anywhere else from opening in the tab (which would leave the app). Call once at start-up;
+ * drop targets (onFileDrop) take theirs first.
+ */
+export function guardFileDrops() {
+  const files = e => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+  // a drop target has already called preventDefault (and set its own dropEffect): leave those alone
+  addEventListener('dragover', e => { if (files(e) && !e.defaultPrevented) { e.preventDefault(); e.dataTransfer.dropEffect = 'none'; } });
+  addEventListener('drop', e => { if (files(e)) e.preventDefault(); });
 }

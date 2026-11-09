@@ -5,6 +5,7 @@
 import { S, save } from './state/store.js';
 import { $, resetBindings, syncAll, tickLive } from './ui/dom.js';
 import { closeModal } from './ui/overlay.js';
+import { guardFileDrops } from './ui/files.js';
 import { showConventions } from './ui/conventions.js';
 import { VERSION } from './version.js';
 import { gfx, initRenderer, sizeOf, dockHeight } from './gfx/renderer.js';
@@ -15,6 +16,7 @@ import { createLayoutView } from './views/layout.js';
 const TAB_KEYS = { '1': 'rot', '2': 'orbit', '3': 'layout' };
 
 export function startApp() {
+  guardFileDrops(); // a file dropped outside a drop target must not open in the tab
   initRenderer($('#vp'));
   const ctx = { renderRail: () => renderRail() };
   /** Workspaces by tab id. Each: { V, update, render, panel, hud, init?, enter?, leave?, tick? } */
