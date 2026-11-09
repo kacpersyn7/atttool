@@ -67,6 +67,64 @@ export function setChangeMode(c, mode, rotQ) { c.mode = mode; if (mode === 'iner
 /** An inertial change takes Rotation Lab's attitude rotQ now. */
 export function takeRotation(c, rotQ) { c.q = qCopy(rotQ); }
 
+/* ---------- names and editing helpers (#55) ---------- */
+
+/** Longest name of a change. */
+export const NAME_MAX = 40;
+/** A name as kept: trimmed, at most NAME_MAX characters ('' = none). */
+export const cleanName = x => typeof x === 'string' ? x.trim().slice(0, NAME_MAX) : '';
+
+/** Set the name of change `id`. @returns false for an unknown change. */
+export function renameChange(o, id, name) {
+  const c = (o.schedule || []).find(c => c.id === id); if (!c) return false;
+  c.name = cleanName(name); o.schedule = [...o.schedule]; return true;
+}
+
+/** UTC string of epoch-relative seconds t, whole seconds. */
+const utcOf = (o, t) => formatEpoch(new Date(Math.floor(epochDate(o).getTime() / 1000 + t) * 1000));
+
+/**
+ * Copy change `id` (settings, slew, name) to start at the current time, whole seconds; one minute after the
+ * original if that is the same moment. @returns the copy, or null (unknown, full, or outside the date limits).
+ */
+export function duplicateChange(o, id) {
+  const sched = o.schedule || [], c = sched.find(c => c.id === id); if (!c || sched.length >= MAX_CHANGES) return null;
+  let start = utcOf(o, o.t); if (parseEpoch(start).getTime() === parseEpoch(c.start).getTime()) start = formatEpoch(new Date(parseEpoch(c.start).getTime() + 60e3));
+  if (!validDate(start)) return null;
+  const copy = { ...JSON.parse(JSON.stringify(c)), id: newId(), start };
+  o.schedule = [...sched, copy]; return copy;
+}
+
+/** Move change `id` by dt seconds. @returns false if it would leave the date limits. */
+export function nudgeChange(o, id, dt) {
+  const c = (o.schedule || []).find(c => c.id === id), d = c && parseEpoch(c.start); if (!d) return false;
+  return setChangeStart(o, id, formatEpoch(new Date(d.getTime() + dt * 1000)));
+}
+
+/**
+ * The start (s from the epoch) of the next change after the current time (dir +1), or of the previous one
+ * before it (dir -1; one already started counts from 1 s after its start, so pressing again goes further back). Null if none.
+ */
+export function adjacentChange(o, dir) {
+  const e0 = epochDate(o).getTime(), ts = [...new Set(scheduleOrder(o.schedule).map(x => (x.ms - e0) / 1000))];
+  if (dir > 0) { const t = ts.find(x => x > o.t + 1e-6); return t === undefined ? null : t; }
+  const back = ts.filter(x => x < o.t - 1); return back.length ? back[back.length - 1] : null;
+}
+
+/**
+ * Undo for schedule edits: push(o) before an edit keeps a copy; undo(o) puts the last one back. Kept per
+ * scenario by the caller (clear on a switch). Mode settings typed into the guidance controls are not included.
+ */
+export function scheduleHistory(limit = 50) {
+  const stack = [];
+  return {
+    push(o) { stack.push(JSON.stringify(o.schedule || [])); if (stack.length > limit) stack.shift(); },
+    undo(o) { if (!stack.length) return false; o.schedule = JSON.parse(stack.pop()); return true; },
+    clear() { stack.length = 0; },
+    get size() { return stack.length; },
+  };
+}
+
 /* ---------- the scenario as a whole: its span, and playing it from start to end ---------- */
 
 /** Margin after the last change's slew for the automatic end (s). */

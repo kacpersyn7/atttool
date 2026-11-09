@@ -160,6 +160,7 @@ export function cleanSchedule(x, base, q0 = null) {
     if (!c || typeof c !== 'object' || !isStr(c.start) || !validDate(c.start) || !VALID.mode(c.mode)) continue;
     const id = isStr(c.id) ? c.id.slice(0, 40) : '';
     const seg = { id: id && !ids.has(id) ? id : newId(), start: c.start, slew: inRange(0, 3600)(c.slew) ? c.slew : 60 };
+    if (isStr(c.name) && c.name.trim()) seg.name = c.name.trim().slice(0, 40); // optional (#55)
     for (const k of SEGMENT_KEYS) seg[k] = VALID[k](c[k]) ? c[k] : base[k];
     if (seg.mode === 'inertial') { const q = quat(c.q) ? c.q : q0 || AM.q.id(); seg.q = AM.q.unit({ w: q.w, x: q.x, y: q.y, z: q.z }); }
     ids.add(seg.id); out.push(seg);
