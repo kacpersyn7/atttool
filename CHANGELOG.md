@@ -6,7 +6,7 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 ## [Unreleased]
 
 ### Added
-- **Mode schedule: names and editing helpers** (#55): a change can have a name, shown in its row, the timeline Mode band and the status chip (*Now: Image Warsaw (Target)*). ⏮ / ⏭ next to Play jump to the previous or next change. The selected change can be duplicated (at the current time) or moved by ±1 min, and *Undo* takes back schedule edits (adding, deleting, moving, naming, slew or mode of a change).
+- **Mode schedule: names and editing helpers** (#55): a change can have a name, shown in its row, the timeline Mode band and the status chip (*Now: Image Warsaw (Target)*). ⏮ / ⏭ next to Play jump to the previous or next change. The selected change can be duplicated (at the current time) or moved by ±1 min, and *Undo* takes back schedule edits (adding, deleting, moving, naming, slew or mode of a change); a change's other settings keep their current values.
 - **Play the whole scenario** (#67): *▶ Scenario* in the Time card plays from the scenario's start to its end at the chosen speed and pauses there (or loops), with a progress bar. A new scenario setting, *Scenario ends (UTC)*, sets the end; *Auto* ends it when the last schedule change has finished its slew (the attitude stops moving there), plus 5 min (one orbit without a schedule). New speeds 10× and 30×.
 - **Target tracking slews at rise and set** (#65): instead of jumping to the target when it rises, the spacecraft slews to it before the rise, so tracking starts as it rises, and back to the nominal attitude after the set. The time is a new target setting, *Slew to/from* (60 s by default, per schedule change); 0 keeps the jump.
 
