@@ -125,14 +125,29 @@ const VALID = {
   schedule: Array.isArray, // and then cleaned change by change (cleanSchedule)
   end: x => x === '' || (isStr(x) && validDate(x)), // '' = automatic
 };
-/** Orbit fields from untrusted JSON: only the known ones, each valid or the default. */
-export function sanitizeScenario(orbit, defaults) {
-  const src = orbit && typeof orbit === 'object' ? orbit : {};
+/** Names of the scenario fields for the import report. */
+const FIELD_NAME = {
+  preset: 'orbit preset', def: 'orbit definition', r: 'state vector r', v: 'state vector v', tle: 'TLE', epoch: 'epoch', hp: 'perigee altitude', ha: 'apogee altitude',
+  i: 'inclination', raan: 'RAAN', argp: 'argument of perigee', nu0: 'true anomaly', j2: 'J2', t: 'current time', mode: 'guidance mode', refFrame: 'shown frame',
+  roll: 'roll', pitch: 'pitch', yaw: 'yaw', sunAxis: 'Sun axis', sunSec: 'secondary direction', sunSecAxis: 'secondary axis', tgtLat: 'target latitude',
+  tgtLon: 'target longitude', tgtAlt: 'target height', tgtComp: 'pointing axis', tgtSlew: 'slew to/from target', schedule: 'mode schedule', end: 'scenario end',
+};
+
+/**
+ * Orbit fields from untrusted JSON: only the known ones, each valid or the default. With a `report` array, what
+ * was not taken as it was is added to it as sentences: values reset to the default, changes dropped or changed.
+ * Fields the JSON lacks (a file from an older version) are counted, not listed.
+ */
+export function sanitizeScenario(orbit, defaults, report = null) {
+  const src = orbit && typeof orbit === 'object' ? orbit : {}, note = m => { if (report) report.push(m); };
+  const bad = SCENARIO_KEYS.filter(k => Object.hasOwn(src, k) && !VALID[k](src[k])), missing = SCENARIO_KEYS.filter(k => !Object.hasOwn(src, k));
   const o = Object.fromEntries(SCENARIO_KEYS.map(k => [k, VALID[k](src[k]) ? src[k] : defaults[k]]));
-  if (o.def === 'rv' && !(vec3(o.r) && vec3(o.v))) o.def = 'elements'; // the state vector fields need all six numbers
+  if (bad.length) note(`Reset to the default (not a valid value): ${bad.map(k => FIELD_NAME[k] || k).join(', ')}.`);
+  if (missing.length) note(`${missing.length} setting${missing.length === 1 ? ' was' : 's were'} not in the file (an older version?) and took the default.`);
+  if (o.def === 'rv' && !(vec3(o.r) && vec3(o.v))) { o.def = 'elements'; note('The orbit was defined by a state vector without all six numbers, so the elements are used.'); } // the state vector fields need all six numbers
   const q = src.inertialQ;
   if (q && [q.w, q.x, q.y, q.z].every(isNum) && AM.q.norm(q) > 1e-9) o.inertialQ = AM.q.unit({ w: q.w, x: q.x, y: q.y, z: q.z });
-  o.schedule = cleanSchedule(o.schedule, o, o.inertialQ);
+  o.schedule = cleanSchedule(o.schedule, o, o.inertialQ, report);
   return o;
 }
 
@@ -151,18 +166,29 @@ const quat = q => q && typeof q === 'object' && [q.w, q.x, q.y, q.z].every(isNum
 /**
  * Schedule changes from untrusted JSON: a change needs a valid start and mode, or it is dropped; other
  * settings that fail take the scenario's own (`base`); slew 0..3600 s, else 60. Ids are made unique. An inertial
- * change without a valid attitude gets `q0` (the scenario's inertial attitude), else the identity.
+ * change without a valid attitude gets `q0` (the scenario's inertial attitude), else the identity. With a `report`
+ * array, dropped changes and reset settings are added to it as sentences.
  */
-export function cleanSchedule(x, base, q0 = null) {
+export function cleanSchedule(x, base, q0 = null, report = null) {
   if (!Array.isArray(x)) return [];
-  const ids = new Set(), out = [];
+  const ids = new Set(), out = [], dropped = { start: 0, limit: 0, mode: 0, other: 0 }, reset = new Set();
+  if (x.length > MAX_CHANGES) dropped.limit = x.length - MAX_CHANGES;
   for (const c of x.slice(0, MAX_CHANGES)) {
-    if (!c || typeof c !== 'object' || !isStr(c.start) || !validDate(c.start) || !VALID.mode(c.mode)) continue;
+    if (!c || typeof c !== 'object') { dropped.other++; continue; }
+    if (!isStr(c.start) || !parseEpoch(c.start)) { dropped.start++; continue; }
+    if (!validDate(c.start)) { dropped.limit++; continue; }
+    if (!VALID.mode(c.mode)) { dropped.mode++; continue; }
     const id = isStr(c.id) ? c.id.slice(0, 40) : '';
     const seg = { id: id && !ids.has(id) ? id : newId(), start: c.start, slew: inRange(0, 3600)(c.slew) ? c.slew : 60 };
-    for (const k of SEGMENT_KEYS) seg[k] = VALID[k](c[k]) ? c[k] : base[k];
+    if (Object.hasOwn(c, 'slew') && !inRange(0, 3600)(c.slew)) reset.add('slew');
+    for (const k of SEGMENT_KEYS) { seg[k] = VALID[k](c[k]) ? c[k] : base[k]; if (Object.hasOwn(c, k) && !VALID[k](c[k])) reset.add(FIELD_NAME[k] || k); }
     if (seg.mode === 'inertial') { const q = quat(c.q) ? c.q : q0 || AM.q.id(); seg.q = AM.q.unit({ w: q.w, x: q.x, y: q.y, z: q.z }); }
     ids.add(seg.id); out.push(seg);
+  }
+  if (report) {
+    const n = (k, what) => dropped[k] ? report.push(`${dropped[k]} schedule change${dropped[k] === 1 ? '' : 's'} dropped: ${what}.`) : 0;
+    n('start', 'no readable start time'); n('limit', `a start outside ${1900} to ${2200}, or more than ${MAX_CHANGES} changes`); n('mode', 'an unknown guidance mode'); n('other', 'not a change at all');
+    if (reset.size) report.push(`In schedule changes, reset to the scenario's own value: ${[...reset].join(', ')}.`);
   }
   return out;
 }
@@ -176,11 +202,28 @@ const cleanName = (x, fallback) => (isStr(x) && x.trim() ? x.trim().slice(0, 32)
  * @throws Error with a readable message; nothing has changed then.
  * @returns { id, missing }: missing is the name of a spacecraft not in the library, else null.
  */
-export function importScenario(s, json, defaults) {
+/**
+ * What importing `json` would do, without changing anything: { name, orbit (cleaned), report (sentences: what was
+ * not taken as it was), spacecraft: { name (asked for, or null), found (its library id, or null) }, sameName (the id
+ * of a scenario with the same name, or null) }. Throws for something that isn't a scenario, or a newer format.
+ */
+export function previewScenario(s, json, defaults) {
   if (!json || json.kind !== 'scenario' || !json.orbit || typeof json.orbit !== 'object') throw new Error('Expected a scenario copied from AttTool ("kind": "scenario").');
   if (json.atttool > SCENARIO_FORMAT) throw new Error('This scenario comes from a newer version of AttTool.');
-  const orbit = sanitizeScenario(json.orbit, defaults), want = isStr(json.spacecraft) ? json.spacecraft : null;
-  const found = want === null ? null : s.fleet.items.find(i => i.name === want);
-  const id = addScenario(s, orbit, cleanName(json.name, 'Imported scenario'), found ? found.id : s.fleet.active);
-  return { id, missing: want !== null && !found ? want : null };
+  const report = [], orbit = sanitizeScenario(json.orbit, defaults, report), want = isStr(json.spacecraft) ? json.spacecraft : null;
+  const found = want === null ? null : s.fleet.items.find(i => i.name === want) || null, name = cleanName(json.name, 'Imported scenario');
+  const same = s.scenarios.items.find(i => i.name === name) || null;
+  return { name, orbit, report, spacecraft: { name: want, found: found ? found.id : null }, sameName: same ? same.id : null };
+}
+
+/**
+ * Import a scenario: added as new, or with opts.replace = the id of a scenario that it replaces (it takes that
+ * one's name). It flies the spacecraft it names if the library has one of that name, else the active one.
+ * @returns { id, missing (the spacecraft name not found, or null), report (as previewScenario) }
+ */
+export function importScenario(s, json, defaults, opts = {}) {
+  const p = previewScenario(s, json, defaults), old = opts.replace ? s.scenarios.items.find(i => i.id === opts.replace) : null;
+  const id = addScenario(s, p.orbit, p.name, p.spacecraft.found || s.fleet.active);
+  if (old) { const name = old.name; deleteScenario(s, old.id); renameScenario(s, id, name); }
+  return { id, missing: p.spacecraft.name !== null && !p.spacecraft.found ? p.spacecraft.name : null, report: p.report };
 }

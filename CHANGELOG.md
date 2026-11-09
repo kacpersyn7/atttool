@@ -6,6 +6,8 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 ## [Unreleased]
 
 ### Added
+- **Scenario import: preview, report and replace** (#59): the import dialog shows what a scenario would be before it is added (name, orbit, epoch, mode and schedule, which spacecraft it would fly) and lists what could not be taken as it was: values reset to the default, schedule changes dropped and why. A scenario with the same name can be replaced instead of added as a copy.
+- **Files** (#60): *Download* saves a scenario (Orbit) or a spacecraft (Layout) as a .json file; the import dialogs can *Open file…*, and a file can be dropped on the dialog, the Scenario card or the *Save & share* card.
 - **Play the whole scenario** (#67): *▶ Scenario* in the Time card plays from the scenario's start to its end at the chosen speed and pauses there (or loops), with a progress bar. A new scenario setting, *Scenario ends (UTC)*, sets the end; *Auto* ends it when the last schedule change has finished its slew (the attitude stops moving there), plus 5 min (one orbit without a schedule). New speeds 10× and 30×.
 - **Target tracking slews at rise and set** (#65): instead of jumping to the target when it rises, the spacecraft slews to it before the rise, so tracking starts as it rises, and back to the nominal attitude after the set. The time is a new target setting, *Slew to/from* (60 s by default, per schedule change); 0 keeps the jump.
 

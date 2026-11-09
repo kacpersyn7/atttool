@@ -8,7 +8,7 @@ import { computeTimeline } from '../src/sim/timeline.js';
 import { signalCatalog } from '../src/sim/signals.js';
 import { defaultState, migrate } from '../src/state/store.js';
 import { orbitElements } from '../src/sim/scenario.js';
-import { SCENARIO_KEYS, activeScenario, addScenario, deleteScenario, duplicateScenario, ensureScenarios, exportScenario, importScenario, newScenarioOrbit, renameScenario, sanitizeScenario, scenarioData, selectScenario, SCENARIO_FORMAT } from '../src/sim/scenarioLibrary.js';
+import { SCENARIO_KEYS, activeScenario, addScenario, deleteScenario, duplicateScenario, ensureScenarios, exportScenario, importScenario, newScenarioOrbit, renameScenario, sanitizeScenario, scenarioData, selectScenario, SCENARIO_FORMAT, previewScenario } from '../src/sim/scenarioLibrary.js';
 
 const fresh = () => { const s = defaultState(); migrate(s); return s; };
 
@@ -203,4 +203,34 @@ test('scenario JSON format: 1 without a schedule (older AttTool reads it), 2 wit
   assert.equal(refusedBy08(j), true, 'with a schedule: 0.8 says it comes from a newer version'); assert.equal(refusedBy08(exportScenario(fresh())), false, 'without: 0.8 reads it');
   const t = fresh(); importScenario(t, j, D()); assert.equal(t.orbit.schedule.length, 1, 'read here');
   importScenario(t, { ...j, atttool: 1 }, D()); assert.equal(t.orbit.schedule.length, 1, 'format 1 with a schedule (as the withdrawn first 0.9.0 build wrote it) is still read');
+});
+
+test('import report: what was reset or dropped is told, in plain sentences; a clean file has nothing to report', () => {
+  const s = fresh(), clean = JSON.parse(JSON.stringify(exportScenario(s)));
+  assert.deepEqual(previewScenario(s, clean, D()).report, [], 'its own export: nothing');
+  const orbit = { ...clean.orbit, hp: -5, mode: 'warp', roll: 'x', schedule: [
+    { start: 'soon', mode: 'sun' }, { start: '2300-01-01T00:00', mode: 'sun' }, { start: '2026-10-05T10:10', mode: 'warp' }, 7,
+    { start: '2026-10-05T10:20', mode: 'sun', slew: 1e9, sunAxis: ['x'] }] };
+  delete orbit.tgtSlew; delete orbit.end;
+  const r = previewScenario(s, { ...clean, orbit }, D()).report.join(' | ');
+  for (const want of ['perigee altitude', 'guidance mode', 'roll', '2 settings were not in the file', 'no readable start time', 'outside 1900 to 2200', 'unknown guidance mode', 'not a change at all', 'slew', 'Sun axis']) assert.ok(r.includes(want), `report mentions "${want}": ${r}`);
+  assert.equal(previewScenario(s, { ...clean, orbit: { ...clean.orbit, def: 'rv', r: [1, 2] } }, D()).report.some(x => x.includes('state vector')), true);
+});
+
+test('import preview: changes nothing, and says which spacecraft it would fly and whether a scenario has the same name', () => {
+  const s = fresh(), j = JSON.parse(JSON.stringify(exportScenario(s))), before = JSON.stringify(s);
+  const p = previewScenario(s, j, D()); assert.equal(JSON.stringify(s), before, 'nothing changed');
+  assert.equal(p.name, activeScenario(s).name); assert.equal(p.sameName, s.scenarios.active); assert.equal(p.spacecraft.found, s.fleet.active);
+  const q = previewScenario(s, { ...j, name: 'Other', spacecraft: 'Not here' }, D()); assert.equal(q.sameName, null); assert.deepEqual(q.spacecraft, { name: 'Not here', found: null });
+  assert.throws(() => previewScenario(s, { kind: 'x' }, D()), /Expected a scenario/);
+});
+
+test('import replace: the new scenario takes the old one\'s name and place in the library; the old one is gone', () => {
+  const s = fresh(); addScenario(s, { ...scenarioData(s.orbit), hp: 700 }, 'Pass A'); addScenario(s, scenarioData(s.orbit), 'Pass B');
+  const old = s.scenarios.items.find(i => i.name === 'Pass A').id, n = s.scenarios.items.length;
+  const j = { kind: 'scenario', atttool: 1, name: 'Pass A', orbit: { ...scenarioData(s.orbit), hp: 900 } };
+  const res = importScenario(s, j, D(), { replace: old });
+  assert.equal(s.scenarios.items.length, n, 'one in, one out'); assert.ok(!s.scenarios.items.some(i => i.id === old));
+  assert.equal(activeScenario(s).name, 'Pass A'); assert.equal(s.scenarios.active, res.id); assert.equal(s.orbit.hp, 900);
+  const added = importScenario(s, j, D()); assert.notEqual(s.scenarios.items.find(i => i.id === added.id).name, 'Pass A', 'added as new: a different name');
 });

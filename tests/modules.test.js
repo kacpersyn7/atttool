@@ -40,3 +40,10 @@ test('modules: every named import exists in the module it comes from', () => {
     for (const n of m[1].split(',').map(x => x.trim()).filter(Boolean)) { const name = n.split(/\s+as\s+/)[0]; assert.ok(have.has(name), `${rel}: "${name}" is not exported by ${m[2]}`); }
   }
 });
+
+import { fileName } from '../src/ui/files.js';
+test('file names: from the scenario or spacecraft name, safe for any system', () => {
+  assert.equal(fileName('Image pass', 'scenario'), 'Image_pass.scenario.json');
+  assert.equal(fileName('../../etc/passwd', 'scenario'), 'etc_passwd.scenario.json');
+  assert.equal(fileName('  ', 'spacecraft'), 'spacecraft.spacecraft.json'); assert.equal(fileName('Sat 1 (v2)', 'spacecraft'), 'Sat_1_v2.spacecraft.json');
+});
