@@ -5,6 +5,9 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 
 ## [Unreleased]
 
+### Added
+- **Target tracking slews at rise and set** (#65): instead of jumping to the target when it rises, the spacecraft slews to it before the rise, so tracking starts as it rises, and back to the nominal attitude after the set. The time is a new target setting, *Slew to/from* (60 s by default, per schedule change); 0 keeps the jump.
+
 ## [0.9.0] - 2026-11-08
 
 ### Added

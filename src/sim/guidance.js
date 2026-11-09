@@ -7,7 +7,8 @@
  *              with 3-2-1 yaw/pitch/roll offsets on top. Zero offsets = nominal attitude.
  *   sun      — two-vector (TRIAD): chosen body axis on the Sun, secondary toward nadir/normal/...
  *   inertial — fixed in ECI using the Rotation Lab attitude (state.rot.q)
- *   target   — payload boresight tracks a ground point, +X kept toward velocity
+ *   target   — payload boresight tracks a ground point, +X kept toward velocity; below the horizon it holds the
+ *              nominal attitude, slewing to the target before it rises and back after it sets (targetAttitude)
  *
  * Mode schedule (state.orbit.schedule): a list of changes { id, start (UTC, epoch format), slew (s), mode,
  * and that mode's settings (SEGMENT_KEYS; an inertial change keeps its own attitude q) }. The settings in
@@ -27,7 +28,7 @@ const D2R = AM.D2R;
 /** Guidance modes, in the order the UI lists them. */
 export const MODES = ['offsets', 'target', 'sun', 'inertial'];
 /** Settings a schedule change keeps, its pointing payload (tgtComp) included. The shown frame stays scenario-wide. */
-export const SEGMENT_KEYS = ['mode', 'roll', 'pitch', 'yaw', 'sunAxis', 'sunSec', 'sunSecAxis', 'tgtLat', 'tgtLon', 'tgtAlt', 'tgtComp'];
+export const SEGMENT_KEYS = ['mode', 'roll', 'pitch', 'yaw', 'sunAxis', 'sunSec', 'sunSecAxis', 'tgtLat', 'tgtLon', 'tgtAlt', 'tgtComp', 'tgtSlew'];
 
 /** Body axis from a spec: '+X', '-Z', or 'comp:<id>' (that component's +Z; `missing` if the part is not on this spacecraft). */
 export function axisSpec(spec, comps, missing = [0, 0, 1]) {
@@ -64,14 +65,59 @@ function modeAttitude(state, g, x) {
     return { CBI: AM.triad(b1, b2, x.sun, x.refVec(g.sunSec)), flag: null };
   }
   if (g.mode === 'inertial') return { CBI: AM.q2C(AM.q.unit(g !== o && g.q ? g.q : state.rot.q)), flag: null };
-  if (g.mode === 'target') {
-    const tI = ENV.ecef2eci(targetECEF(g), x.date); const los = AM.v.sub(tI, x.st.r);
-    const elev = Math.PI / 2 - AM.v.angle(tI, AM.v.scale(los, -1));
-    const pc = payloadComp(state, g); const b1 = pc ? compAxis(pc) : [0, 0, 1];
-    if (elev > 0) { let b2 = [1, 0, 0]; if (AM.v.norm(AM.v.cross(b1, b2)) < 1e-3) b2 = [0, 1, 0]; return { CBI: AM.triad(b1, b2, los, x.st.v), flag: { elev } }; }
-    return { CBI: x.CNI, flag: { elev, below: true } }; // hold the nominal attitude
-  }
+  if (g.mode === 'target') return targetAttitude(state, g, x);
   return { CBI: AM.m.mul(AM.euler2C('321', [(g.yaw || 0) * D2R, (g.pitch || 0) * D2R, (g.roll || 0) * D2R]), x.CNI), flag: null }; // offsets
+}
+
+/** Default of the slew to and from a ground target (s), for settings saved without one. */
+export const TARGET_SLEW = 60;
+
+/**
+ * Target tracking for settings g at geometry x. The boresight tracks the target while it is above the horizon;
+ * below it the spacecraft holds the nominal attitude. Instead of jumping at the rise, it slews to the target over
+ * g.tgtSlew seconds before the rise (so tracking starts as it rises), and back to the nominal attitude over the same
+ * time after the set. Both attitudes are evaluated at t, as for schedule slews; which way it turns is fixed at the
+ * rise or set. Needs x.at (geometry at other times) to find them; without it, it jumps.
+ */
+function targetAttitude(state, g, x) {
+  const pc = payloadComp(state, g), b1 = pc ? compAxis(pc) : [0, 0, 1];
+  let b2 = [1, 0, 0]; if (AM.v.norm(AM.v.cross(b1, b2)) < 1e-3) b2 = [0, 1, 0];
+  const tECEF = targetECEF(g);
+  const see = y => { const tI = ENV.ecef2eci(tECEF, y.date), los = AM.v.sub(tI, y.st.r); return { los, elev: Math.PI / 2 - AM.v.angle(tI, AM.v.scale(los, -1)) }; };
+  const track = (y, s = see(y)) => AM.triad(b1, b2, s.los, y.st.v); // works below the horizon too (looks through the Earth)
+  const now = see(x);
+  if (now.elev > 0) return { CBI: track(x, now), flag: { elev: now.elev } };
+  const D = Math.max(0, Number.isFinite(+g.tgtSlew) ? +g.tgtSlew : TARGET_SLEW) * 1000, ms = x.date.getTime();
+  const hold = { CBI: x.CNI, flag: { elev: now.elev, below: true } }; // hold the nominal attitude
+  if (!D || !x.at || !mayRiseWithin(x, tECEF, D / 1000)) return hold;
+  // the nearest rise ahead and set behind, within D: the boundary (to 1 ms) where the target is up
+  const up = t => see(x.at(t)).elev > 0;
+  const edge = dir => {
+    const step = Math.min(10e3, D / 4);
+    for (let prev = 0, s = step; prev < D; prev = s, s = Math.min(D, s + step)) {
+      if (up(ms + dir * s)) { let a = prev, b = s; for (let k = 0; k < 30 && b - a > 1; k++) { const m = (a + b) / 2; if (up(ms + dir * m)) b = m; else a = m; } return ms + dir * b; }
+    }
+    return null;
+  };
+  const rise = edge(1), set = edge(-1);
+  const wRise = rise === null ? 0 : 1 - (rise - ms) / D, wSet = set === null ? 0 : 1 - (ms - set) / D;
+  const w = Math.min(1, Math.max(wRise, wSet)); if (w <= 0) return hold;
+  const te = wRise >= wSet ? rise : set, ye = x.at(te), ref = relativeQ(ye.CNI, track(ye));
+  return { CBI: blendAttitude(x.CNI, track(x, now), w, ref), flag: { elev: now.elev, below: true, slew: { w, rising: wRise >= wSet, dt: Math.abs(te - ms) / 1000 } } };
+}
+
+/**
+ * False when the target at tECEF cannot come above the horizon within dt seconds (before or after x): its angle
+ * from the spacecraft, seen from the Earth's centre, is more than the widest horizon of this orbit (at apogee)
+ * plus the most the ground point can move in dt (fastest at perigee, plus the Earth's rotation). Saves the search.
+ */
+function mayRiseWithin(x, tECEF, dt) {
+  const r = x.st.r, v = x.st.v, rn = AM.v.norm(r), h = AM.v.norm(AM.v.cross(r, v));
+  const a = 1 / (2 / rn - AM.v.dot(v, v) / ENV.MU), e = Math.sqrt(Math.max(0, 1 - h * h / (ENV.MU * a)));
+  if (!(a > 0) || e >= 1) return true; // not a closed orbit: always search
+  const rp = a * (1 - e), ra = a * (1 + e), tn = AM.v.norm(tECEF);
+  const theta = AM.v.angle(ENV.ecef2eci(tECEF, x.date), r), horizon = Math.acos(Math.min(1, tn / ra)) + Math.acos(Math.min(1, ENV.RE / tn));
+  return theta - horizon <= (h / (rp * rp) + ENV.WE) * dt;
 }
 
 /** Quaternion of a rotation matrix with a fixed sign: w > 0, or for a half turn (w ≈ 0) its largest vector component > 0. */
@@ -129,7 +175,7 @@ export function flownBefore(order, j) { let k = j - 1; while (k >= 0 && order[k]
  */
 function scheduler(state, E) {
   const o = state.orbit, sched = o.schedule, order = scheduleOrder(sched);
-  const geo = new Map(), at = ms => { if (!geo.has(ms)) geo.set(ms, geometry(state, E, ms)); return geo.get(ms); };
+  const geo = new Map(), at = ms => { if (!geo.has(ms)) { const y = geometry(state, E, ms); y.at = at; geo.set(ms, y); } return geo.get(ms); }; // .at: target tracking looks around in time
   const own = (j, ms) => modeAttitude(state, j < 0 ? o : sched[order[j].i], at(ms));
   const memo = new Map();
   const att = (j, ms) => {

@@ -266,3 +266,48 @@ test('parts: a change keeps its parts while the spacecraft is switched, and forg
   s.sc.comps = s.sc.comps.filter(c => c.id !== 'cam2'); validateAxes(s);
   assert.equal(s.orbit.schedule[0].tgtComp, ''); assert.equal(s.orbit.schedule[0].sunAxis, '-Z', 'reset like the initial settings');
 });
+
+/** A target tracking pass: the scenario, and the rise and set times (s) of its target, found by bisection on the elevation. */
+function pass(slew = 60, preset = 'sso1030', t1 = 900) {
+  const s = fresh(); applyPreset(s.orbit, preset);
+  const A = attitudeAt(s, t1), ll = ENV.ecef2ll(ENV.eci2ecef(A.st.r, A.date)); // the target is under the spacecraft at t1
+  Object.assign(s.orbit, { mode: 'target', tgtLat: ll.lat * R2D, tgtLon: ll.lon * R2D + 3, tgtAlt: 0, tgtSlew: slew });
+  const up = t => attitudeAt(s, t).flag.elev > 0, cross = (a, b) => { for (let k = 0; k < 40; k++) { const m = (a + b) / 2; if (up(m) === up(b)) b = m; else a = m; } return b; };
+  let r = t1; while (up(r)) r -= 10; let e = t1; while (up(e)) e += 10;
+  return { s, rise: cross(r, r + 10), set: cross(e - 10, e) };
+}
+
+test('target tracking: slews to the target over its slew time before it rises, and is tracking exactly at the rise', () => {
+  const { s, rise } = pass(60), C = t => attitudeAt(s, t);
+  assert.ok(rise > 100, 'set up: a real pass');
+  assert.deepEqual(C(rise - 60.01).CBI, C(rise - 60.01).CNI, 'before the slew: exactly the nominal hold');
+  const mid = C(rise - 30).flag.slew; assert.ok(mid.rising); close(mid.w, 0.5, 1e-3); close(mid.dt, 30, 0.01); // rise found to ~1 ms
+  close(angleBetween(C(rise - 0.001).CBI, C(rise + 0.001).CBI), 0, 0.01, 'no jump at the rise: tracking already');
+  const z = pass(0); assert.deepEqual(attitudeAt(z.s, z.rise - 1).CBI, attitudeAt(z.s, z.rise - 1).CNI, 'slew 0: the old jump');
+  assert.ok(angleBetween(attitudeAt(z.s, z.rise - 0.001).CBI, attitudeAt(z.s, z.rise + 0.001).CBI) > 5, 'which is a real jump here');
+});
+
+test('target tracking: slews back to the nominal attitude over its slew time after the target sets', () => {
+  const { s, set } = pass(60), C = t => attitudeAt(s, t);
+  close(angleBetween(C(set - 0.001).CBI, C(set + 0.001).CBI), 0, 0.01, 'no jump at the set');
+  const mid = C(set + 30).flag.slew; assert.equal(mid.rising, false); close(mid.w, 0.5, 1e-3);
+  assert.deepEqual(C(set + 60.01).CBI, C(set + 60.01).CNI, 'then the nominal hold again');
+});
+
+test('target tracking: no steps anywhere around a pass, in 1 s samples', () => {
+  const { s, rise, set } = pass(60);
+  let prev = attitudeAt(s, rise - 90).CBI, worst = 0, at = 0;
+  for (let t = rise - 89; t <= set + 90; t += 1) { const C = attitudeAt(s, t).CBI, d = angleBetween(C, prev); if (d > worst) { worst = d; at = t; } prev = C; }
+  // the fastest turn is tracking at closest approach (a few °/s at 550 km); a jump would be tens of degrees
+  assert.ok(worst < 6, `largest step ${worst.toFixed(2)}° at t=${at.toFixed(0)}`);
+});
+
+test('target tracking: the rise and set slews happen on very different orbits too (the search is never skipped wrongly)', () => {
+  for (const [preset, t1, slew] of [['iss', 900, 120], ['polar', 1500, 300], ['molniya', 30000, 600], ['gto', 20000, 600], ['meo', 5000, 600]]) {
+    const { s, rise, set } = pass(slew, preset, t1), C = t => attitudeAt(s, t);
+    const r = C(rise - slew / 2).flag.slew, f = C(set + slew / 2).flag.slew;
+    assert.ok(r && r.rising, `${preset}: slewing before the rise`); close(r.w, 0.5, 2e-3, `${preset} rise`);
+    assert.ok(f && !f.rising, `${preset}: slewing after the set`); close(f.w, 0.5, 2e-3, `${preset} set`);
+    assert.deepEqual(C(rise - slew - 0.01).CBI, C(rise - slew - 0.01).CNI, `${preset}: holding before`);
+  }
+});
