@@ -311,3 +311,47 @@ test('target tracking: the rise and set slews happen on very different orbits to
     assert.deepEqual(C(rise - slew - 0.01).CBI, C(rise - slew - 0.01).CNI, `${preset}: holding before`);
   }
 });
+
+/** A grazing pass of 1 to 8 s: the target just inside the horizon, cross-track of the point under the spacecraft at 900 s (found by bisection on how far inside). */
+function graze(slew) {
+  const s = fresh(); applyPreset(s.orbit, 'sso1030'); Object.assign(s.orbit, { mode: 'target', tgtSlew: slew, tgtAlt: 0 });
+  const A = attitudeAt(s, 900), r = AM.v.unit(A.st.r), h = AM.v.unit(AM.v.cross(A.st.r, A.st.v)), lam0 = Math.acos(ENV.RE / AM.v.norm(A.st.r));
+  const place = inside => { const lam = lam0 - inside, dir = AM.v.add(AM.v.scale(r, Math.cos(lam)), AM.v.scale(h, Math.sin(lam))), ll = ENV.ecef2ll(ENV.eci2ecef(AM.v.scale(dir, ENV.RE), A.date)); Object.assign(s.orbit, { tgtLat: ll.lat * R2D, tgtLon: ll.lon * R2D }); };
+  const measure = () => { let up = 0, first = null; for (let t = 780; t <= 1020; t += 0.1) if (attitudeAt(s, t).flag.elev > 0) { up += 0.1; if (first === null) first = t; } return { up, first }; };
+  let lo = -0.01, hi = 0.01, m; // inside < 0: never up; large: a long pass
+  for (let k = 0; k < 40; k++) { const mid = (lo + hi) / 2; place(mid); m = measure(); if (m.up > 8) hi = mid; else if (m.up < 1) lo = mid; else break; }
+  return { s, ...m };
+}
+
+test('target tracking: a pass shorter than the search step (a few seconds, grazing the horizon) is still found; no jumps', () => {
+  const { s, up, first } = graze(60); assert.ok(up > 0.5 && up < 10, `set up: a ${up.toFixed(1)} s pass`);
+  const f = attitudeAt(s, first - 30).flag.slew; assert.ok(f && f.rising, 'slewing to it 30 s before'); close(f.w, 0.5, 0.01);
+  let prev = attitudeAt(s, first - 90).CBI, worst = 0; for (let t = first - 89.5; t <= first + 100; t += 0.5) { const C = attitudeAt(s, t).CBI; worst = Math.max(worst, angleBetween(C, prev)); prev = C; }
+  assert.ok(worst < 3, `largest 0.5 s step ${worst.toFixed(2)}° (was 67° before the fix)`);
+});
+
+test('target tracking: only rises and sets while those settings fly count (a change looks no further back than its start)', () => {
+  const { s, set } = pass(60); const T0 = set + 20; // a change into target mode 20 s after a set; nominal before it
+  Object.assign(s.orbit, { mode: 'offsets', roll: 0, pitch: 0, yaw: 0 }); const tgt = { tgtLat: s.orbit.tgtLat, tgtLon: s.orbit.tgtLon, tgtAlt: 0, tgtSlew: 60 };
+  s.orbit.schedule = [{ id: 'c', start: at(s, T0), slew: 0, mode: 'target', ...tgt }];
+  const A = attitudeAt(s, T0 + 1); assert.deepEqual(A.CBI, A.CNI, 'no slew back from a set before it started'); assert.equal(A.flag.slew, undefined);
+  close(changeTurn(s, 'c').angle, 0, 1e-6, 'nothing to turn');
+  // and toward a rise: the initial settings in target mode, then a change back to nominal
+  const q = pass(60); q.s.orbit.schedule = [{ id: 'n', start: at(q.s, q.rise + 30), slew: 0, mode: 'offsets', roll: 0, pitch: 0, yaw: 0 }];
+  assert.equal(attitudeAt(q.s, q.rise - 30).flag.slew.rising, true, 'a rise before the next change counts');
+  const r = pass(60); r.s.orbit.schedule = [{ id: 'n', start: at(r.s, r.rise - 50), slew: 0, mode: 'offsets', roll: 0, pitch: 0, yaw: 0 }];
+  assert.equal(attitudeAt(r.s, r.rise - 55).flag.slew, undefined, 'a rise after the next change does not');
+});
+
+test('target tracking: the slew time is in the timeline key, defaults for old saves and imports, and bad values fall back', () => {
+  const s = fresh(); const k = timelineKey(s, 0, 0); s.orbit.tgtSlew = 600; assert.notEqual(timelineKey(s, 0, 0), k);
+  assert.equal(defaultState().orbit.tgtSlew, 60);
+  const old = fresh(); delete old.orbit.tgtSlew; old.orbit.schedule = [{ id: 'c', start: at(old, 5), slew: 0, mode: 'target' }];
+  const merged = { ...defaultState().orbit, ...old.orbit }; const t = { ...old, orbit: merged }; migrate(t); assert.equal(t.orbit.tgtSlew, 60); assert.equal(t.orbit.schedule[0].tgtSlew, 60, 'old changes too');
+  for (const [v, want] of [[90, 90], [-5, 60], [1e9, 60], ['x', 60]]) assert.equal(cleanSchedule([{ start: at(s, 5), mode: 'target', tgtSlew: v }], { ...s.orbit, tgtSlew: 60 })[0].tgtSlew, want, String(v));
+});
+
+test('target tracking: the slew time is limited to 900 s (the search grows with it)', () => {
+  const s = fresh(); assert.equal(cleanSchedule([{ start: at(s, 5), mode: 'target', tgtSlew: 901 }], { ...s.orbit, tgtSlew: 60 })[0].tgtSlew, 60);
+  const p = pass(900), q = pass(5000); close(attitudeAt(q.s, q.rise - 450).flag.slew.w, attitudeAt(p.s, p.rise - 450).flag.slew.w, 1e-9, 'a larger value flies as 900 s');
+});

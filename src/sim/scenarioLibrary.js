@@ -121,7 +121,7 @@ const VALID = {
   epoch: x => isStr(x) && !!parseEpoch(x), hp: inRange(100, 500000), ha: inRange(100, 500000), i: angle, raan: angle, argp: angle, nu0: angle, j2: x => typeof x === 'boolean', t: inRange(-T_MAX, T_MAX),
   mode: oneOf('offsets', 'target', 'sun', 'inertial'), refFrame: x => isStr(x) && Object.hasOwn(ENV.ORBIT_FRAMES, x), roll: angle, pitch: angle, yaw: angle,
   sunAxis: axis, sunSec: oneOf('nadir', 'zenith', 'velocity', 'normal', 'antinormal'), sunSecAxis: axis,
-  tgtLat: inRange(-90, 90), tgtLon: angle, tgtAlt: isNum, tgtComp: isStr, tgtSlew: inRange(0, 3600),
+  tgtLat: inRange(-90, 90), tgtLon: angle, tgtAlt: isNum, tgtComp: isStr, tgtSlew: inRange(0, 900),
   schedule: Array.isArray, // and then cleaned change by change (cleanSchedule)
 };
 /** Orbit fields from untrusted JSON: only the known ones, each valid or the default. */
