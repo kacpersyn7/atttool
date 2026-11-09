@@ -266,3 +266,92 @@ test('parts: a change keeps its parts while the spacecraft is switched, and forg
   s.sc.comps = s.sc.comps.filter(c => c.id !== 'cam2'); validateAxes(s);
   assert.equal(s.orbit.schedule[0].tgtComp, ''); assert.equal(s.orbit.schedule[0].sunAxis, '-Z', 'reset like the initial settings');
 });
+
+/** A target tracking pass: the scenario, and the rise and set times (s) of its target, found by bisection on the elevation. */
+function pass(slew = 60, preset = 'sso1030', t1 = 900) {
+  const s = fresh(); applyPreset(s.orbit, preset);
+  const A = attitudeAt(s, t1), ll = ENV.ecef2ll(ENV.eci2ecef(A.st.r, A.date)); // the target is under the spacecraft at t1
+  Object.assign(s.orbit, { mode: 'target', tgtLat: ll.lat * R2D, tgtLon: ll.lon * R2D + 3, tgtAlt: 0, tgtSlew: slew });
+  const up = t => attitudeAt(s, t).flag.elev > 0, cross = (a, b) => { for (let k = 0; k < 40; k++) { const m = (a + b) / 2; if (up(m) === up(b)) b = m; else a = m; } return b; };
+  let r = t1; while (up(r)) r -= 10; let e = t1; while (up(e)) e += 10;
+  return { s, rise: cross(r, r + 10), set: cross(e - 10, e) };
+}
+
+test('target tracking: slews to the target over its slew time before it rises, and is tracking exactly at the rise', () => {
+  const { s, rise } = pass(60), C = t => attitudeAt(s, t);
+  assert.ok(rise > 100, 'set up: a real pass');
+  assert.deepEqual(C(rise - 60.01).CBI, C(rise - 60.01).CNI, 'before the slew: exactly the nominal hold');
+  const mid = C(rise - 30).flag.slew; assert.ok(mid.rising); close(mid.w, 0.5, 1e-3); close(mid.dt, 30, 0.01); // rise found to ~1 ms
+  close(angleBetween(C(rise - 0.001).CBI, C(rise + 0.001).CBI), 0, 0.01, 'no jump at the rise: tracking already');
+  const z = pass(0); assert.deepEqual(attitudeAt(z.s, z.rise - 1).CBI, attitudeAt(z.s, z.rise - 1).CNI, 'slew 0: the old jump');
+  assert.ok(angleBetween(attitudeAt(z.s, z.rise - 0.001).CBI, attitudeAt(z.s, z.rise + 0.001).CBI) > 5, 'which is a real jump here');
+});
+
+test('target tracking: slews back to the nominal attitude over its slew time after the target sets', () => {
+  const { s, set } = pass(60), C = t => attitudeAt(s, t);
+  close(angleBetween(C(set - 0.001).CBI, C(set + 0.001).CBI), 0, 0.01, 'no jump at the set');
+  const mid = C(set + 30).flag.slew; assert.equal(mid.rising, false); close(mid.w, 0.5, 1e-3);
+  assert.deepEqual(C(set + 60.01).CBI, C(set + 60.01).CNI, 'then the nominal hold again');
+});
+
+test('target tracking: no steps anywhere around a pass, in 1 s samples', () => {
+  const { s, rise, set } = pass(60);
+  let prev = attitudeAt(s, rise - 90).CBI, worst = 0, at = 0;
+  for (let t = rise - 89; t <= set + 90; t += 1) { const C = attitudeAt(s, t).CBI, d = angleBetween(C, prev); if (d > worst) { worst = d; at = t; } prev = C; }
+  // the fastest turn is tracking at closest approach (a few °/s at 550 km); a jump would be tens of degrees
+  assert.ok(worst < 6, `largest step ${worst.toFixed(2)}° at t=${at.toFixed(0)}`);
+});
+
+test('target tracking: the rise and set slews happen on very different orbits too (the search is never skipped wrongly)', () => {
+  for (const [preset, t1, slew] of [['iss', 900, 120], ['polar', 1500, 300], ['molniya', 30000, 600], ['gto', 20000, 600], ['meo', 5000, 600]]) {
+    const { s, rise, set } = pass(slew, preset, t1), C = t => attitudeAt(s, t);
+    const r = C(rise - slew / 2).flag.slew, f = C(set + slew / 2).flag.slew;
+    assert.ok(r && r.rising, `${preset}: slewing before the rise`); close(r.w, 0.5, 2e-3, `${preset} rise`);
+    assert.ok(f && !f.rising, `${preset}: slewing after the set`); close(f.w, 0.5, 2e-3, `${preset} set`);
+    assert.deepEqual(C(rise - slew - 0.01).CBI, C(rise - slew - 0.01).CNI, `${preset}: holding before`);
+  }
+});
+
+/** A grazing pass of 1 to 8 s: the target just inside the horizon, cross-track of the point under the spacecraft at 900 s (found by bisection on how far inside). */
+function graze(slew) {
+  const s = fresh(); applyPreset(s.orbit, 'sso1030'); Object.assign(s.orbit, { mode: 'target', tgtSlew: slew, tgtAlt: 0 });
+  const A = attitudeAt(s, 900), r = AM.v.unit(A.st.r), h = AM.v.unit(AM.v.cross(A.st.r, A.st.v)), lam0 = Math.acos(ENV.RE / AM.v.norm(A.st.r));
+  const place = inside => { const lam = lam0 - inside, dir = AM.v.add(AM.v.scale(r, Math.cos(lam)), AM.v.scale(h, Math.sin(lam))), ll = ENV.ecef2ll(ENV.eci2ecef(AM.v.scale(dir, ENV.RE), A.date)); Object.assign(s.orbit, { tgtLat: ll.lat * R2D, tgtLon: ll.lon * R2D }); };
+  const measure = () => { let up = 0, first = null; for (let t = 780; t <= 1020; t += 0.1) if (attitudeAt(s, t).flag.elev > 0) { up += 0.1; if (first === null) first = t; } return { up, first }; };
+  let lo = -0.01, hi = 0.01, m; // inside < 0: never up; large: a long pass
+  for (let k = 0; k < 40; k++) { const mid = (lo + hi) / 2; place(mid); m = measure(); if (m.up > 8) hi = mid; else if (m.up < 1) lo = mid; else break; }
+  return { s, ...m };
+}
+
+test('target tracking: a pass shorter than the search step (a few seconds, grazing the horizon) is still found; no jumps', () => {
+  const { s, up, first } = graze(60); assert.ok(up > 0.5 && up < 10, `set up: a ${up.toFixed(1)} s pass`);
+  const f = attitudeAt(s, first - 30).flag.slew; assert.ok(f && f.rising, 'slewing to it 30 s before'); close(f.w, 0.5, 0.01);
+  let prev = attitudeAt(s, first - 90).CBI, worst = 0; for (let t = first - 89.5; t <= first + 100; t += 0.5) { const C = attitudeAt(s, t).CBI; worst = Math.max(worst, angleBetween(C, prev)); prev = C; }
+  assert.ok(worst < 3, `largest 0.5 s step ${worst.toFixed(2)}° (was 67° before the fix)`);
+});
+
+test('target tracking: only rises and sets while those settings fly count (a change looks no further back than its start)', () => {
+  const { s, set } = pass(60); const T0 = set + 20; // a change into target mode 20 s after a set; nominal before it
+  Object.assign(s.orbit, { mode: 'offsets', roll: 0, pitch: 0, yaw: 0 }); const tgt = { tgtLat: s.orbit.tgtLat, tgtLon: s.orbit.tgtLon, tgtAlt: 0, tgtSlew: 60 };
+  s.orbit.schedule = [{ id: 'c', start: at(s, T0), slew: 0, mode: 'target', ...tgt }];
+  const A = attitudeAt(s, T0 + 1); assert.deepEqual(A.CBI, A.CNI, 'no slew back from a set before it started'); assert.equal(A.flag.slew, undefined);
+  close(changeTurn(s, 'c').angle, 0, 1e-6, 'nothing to turn');
+  // and toward a rise: the initial settings in target mode, then a change back to nominal
+  const q = pass(60); q.s.orbit.schedule = [{ id: 'n', start: at(q.s, q.rise + 30), slew: 0, mode: 'offsets', roll: 0, pitch: 0, yaw: 0 }];
+  assert.equal(attitudeAt(q.s, q.rise - 30).flag.slew.rising, true, 'a rise before the next change counts');
+  const r = pass(60); r.s.orbit.schedule = [{ id: 'n', start: at(r.s, r.rise - 50), slew: 0, mode: 'offsets', roll: 0, pitch: 0, yaw: 0 }];
+  assert.equal(attitudeAt(r.s, r.rise - 55).flag.slew, undefined, 'a rise after the next change does not');
+});
+
+test('target tracking: the slew time is in the timeline key, defaults for old saves and imports, and bad values fall back', () => {
+  const s = fresh(); const k = timelineKey(s, 0, 0); s.orbit.tgtSlew = 600; assert.notEqual(timelineKey(s, 0, 0), k);
+  assert.equal(defaultState().orbit.tgtSlew, 60);
+  const old = fresh(); delete old.orbit.tgtSlew; old.orbit.schedule = [{ id: 'c', start: at(old, 5), slew: 0, mode: 'target' }];
+  const merged = { ...defaultState().orbit, ...old.orbit }; const t = { ...old, orbit: merged }; migrate(t); assert.equal(t.orbit.tgtSlew, 60); assert.equal(t.orbit.schedule[0].tgtSlew, 60, 'old changes too');
+  for (const [v, want] of [[90, 90], [-5, 60], [1e9, 60], ['x', 60]]) assert.equal(cleanSchedule([{ start: at(s, 5), mode: 'target', tgtSlew: v }], { ...s.orbit, tgtSlew: 60 })[0].tgtSlew, want, String(v));
+});
+
+test('target tracking: the slew time is limited to 900 s (the search grows with it)', () => {
+  const s = fresh(); assert.equal(cleanSchedule([{ start: at(s, 5), mode: 'target', tgtSlew: 901 }], { ...s.orbit, tgtSlew: 60 })[0].tgtSlew, 60);
+  const p = pass(900), q = pass(5000); close(attitudeAt(q.s, q.rise - 450).flag.slew.w, attitudeAt(p.s, p.rise - 450).flag.slew.w, 1e-9, 'a larger value flies as 900 s');
+});

@@ -8,7 +8,7 @@ import { activeItem, selectSpacecraft } from '../../spacecraft/library.js';
 import { MAX_CHANGES, activeScenario, addScenario, deleteScenario, duplicateScenario, exportScenario, importScenario, newScenarioOrbit, renameScenario, selectScenario } from '../../sim/scenarioLibrary.js';
 import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, DATE_MAX, DATE_MIN, PRESETS, SCRUB_SPANS, clampTime, currentDate, epochDate, farFromEpoch, formatEpoch, ltanOf, orbitElements, scrubCancelResume, scrubEnd, scrubHold, scrubKey, scrubPress, scrubSpan, scrubWindowAt, setCurrentDate, setEpoch, switchDefinition, restartFromState, definitionError, tleOf, parseEpoch } from '../../sim/scenario.js';
 import { copyText, showModal, closeModal, toast } from '../../ui/overlay.js';
-import { changeTurn, payloadComp, scheduleOrder } from '../../sim/guidance.js';
+import { TARGET_SLEW, TARGET_SLEW_MAX, changeTurn, payloadComp, scheduleOrder } from '../../sim/guidance.js';
 import { addChange, deleteChange, scheduleNotes, setChangeMode, setChangeStart, takeRotation } from '../../sim/schedule.js';
 import { sensorEval } from '../../sim/sensors.js';
 import { pointing } from '../../sim/payload.js';
@@ -72,8 +72,9 @@ export function orbitPanel(ctx) {
   if (g.mode === 'target') modeCtl.push(
     h('div', { class: 'grid2' }, numCell('tlat', 'Latitude °', () => g.tgtLat, x => { g.tgtLat = x; save(); }, .1, 2), numCell('tlon', 'Longitude °', () => g.tgtLon, x => { g.tgtLon = x; save(); }, .1, 2), altCell('talt', 'Height m')),
     selectRow({ id: 'tgtComp', label: 'Pointing axis', options: S.sc.comps.filter(c => TYPES[c.type].cone).map(c => [c.id, c.name]), get: () => (payloadComp(S, g) || {}).id, set: v => { g.tgtComp = v; save(); ctx.renderRail(); } }),
-    h('div', { class: 'status' }, liveText(() => { const cur = ctx.cur(); if (cur && cur.g !== g && sched.length) return `<span class="chip dim">Not flying now: ${g === o ? 'a change is' : 'it starts at ' + esc(showUTC(g.start))}</span>`; return !cur || !cur.flag ? '' : cur.flag.below ? `<span class="chip dim">Target below horizon · holding nadir</span>` : `<span class="chip ok">Tracking · elevation ${deg(cur.flag.elev).toFixed(1)}°</span>`; })),
-    tip('Boresight → line of sight to the ground point, body +X kept toward velocity. Watch the body rate rise near closest approach.'));
+    h('div', { class: 'status' }, liveText(() => { const cur = ctx.cur(); if (cur && cur.g !== g && sched.length) return `<span class="chip dim">Not flying now: ${g === o ? 'a change is' : 'it starts at ' + esc(showUTC(g.start))}</span>`; if (cur && cur.seg && cur.seg.slew !== null) return `<span class="chip warn">Slewing into this change (Mode schedule) · ${(100 * cur.seg.slew).toFixed(0)} %</span>`; return !cur || !cur.flag ? '' : cur.flag.slew ? (cur.flag.slew.rising ? `<span class="chip warn">Slewing to the target · ${(100 * cur.flag.slew.w).toFixed(0)} % · rises in ${cur.flag.slew.dt.toFixed(0)} s</span>` : `<span class="chip warn">Target set ${cur.flag.slew.dt.toFixed(0)} s ago · slewing back · ${(100 * (1 - cur.flag.slew.w)).toFixed(0)} %</span>`) : cur.flag.below ? `<span class="chip dim">Target below horizon · holding the nominal attitude</span>` : `<span class="chip ok">Tracking · elevation ${deg(cur.flag.elev).toFixed(1)}°</span>`; })),
+    tgtSlewRow(g),
+    tip('Boresight → line of sight to the ground point, body +X kept toward velocity. Below the horizon it holds the nominal attitude, and it slews to the target that many seconds before the target rises (so tracking starts at the rise) and back after it sets; 0 jumps. Watch the body rate rise near closest approach.'));
   if (g.mode === 'inertial' && g === o) modeCtl.push(tip('Body frame fixed in ECI using the attitude from <b>Rotation Lab</b> (reference R = ECI). Watch the Sun and Earth sweep around the spacecraft once per orbit.'));
   if (g.mode === 'inertial' && g !== o) modeCtl.push(
     tip('This change keeps the attitude Rotation Lab had when it was made inertial (reference R = ECI). Set another one there, then take it here.'),
@@ -122,6 +123,15 @@ export function orbitPanel(ctx) {
     slider({ id: 'scscale', label: 'S/C size (×)', min: .1, max: 4, step: .05, dec: 2, get: () => o.scale, set: x => { o.scale = x; save(); } }),
     tip('The spacecraft is drawn hugely oversized (about 130 km per metre at 1×) so you can see it from orbit distance. The map in the payload view and on the Earth is Natural Earth 1:50m (public domain): schematic, good to a few km, so use it for orientation, not to measure pointing errors.')));
   return out;
+}
+
+/** The slew to and from a ground target (s), for the settings g being edited. */
+function tgtSlewRow(g) {
+  const n = h('input', { type: 'number', id: 'tgtSlew', min: 0, max: TARGET_SLEW_MAX, step: 1 });
+  const val = () => Number.isFinite(+g.tgtSlew) ? +g.tgtSlew : TARGET_SLEW;
+  n.addEventListener('change', () => { const x = +n.value; if (n.value !== '' && Number.isFinite(x)) { g.tgtSlew = Math.max(0, Math.min(TARGET_SLEW_MAX, Math.round(x))); save(); } n.value = val(); syncAll(); });
+  onSync(() => { if (document.activeElement !== n) n.value = val(); });
+  return h('div', { class: 'row two' }, h('label', { for: 'tgtSlew', title: 'Before the target rises and after it sets, 0 to 900 s (0: a jump)' }, 'Slew to/from (s)'), n);
 }
 
 const dateInput = id => h('input', { type: 'datetime-local', id, step: '1', min: DATE_MIN, max: DATE_MAX });
