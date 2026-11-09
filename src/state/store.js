@@ -29,7 +29,7 @@ export function defaultState() {
     tab: 'rot',
     rot: { seq: '321', euler: [30, 20, 10], q: AM.C2q(AM.euler2C('321', [30 * D2R, 20 * D2R, 10 * D2R])), scalarFirst: true, dcmView: 'BR', probe: [1, 1, 0], showProbe: true, showGhosts: true, showTrails: true, showSC: true, nudge: 15 },
     orbit: {
-      preset: 'sso1030', def: 'elements', r: null, v: null, tle: '', epoch: EPOCH0, hp: 550, ha: 550, i: 97.59, raan: 0, argp: 0, nu0: 0, j2: true, t: 0, playing: true, speed: 60, scrub: 'orbit', schedule: [],
+      preset: 'sso1030', def: 'elements', r: null, v: null, tle: '', epoch: EPOCH0, hp: 550, ha: 550, i: 97.59, raan: 0, argp: 0, nu0: 0, j2: true, t: 0, playing: true, speed: 60, scrub: 'orbit', schedule: [], end: '', run: false, runLoop: false,
       mode: 'offsets', refFrame: 'vvlh', roll: 0, pitch: 0, yaw: 0, sunAxis: '-Z', sunSec: 'nadir', sunSecAxis: '+X', tgtLat: 52.23, tgtLon: 21.01, tgtAlt: 0, tgtSlew: 60, tgtComp: '',
       show: { eci: true, orbFrame: true, track: true, sunv: true, moonv: true, bv: true, cones: true, follow: false, plView: true, plBorders: true, plCities: true }, scale: 1.0,
       plot: { sigs: [], win: 'orbit', comma: null, dockH: null, collapsed: false },
