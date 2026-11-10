@@ -6,7 +6,10 @@ import { newId } from '../spacecraft/component.js';
 import { SEGMENT_KEYS, flownBefore, scheduleOrder } from './guidance.js';
 import * as ENV from '../env/index.js';
 import { clampTime, currentDate, epochDate, formatEpoch, orbitElements, parseEpoch, validDate } from './scenario.js';
-import { MAX_CHANGES } from './scenarioLibrary.js';
+import { MAX_CHANGES, NAME_MAX, cleanChangeName } from './scenarioLibrary.js';
+export { NAME_MAX };
+/** A change name as kept (scenarioLibrary.cleanChangeName). */
+export const cleanName = cleanChangeName;
 
 /** Default slew time of a new change (s). */
 export const DEFAULT_SLEW = 60;
@@ -66,6 +69,85 @@ export function setChangeMode(c, mode, rotQ) { c.mode = mode; if (mode === 'iner
 
 /** An inertial change takes Rotation Lab's attitude rotQ now. */
 export function takeRotation(c, rotQ) { c.q = qCopy(rotQ); }
+
+/* ---------- names and editing helpers (#55) ---------- */
+
+/** Set the name of change `id`. @returns false for an unknown change. */
+export function renameChange(o, id, name) {
+  const c = (o.schedule || []).find(c => c.id === id); if (!c) return false;
+  c.name = cleanName(name); o.schedule = [...o.schedule]; return true;
+}
+
+/** UTC string of epoch-relative seconds t, whole seconds. */
+const utcOf = (o, t) => formatEpoch(new Date(Math.floor(epochDate(o).getTime() / 1000 + t) * 1000));
+
+/**
+ * Copy change `id` (settings, slew, name) to start at the current time, in whole seconds, or when a slew under
+ * way ends (as addChange), so nothing already scheduled moves; then a minute later while another change starts
+ * at that second. @returns the copy, or null (unknown, full, or outside the date limits).
+ */
+export function duplicateChange(o, id) {
+  const sched = o.schedule || [], c = sched.find(c => c.id === id); if (!c || sched.length >= MAX_CHANGES) return null;
+  const order = scheduleOrder(sched), now = currentDate(o).getTime(), sec = ms => Math.floor(ms / 1000);
+  let p = -1; for (let j = 0; j < order.length; j++) if (order[j].ms <= now) p = j;
+  const slewEnd = p < 0 ? -Infinity : order[p].ms + Math.max(0, +sched[order[p].i].slew || 0) * 1000;
+  let s = now < slewEnd ? Math.ceil(slewEnd / 1000) : sec(now);
+  const taken = new Set(order.map(x => sec(x.ms))); while (taken.has(s)) s += 60;
+  const start = formatEpoch(new Date(s * 1000)); if (!validDate(start)) return null;
+  const copy = { ...JSON.parse(JSON.stringify(c)), id: newId(), start };
+  o.schedule = [...sched, copy]; return copy;
+}
+
+/** Move change `id` by dt seconds. @returns false if it would leave the date limits. */
+export function nudgeChange(o, id, dt) {
+  const c = (o.schedule || []).find(c => c.id === id), d = c && parseEpoch(c.start); if (!d) return false;
+  return setChangeStart(o, id, formatEpoch(new Date(d.getTime() + dt * 1000)));
+}
+
+/**
+ * The start (s from the epoch) of the next change after the current time (dir +1), or of the previous one
+ * before it (dir -1). Going back, a change that started within the last second of real time (scaled by the
+ * playback speed) counts as the one just jumped to, so pressing again goes further back, also while playing.
+ * Null if none.
+ */
+export function adjacentChange(o, dir) {
+  const e0 = epochDate(o).getTime(), ts = [...new Set(scheduleOrder(o.schedule).map(x => (x.ms - e0) / 1000))];
+  if (dir > 0) { const t = ts.find(x => x > o.t + 1e-6); return t === undefined ? null : t; }
+  const grace = Math.max(1, o.playing ? +o.speed || 1 : 1);
+  const back = ts.filter(x => x < o.t - grace); return back.length ? back[back.length - 1] : null;
+}
+
+/** What undo restores of a change; its other settings (roll, axes, target, its attitude q, …) keep their current values. */
+const TRACKED = ['start', 'slew', 'name', 'mode'];
+
+/**
+ * Undo for schedule edits: record(o, edit) runs edit() and, if it changed something (it returns neither false
+ * nor null), keeps the schedule from before; undo(o) puts the last one back. Undo restores which changes exist
+ * and their start, slew, name and mode; a change that is still there keeps its other settings as they are now,
+ * so edits made since in Attitude guidance are not lost. Kept per scenario by the caller (clear on a switch).
+ */
+export function scheduleHistory(limit = 50) {
+  const stack = [];
+  const push = snap => { stack.push(snap); if (stack.length > limit) stack.shift(); };
+  return {
+    push(o) { push(JSON.stringify(o.schedule || [])); },
+    record(o, edit) { const snap = JSON.stringify(o.schedule || []), r = edit(); if (r !== false && r !== null) push(snap); return r; },
+    undo(o) {
+      if (!stack.length) return false;
+      const now = new Map((o.schedule || []).map(c => [c.id, c]));
+      o.schedule = JSON.parse(stack.pop()).map(c => {
+        const cur = now.get(c.id); if (!cur) return c;
+        const keep = Object.fromEntries(Object.entries(cur).filter(([k]) => !TRACKED.includes(k)));
+        const back = { ...keep, ...Object.fromEntries(TRACKED.filter(k => k in c).map(k => [k, c[k]])) };
+        if (!('name' in c)) delete back.name;
+        return back;
+      });
+      return true;
+    },
+    clear() { stack.length = 0; },
+    get size() { return stack.length; },
+  };
+}
 
 /* ---------- the scenario as a whole: its span, and playing it from start to end ---------- */
 

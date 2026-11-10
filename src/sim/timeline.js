@@ -41,7 +41,7 @@ export function computeTimeline(state, scVersion, prev, N = 360) {
   for (let n = 0; n < N; n++) {
     const A = attitudeAt(state, W0 + (n + .5) / N * T, E);
     for (const r of tl.rows) {
-      if (r.kind === 'mode') r.v[n] = MODES.indexOf(A.g.mode) + (A.seg && A.seg.slew !== null ? 10 : 0);
+      if (r.kind === 'mode') { r.v[n] = MODES.indexOf(A.g.mode) + (A.seg && A.seg.slew !== null ? 10 : 0); (r.names = r.names || [])[n] = A.seg ? A.g.name || '' : ''; }
       else if (r.kind === 'ecl') r.v[n] = A.ecl ? 1 : 0;
       else if (r.kind === 'str') { const s = sensorEval(r.c, A); r.v[n] = s.sunBlind ? 2 : s.earthBlind ? 3 : s.moonBlind ? 4 : 0; }
       else if (r.kind === 'css') r.v[n] = css.some(c => sensorEval(c, A).sees) ? 1 : 0;

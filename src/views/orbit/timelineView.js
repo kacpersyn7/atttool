@@ -35,8 +35,10 @@ export function createTimelineView(tlc) {
       }
       if (r.kind === 'mode') { // name each run of one mode where it fits
         x.fillStyle = '#0a1018'; x.font = '600 10px "JetBrains Mono", monospace';
-        for (let n = 0; n < tl.N;) { let m = n; while (m < tl.N && r.v[m] % 10 === r.v[n] % 10) m++; const px = (m - n) / tl.N * w, nm = MODE_NAME[r.v[n] % 10] || '';
-          if (px > x.measureText(nm).width + 8) x.fillText(nm, L + n / tl.N * w + 4, y + rowH / 2); n = m; }
+        const key = n => (r.v[n] % 10) + '|' + ((r.names && r.names[n]) || ''); // a run: one change (its name, else its mode)
+        for (let n = 0; n < tl.N;) { let m = n; while (m < tl.N && key(m) === key(n)) m++; const px = (m - n) / tl.N * w;
+          const nm = [(r.names && r.names[n]) || '', MODE_NAME[r.v[n] % 10] || ''].find(t => t && px > x.measureText(t).width + 8); // the name if it fits, else the mode
+          if (nm) x.fillText(nm, L + n / tl.N * w + 4, y + rowH / 2); n = m; }
         x.font = '500 11px "JetBrains Mono", monospace';
       }
       x.fillStyle = '#8697ae'; x.textAlign = 'right'; x.fillText(tl.stats[i] === null ? '' : tl.stats[i].toFixed(0) + '%', W, y + rowH / 2); x.textAlign = 'left';
