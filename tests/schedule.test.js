@@ -4,7 +4,7 @@ import * as AM from '../src/core/attitude.js';
 import * as ENV from '../src/env/index.js';
 import { close, closeArr } from './helpers.js';
 import { attitudeAt, bodyRate, blendAttitude, changeTurn, payloadComp, relativeQ, scheduleOrder } from '../src/sim/guidance.js';
-import { AUTO_END_MARGIN, addChange, deleteChange, runProgress, runStep, scenarioSpan, scheduleNotes, setChangeMode, setChangeStart, startRun, takeRotation, DEFAULT_SLEW } from '../src/sim/schedule.js';
+import { AUTO_END_MARGIN, NAME_MAX, adjacentChange, cleanName, duplicateChange, nudgeChange, renameChange, scheduleHistory, addChange, deleteChange, runProgress, runStep, scenarioSpan, scheduleNotes, setChangeMode, setChangeStart, startRun, takeRotation, DEFAULT_SLEW } from '../src/sim/schedule.js';
 import { computeTimeline, timelineKey } from '../src/sim/timeline.js';
 import { pointing } from '../src/sim/payload.js';
 import { advanceTime, applyPreset, currentDate, epochDate, orbitElements, parseEpoch, restartFromState, setEpoch, targetECEF } from '../src/sim/scenario.js';
@@ -402,4 +402,72 @@ test('scenario run: at the last date (2200) it still stops, or loops; progress i
 test('scenario span: changes at the same moment: the one that flies sets the automatic end', () => {
   const s = fresh(), o = s.orbit; o.schedule = [{ id: 'a', start: at(s, 600), slew: 600, mode: 'sun' }, { id: 'b', start: at(s, 600), slew: 0, mode: 'offsets' }];
   close(scenarioSpan(o).end, 600 + 0 + AUTO_END_MARGIN, 1e-6, 'a never flies');
+});
+
+test('names: kept trimmed and limited, through Copy JSON and Import; old changes without one still work', () => {
+  const s = fresh(), o = s.orbit; o.schedule = [{ id: 'a', start: at(s, 600), slew: 60, mode: 'sun' }];
+  assert.equal(attitudeAt(s, 700).g.name, undefined, 'none yet: flies as before');
+  assert.equal(renameChange(o, 'a', '  Image Warsaw  '), true); assert.equal(o.schedule[0].name, 'Image Warsaw');
+  renameChange(o, 'a', 'x'.repeat(99)); assert.equal(o.schedule[0].name.length, NAME_MAX); assert.equal(cleanName(7), ''); assert.equal(renameChange(o, 'nope', 'x'), false);
+  renameChange(o, 'a', 'Downlink'); const j = JSON.parse(JSON.stringify(exportScenario(s))), t = fresh(); importScenario(t, j, scenarioData(defaultState().orbit));
+  assert.equal(t.orbit.schedule[0].name, 'Downlink');
+  assert.equal(cleanSchedule([{ start: at(s, 5), mode: 'sun', name: 'y'.repeat(99) }], o)[0].name.length, 40);
+  assert.equal('name' in cleanSchedule([{ start: at(s, 5), mode: 'sun', name: '   ' }], o)[0], false, 'blank: no name');
+});
+
+test('names: the timeline band knows the name of the change flying at each sample', () => {
+  const s = fresh(), o = s.orbit; o.schedule = [{ id: 'a', start: at(s, 1200), slew: 0, mode: 'sun', name: 'Charge' }];
+  const tl = computeTimeline(s, 0, null, 60), r = tl.rows.find(x => x.kind === 'mode'), dt = tl.T / 60;
+  assert.equal(r.names[Math.floor(600 / dt)], '', 'initial: no name'); assert.equal(r.names[Math.floor(2000 / dt)], 'Charge');
+});
+
+test('duplicate and nudge: a copy at the current time (a minute later if that is the same moment); nudges move by whole minutes within the limits', () => {
+  const s = fresh(), o = s.orbit; o.schedule = [{ id: 'a', start: at(s, 600), slew: 60, mode: 'sun', name: 'Charge', sunAxis: '+X' }]; o.t = 1000;
+  const c = duplicateChange(o, 'a'); assert.notEqual(c.id, 'a'); assert.equal(parseEpoch(c.start).getTime(), parseEpoch(at(s, 1000)).getTime()); assert.equal(c.name, 'Charge'); assert.equal(c.sunAxis, '+X');
+  o.t = 600; const d = duplicateChange(o, 'a'); assert.equal(parseEpoch(d.start).getTime(), parseEpoch(at(s, 660)).getTime(), 'same moment: a minute later');
+  assert.equal(nudgeChange(o, 'a', 60), true); assert.equal(parseEpoch(o.schedule[0].start).getTime(), parseEpoch(at(s, 660)).getTime());
+  assert.equal(nudgeChange(o, 'a', -120), true); assert.equal(parseEpoch(o.schedule[0].start).getTime(), parseEpoch(at(s, 540)).getTime());
+  o.schedule[0].start = '2199-12-31T23:59:30'; assert.equal(nudgeChange(o, 'a', 60), false, 'past the last date: refused'); assert.equal(o.schedule[0].start, '2199-12-31T23:59:30');
+  assert.equal(duplicateChange(o, 'nope'), null);
+});
+
+test('previous / next change: jumps between distinct starts; pressing again goes further', () => {
+  const s = fresh(), o = s.orbit; o.schedule = [{ id: 'a', start: at(s, 600), slew: 0, mode: 'sun' }, { id: 'b', start: at(s, 1800), slew: 0, mode: 'offsets' }, { id: 'c', start: at(s, 1800), slew: 0, mode: 'sun' }];
+  o.t = 0; assert.equal(adjacentChange(o, 1), 600); o.t = 600; assert.equal(adjacentChange(o, 1), 1800, 'from a start: the next one'); o.t = 1800; assert.equal(adjacentChange(o, 1), null);
+  assert.equal(adjacentChange(o, -1), 600, 'at a start: the one before'); o.t = 1200; assert.equal(adjacentChange(o, -1), 600); o.t = 600.5; assert.equal(adjacentChange(o, -1), null, 'just after the first: none before it');
+});
+
+test('undo: schedule edits come back in reverse order; the history is limited', () => {
+  const s = fresh(), o = s.orbit, h = scheduleHistory(3);
+  h.push(o); addChange(o, o, s.rot.q); h.push(o); renameChange(o, o.schedule[0].id, 'X'); h.push(o); o.schedule = [];
+  assert.equal(h.size, 3); h.undo(o); assert.equal(o.schedule[0].name, 'X'); h.undo(o); assert.equal(o.schedule[0].name, undefined); h.undo(o); assert.deepEqual(o.schedule, []); assert.equal(h.undo(o), false);
+  for (let k = 0; k < 5; k++) h.push(o); assert.equal(h.size, 3, 'limited'); h.clear(); assert.equal(h.size, 0);
+});
+
+test('undo: restores which changes exist and their start, slew, name and mode, not the other settings edited since', () => {
+  const s = fresh(), o = s.orbit, h = scheduleHistory(); o.schedule = [{ id: 'a', start: at(s, 600), slew: 60, mode: 'sun', sunAxis: '+X' }];
+  h.record(o, () => nudgeChange(o, 'a', 60)); o.schedule[0].sunAxis = '-Z'; // an axis set in Attitude guidance after the nudge
+  h.undo(o); assert.equal(parseEpoch(o.schedule[0].start).getTime(), parseEpoch(at(s, 600)).getTime(), 'the nudge is undone'); assert.equal(o.schedule[0].sunAxis, '-Z', 'the axis edit stays');
+  h.record(o, () => renameChange(o, 'a', 'X')); h.undo(o); assert.equal('name' in o.schedule[0], false, 'a name that was not there goes again');
+  h.record(o, () => deleteChange(o, 'a')); h.undo(o); assert.equal(o.schedule[0].sunAxis, '-Z', 'a deleted change comes back as it was');
+  assert.equal(h.record(o, () => nudgeChange(o, 'nope', 60)), false); assert.equal(h.size, 0, 'a failed edit leaves nothing to undo');
+});
+
+test('previous change while playing: a change jumped to counts as current for one second of real time, so pressing again goes further back', () => {
+  const s = fresh(), o = s.orbit; o.schedule = [{ id: 'a', start: at(s, 600), slew: 0, mode: 'sun' }, { id: 'b', start: at(s, 1800), slew: 0, mode: 'offsets' }];
+  Object.assign(o, { playing: true, speed: 60 }); o.t = 1900; assert.equal(adjacentChange(o, -1), 1800); o.t = 1800 + 16; // a quarter second later at 60×
+  assert.equal(adjacentChange(o, -1), 600, 'further back'); Object.assign(o, { playing: false }); o.t = 1816; assert.equal(adjacentChange(o, -1), 1800, 'paused: 16 s after it is the one before');
+});
+
+test('duplicate: never on another change, never inside a slew under way, whole seconds, and refused past the last date', () => {
+  const s = fresh(), o = s.orbit; o.schedule = [{ id: 'a', start: at(s, 600), slew: 60, mode: 'sun' }, { id: 'b', start: at(s, 660), slew: 0, mode: 'offsets' }];
+  o.t = 600; const c = duplicateChange(o, 'a'); assert.equal(parseEpoch(c.start).getTime(), parseEpoch(at(s, 720)).getTime(), 'the slew under way ends at 660, where b starts: a minute later');
+  o.t = 1000.6; assert.equal(parseEpoch(duplicateChange(o, 'a').start).getTime(), parseEpoch(at(s, 1000)).getTime(), 'whole seconds');
+  const z = fresh(); z.orbit.epoch = '2199-12-31T23:00'; z.orbit.schedule = [{ id: 'a', start: '2200-01-01T00:00', slew: 0, mode: 'sun' }]; z.orbit.t = 3600;
+  assert.equal(duplicateChange(z.orbit, 'a'), null, 'the only free second is past the last date');
+});
+
+test('names: cut to 40 whole characters and trimmed after cutting', () => {
+  assert.equal(cleanName('a'.repeat(39) + ' b'), 'a'.repeat(39)); assert.equal(Array.from(cleanName('a'.repeat(39) + '🛰️x')).length, 40);
+  assert.ok(!/[\\uD800-\\uDBFF]$/.test(cleanName('a'.repeat(39) + '🛰')), 'no half emoji'); assert.equal(cleanName('  Downlink  '), 'Downlink');
 });
