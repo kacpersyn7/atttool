@@ -5,9 +5,10 @@ import { h, card, tip, slider, numCell, selectRow, check, seg, liveText, syncAll
 import { deg, esc, fmt, hhmm, tPlus } from '../../ui/format.js';
 import { TYPES } from '../../spacecraft/componentTypes.js';
 import { activeItem, selectSpacecraft, validateAxes } from '../../spacecraft/library.js';
-import { MAX_CHANGES, activeScenario, addScenario, deleteScenario, duplicateScenario, exportScenario, importScenario, newScenarioOrbit, renameScenario, selectScenario } from '../../sim/scenarioLibrary.js';
+import { MAX_CHANGES, activeScenario, addScenario, deleteScenario, duplicateScenario, exportScenario, importScenario, newScenarioOrbit, previewScenario, renameScenario, selectScenario } from '../../sim/scenarioLibrary.js';
 import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, DATE_MAX, DATE_MIN, PRESETS, SCRUB_SPANS, clampTime, currentDate, epochDate, farFromEpoch, formatEpoch, ltanOf, orbitElements, scrubCancelResume, scrubEnd, scrubHold, scrubKey, scrubPress, scrubSpan, scrubWindowAt, setCurrentDate, setEpoch, switchDefinition, restartFromState, definitionError, tleOf, parseEpoch, validDate } from '../../sim/scenario.js';
 import { copyText, showModal, closeModal, toast } from '../../ui/overlay.js';
+import { downloadText, fileName, onFileDrop, openFileButton } from '../../ui/files.js';
 import { TARGET_SLEW, TARGET_SLEW_MAX, changeTurn, payloadComp, scheduleOrder } from '../../sim/guidance.js';
 import { NAME_MAX, addChange, adjacentChange, cleanName, deleteChange, duplicateChange, nudgeChange, renameChange, runProgress, scheduleHistory, scenarioSpan, scheduleNotes, setChangeMode, setChangeStart, startRun, takeRotation } from '../../sim/schedule.js';
 import { sensorEval } from '../../sim/sensors.js';
@@ -312,23 +313,47 @@ function scenarioCard(ctx) {
   });
   const del = confirmButton('Delete', 'Click again to delete', () => { if (deleteScenario(S, S.scenarios.active)) switched(); });
   del.disabled = items.length < 2; if (del.disabled) del.title = 'The last scenario cannot be deleted';
-  const importDlg = () => {
-    const ta = h('textarea', { style: 'width:100%;min-height:220px', placeholder: 'Paste a scenario JSON copied from AttTool' }), err = h('p', { class: 'tip', style: 'color:var(--bad)' });
-    const doImport = () => {
-      let res; try { res = importScenario(S, JSON.parse(ta.value), defaults()); } catch (e) { err.textContent = 'Could not import: ' + e.message; return; }
-      closeModal(); switched(); toast(res.missing ? `Scenario added. No spacecraft named "${res.missing}" here, so it flies ${activeItem(S).name}` : 'Scenario added');
+  // import: paste, open or drop a file; a preview says what it would do before anything changes
+  const importDlg = (text = '') => {
+    const ta = h('textarea', { style: 'width:100%;min-height:160px', placeholder: 'Paste a scenario JSON copied from AttTool, open a file, or drop one here' });
+    const err = h('p', { class: 'tip', style: 'color:var(--bad)' }), prev = h('div', { class: 'imp-prev' }), act = h('div', { class: 'btns', style: 'margin-top:8px' });
+    let json = null, p = null, tm = 0;
+    const go = replace => {
+      clearTimeout(tm); check(); if (!p) return; // the text may have changed since the preview
+      let res; try { res = importScenario(S, json, defaults(), replace ? { replace: p.sameName } : {}); } catch (e) { err.textContent = 'Could not import: ' + e.message; return; }
+      closeModal(); switched();
+      toast((res.replaced ? 'Scenario replaced' : 'Scenario added') + (res.missing ? `. No spacecraft named "${res.missing}" here, so it flies ${activeItem(S).name}` : '') + (res.report.length ? `. ${res.report.length} thing${res.report.length === 1 ? ' was' : 's were'} reset or dropped` : ''));
     };
-    showModal(h('div', null, h('h2', null, 'Import scenario'), ta, err, h('div', { class: 'btns', style: 'margin-top:8px' }, h('button', { class: 'btn primary', onclick: doImport }, 'Add scenario'))));
+    const check = () => {
+      err.textContent = ''; prev.replaceChildren(); act.replaceChildren(); json = p = null;
+      if (!ta.value.trim()) return;
+      try { json = JSON.parse(ta.value); p = previewScenario(S, json, defaults()); } catch (e) { err.textContent = 'Cannot import: ' + e.message; return; }
+      const o = p.orbit, ch = (o.schedule || []).length, sc = p.spacecraft, E = orbitElements(o), alt = r => (r - ENV.RE).toFixed(0);
+      const orbitText = `${alt(E.a * (1 - E.e))} × ${alt(E.a * (1 + E.e))} km · i ${(E.i * 180 / Math.PI).toFixed(2)}°` + (o.def === 'tle' ? ' (TLE)' : o.def === 'rv' ? ' (state vector)' : '');
+      const flies = sc.found ? `${esc(sc.name)} (in the library)` : sc.name ? `<span style="color:var(--warn)">${esc(sc.name)} is not here: it would fly ${esc(activeItem(S).name)}</span>` : esc(activeItem(S).name);
+      prev.innerHTML = `<div class="kv"><dt>Name</dt><dd>${esc(p.name)}</dd><dt>Orbit</dt><dd>${esc(orbitText)}</dd><dt>Epoch</dt><dd>${o.def === 'tle' ? 'from the TLE' : esc(o.epoch)}</dd>`
+        + `<dt>Mode</dt><dd>${esc(MODE_SHORT[o.mode] || o.mode)}${ch ? ` · ${ch} schedule change${ch === 1 ? '' : 's'}` : ''}</dd><dt>Flies</dt><dd>${flies}</dd></div>`
+        + (p.report.length ? `<ul class="imp-rep">${p.report.map(r => `<li>${esc(r)}</li>`).join('')}</ul>` : '<p class="tip" style="margin:4px 0 0">Everything was read as it is.</p>')
+        + p.info.map(r => `<p class="tip" style="margin:4px 0 0">${esc(r)}</p>`).join('');
+      act.append(h('button', { class: 'btn primary', onclick: () => go(false) }, p.sameName ? 'Add as a new scenario' : 'Add scenario'));
+      if (p.sameName) act.append(confirmButton(`Replace "${p.name}"`, 'Click again to replace it', () => go(true)));
+    };
+    ta.addEventListener('input', () => { clearTimeout(tm); tm = setTimeout(() => { if (ta.isConnected) check(); }, 250); });
+    const load = t => { ta.value = t; check(); };
+    const box = h('div', null, h('h2', null, 'Import scenario'), h('div', { class: 'btns', style: 'margin-bottom:6px' }, openFileButton('Open file…', load)), ta, err, prev, act);
+    onFileDrop(box, load);
+    showModal(box); if (text) load(text);
   };
-  return card('Scenario', items.length + ' in the library', pick,
+  return onFileDrop(card('Scenario', items.length + ' in the library', pick,
     h('div', { class: 'row two' }, h('label', { for: 'scenName' }, 'Name'), nameIn),
     selectRow({ id: 'orbScPick', label: 'Flying', options: S.fleet.items.map(i => [i.id, i.name]), get: () => S.fleet.active, set: id => { if (selectSpacecraft(S, id)) switched(); } }),
     h('div', { class: 'btns' },
       h('button', { class: 'btn', onclick: () => { addScenario(S, defaults(), 'New scenario'); switched(); } }, 'New'),
       h('button', { class: 'btn', onclick: () => { duplicateScenario(S); switched(); } }, 'Duplicate'), del,
       h('button', { class: 'btn', onclick: () => copyText(JSON.stringify(exportScenario(S), null, 1), 'Scenario JSON') }, 'Copy JSON'),
-      h('button', { class: 'btn', onclick: importDlg }, 'Import…')),
-    tip('A scenario keeps the orbit, its epoch, the current time, guidance and target, and which spacecraft flies it. Display options are shared. <b>Copy JSON</b> holds the scenario and the name of its spacecraft; copy the spacecraft itself in <b>Spacecraft Layout</b>.'));
+      h('button', { class: 'btn', title: 'Save this scenario as a .json file', onclick: () => downloadText(fileName(activeScenario(S).name, 'scenario'), JSON.stringify(exportScenario(S), null, 1)) }, 'Download'),
+      h('button', { class: 'btn', title: 'Paste, open or drop a scenario JSON', onclick: () => importDlg() }, 'Import…')),
+    tip('A scenario keeps the orbit, its epoch, the current time, guidance and target, and which spacecraft flies it. Display options are shared. <b>Copy JSON</b> and <b>Download</b> hold the scenario and the name of its spacecraft (the spacecraft itself is in <b>Spacecraft Layout</b>). To import, paste, open or drop a file on this card.')), t => importDlg(t)); // drop a scenario file on the card to import it
 }
 
 /* ---------------- Orbit card: elements / r,v / TLE ---------------- */
@@ -376,7 +401,7 @@ function orbitCard(ctx, o, sl) {
     body = [ta,
       h('div', { class: 'btns' }, h('button', { class: 'btn', onclick: () => { ta.value = ISS_TLE; o.tle = ISS_TLE; o.t = 0; changed(); } }, 'Example: ISS (2008)')),
       status(),
-      liveText(() => { const t = tleOf(o); if (!t) return ''; return `<div class="kv"><dt>Satellite</dt><dd>${(t.name || '—').replace(/</g, '&lt;')} · ${t.satnum}</dd><dt>Epoch</dt><dd>${t.epoch.toISOString().replace('T', ' ').slice(0, 23)}</dd><dt>Mean motion</dt><dd>${t.n.toFixed(8)} rev/day</dd></div>`
+      liveText(() => { const t = tleOf(o); if (!t) return ''; return `<div class="kv"><dt>Satellite</dt><dd>${esc(t.name || '—')} · ${esc(t.satnum)}</dd><dt>Epoch</dt><dd>${t.epoch.toISOString().replace('T', ' ').slice(0, 23)}</dd><dt>Mean motion</dt><dd>${t.n.toFixed(8)} rev/day</dd></div>`
         + t.warnings.map(w => `<p class="tip" style="color:var(--warn)">${w}</p>`).join(''); }),
       derived(),
       tip('<b>Approximation:</b> the TLE\'s mean elements are flown with Keplerian + J2 secular drift, not SGP4. Good near the TLE epoch; drifts by kilometres per day (no drag). The epoch comes from the TLE.')];

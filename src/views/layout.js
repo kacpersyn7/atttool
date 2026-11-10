@@ -13,6 +13,7 @@ import { $, h, card, tip, slider, numCell, selectRow, check, seg, liveText, sync
 import { orientationEditor } from '../ui/orientationEditor.js';
 import { dcmInput } from '../ui/matrixInput.js';
 import { toast, showModal, closeModal, copyText } from '../ui/overlay.js';
+import { downloadText, fileName, onFileDrop, openFileButton } from '../ui/files.js';
 import { esc, fmt, fmtS, matHTML } from '../ui/format.js';
 import { gfx, mkView, addLights, viewPreset, renderFull } from '../gfx/renderer.js';
 import { COL, Arrow, makeTriad, makeLabel, dashedLine, disposeTree, setObjFromCBR } from '../gfx/primitives.js';
@@ -296,20 +297,22 @@ export function createLayoutView({ renderRail }) {
       check('l-cones', 'FOV cones', () => sh.cones, v => { sh.cones = v; scChanged(); }), check('l-excl', 'STR Sun-exclusion', () => sh.excl, v => { sh.excl = v; scChanged(); }),
       check('l-lbl', 'Labels', () => sh.labels, v => { sh.labels = v; scChanged(); })),
       slider({ id: 'busop', label: 'Bus opacity', min: .1, max: 1, step: .05, dec: 2, get: () => sh.bus, set: x => { sh.bus = x; scChanged(); } })));
-    out.push(card('Save & share', null,
+    const scJSON = () => JSON.stringify({ atttool: 1, name: activeItem(S).name, sc: S.sc }, null, 1);
+    out.push(onFileDrop(card('Save & share', null,
       h('div', { class: 'btns' },
-        h('button', { class: 'btn', onclick: () => copyText(JSON.stringify({ atttool: 1, name: activeItem(S).name, sc: S.sc }, null, 1), 'Configuration JSON') }, 'Copy config JSON'),
-        h('button', { class: 'btn', onclick: importDlg }, 'Import JSON…'),
+        h('button', { class: 'btn', onclick: () => copyText(scJSON(), 'Configuration JSON') }, 'Copy config JSON'),
+        h('button', { class: 'btn', title: 'Save this spacecraft as a .json file', onclick: () => downloadText(fileName(activeItem(S).name, 'spacecraft'), scJSON()) }, 'Download'),
+        h('button', { class: 'btn', title: 'Paste, open or drop a configuration JSON', onclick: () => importDlg() }, 'Import JSON…'),
         h('button', { class: 'btn', onclick: () => copyText(exportPython(S.sc, MP), 'Mounting matrices') }, 'Copy mounting matrices (Python)'),
         h('button', { class: 'btn', onclick: () => copyText(exportMatlab(S.sc, MP), 'Mounting matrices') }, 'Copy as MATLAB'),
         h('button', { class: 'btn', onclick: importOrientationsDlg }, 'Import part data…')),
       h('div', { class: 'btns' }, confirmButton('Reset this spacecraft to the example', 'Click again to reset', () => { replaceActive(S, defaultSC()); scSwitched(); })),
-      tip('Your spacecraft are kept in this browser automatically. Copy the JSON of each to keep a file or move it to another computer.')));
+      tip('Your spacecraft are kept in this browser automatically. Copy or download the JSON of each to keep a file or move it to another computer; drop a file on this card to import it.')), t => importDlg(t)));
     return out;
   }
 
-  function importDlg() {
-    const ta = h('textarea', { style: 'width:100%;min-height:220px', placeholder: 'Paste a configuration JSON copied from AttTool' });
+  function importDlg(text = '') {
+    const ta = h('textarea', { style: 'width:100%;min-height:220px', placeholder: 'Paste a configuration JSON copied from AttTool, open a file, or drop one here' });
     const err = h('p', { class: 'tip', style: 'color:var(--bad)' });
     const doImport = asNew => {
       let json, sc;
@@ -317,7 +320,9 @@ export function createLayoutView({ renderRail }) {
       if (asNew) addSpacecraft(S, sc, json.name || 'Imported spacecraft'); else replaceActive(S, sc);
       closeModal(); scSwitched(); toast(asNew ? 'Added to the library' : 'Active spacecraft replaced; it keeps its name');
     };
-    showModal(h('div', null, h('h2', null, 'Import configuration'), ta, err, h('div', { class: 'btns', style: 'margin-top:8px' }, h('button', { class: 'btn primary', onclick: () => doImport(true) }, 'Add as new spacecraft'), h('button', { class: 'btn', onclick: () => doImport(false) }, 'Replace the active one'))));
+    const load = t => { ta.value = t; err.textContent = ''; };
+    showModal(onFileDrop(h('div', null, h('h2', null, 'Import configuration'), h('div', { class: 'btns', style: 'margin-bottom:6px' }, openFileButton('Open file…', load)), ta, err, h('div', { class: 'btns', style: 'margin-top:8px' }, h('button', { class: 'btn primary', onclick: () => doImport(true) }, 'Add as new spacecraft'), h('button', { class: 'btn', onclick: () => doImport(false) }, 'Replace the active one'))), load));
+    if (text) load(text);
   }
 
   /* ---------- import orientations by name ---------- */
