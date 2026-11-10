@@ -1,6 +1,6 @@
 /** Example Earth-observation microsatellite used as the default layout (bus −Z face at the SCF origin). */
 import { D2R } from '../core/linalg.js';
-import { mkComp } from './component.js';
+import { mkComp, MAX_RATE_DEFAULT } from './component.js';
 import { defaultAlign } from './alignment.js';
 
 export function defaultSC() {
@@ -32,5 +32,5 @@ export function defaultSC() {
   // Component coordinates above are relative to the bus centre, so shift everything up by half the bus height.
   const bus = { x: 0.8, y: 0.8, z: 1.0, mass: 75, pos: [0, 0, 0.5], q: { w: 1, x: 0, y: 0, z: 0 } };
   comps.forEach(c => { c.pos = [c.pos[0], c.pos[1], +(c.pos[2] + bus.pos[2]).toFixed(6)]; });
-  return { bus, align: defaultAlign(), comps };
+  return { bus, align: defaultAlign(), comps, maxRate: MAX_RATE_DEFAULT };
 }

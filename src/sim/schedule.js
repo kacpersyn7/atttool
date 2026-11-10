@@ -28,7 +28,7 @@ export function addChange(o, g, rotQ) {
   const slewEnd = d ? d.getTime() + Math.max(0, +g.slew || 0) * 1000 : -Infinity;
   const start = formatEpoch(new Date((now < slewEnd ? Math.ceil(slewEnd / 1000) : Math.floor(now / 1000)) * 1000));
   if (sched.length >= MAX_CHANGES || !validDate(start)) return null;
-  const c = { id: newId(), start, slew: DEFAULT_SLEW };
+  const c = { id: newId(), start, slew: 0, autoSlew: true }; // automatic: worked out from the turn (autoSlews)
   for (const k of SEGMENT_KEYS) c[k] = g[k];
   if (c.mode === 'inertial') c.q = qCopy(g !== o && g.q ? g.q : rotQ);
   o.schedule = [...sched, c]; return c;
@@ -118,7 +118,7 @@ export function adjacentChange(o, dir) {
 }
 
 /** What undo restores of a change; its other settings (roll, axes, target, its attitude q, …) keep their current values. */
-const TRACKED = ['start', 'slew', 'name', 'mode'];
+const TRACKED = ['start', 'slew', 'autoSlew', 'name', 'mode'];
 
 /**
  * Undo for schedule edits: record(o, edit) runs edit() and, if it changed something (it returns neither false
@@ -139,7 +139,7 @@ export function scheduleHistory(limit = 50) {
         const cur = now.get(c.id); if (!cur) return c;
         const keep = Object.fromEntries(Object.entries(cur).filter(([k]) => !TRACKED.includes(k)));
         const back = { ...keep, ...Object.fromEntries(TRACKED.filter(k => k in c).map(k => [k, c[k]])) };
-        if (!('name' in c)) delete back.name;
+        if (!('name' in c)) delete back.name; if (!('autoSlew' in c)) delete back.autoSlew;
         return back;
       });
       return true;

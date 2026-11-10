@@ -245,6 +245,40 @@ function geometry(state, E, ms) {
   return { date, st, sun, CNI, refVec };
 }
 
+/**
+ * Work out the slew times of changes set to automatic (c.autoSlew): the turn at their start ÷ the spacecraft's
+ * maximum slew rate (state.sc.maxRate, deg/s), rounded up to whole seconds, into c.slew; everything else reads
+ * c.slew as usual. In time order, since a turn starts from what flew before. @returns true if a slew time changed.
+ */
+export function autoSlews(state, E = orbitElements(state.orbit)) {
+  const o = state.orbit, sched = o.schedule || []; if (!sched.some(c => c && c.autoSlew)) return false;
+  const rate = state.sc.maxRate > 0 ? state.sc.maxRate : 1, sc = scheduler(state, E); let changed = false;
+  sc.order.forEach((x, j) => {
+    const c = sched[x.i]; if (!c.autoSlew) return;
+    const q = relativeQ(sc.att(flownBefore(sc.order, j), x.ms).CBI, sc.own(j, x.ms).CBI), angle = 2 * Math.acos(Math.min(1, Math.abs(q.w))) / D2R;
+    const slew = Math.min(3600, Math.ceil(angle / rate - 1e-9));
+    if (slew !== c.slew) { c.slew = slew; changed = true; }
+  });
+  return changed;
+}
+
+/**
+ * Changes whose (fixed) slew time asks for more than the spacecraft's maximum slew rate, as { id: mean rate deg/s }.
+ * Changes that never fly (overridden) and automatic ones are left out.
+ */
+export function tooFast(state, E = orbitElements(state.orbit)) {
+  const o = state.orbit, sched = o.schedule || [], rate = state.sc.maxRate > 0 ? state.sc.maxRate : Infinity, out = {};
+  if (!sched.length || !Number.isFinite(rate)) return out;
+  const sc = scheduler(state, E);
+  sc.order.forEach((x, j) => {
+    const c = sched[x.i]; if (c.autoSlew || (j + 1 < sc.order.length && sc.order[j + 1].ms === x.ms)) return;
+    const q = relativeQ(sc.att(flownBefore(sc.order, j), x.ms).CBI, sc.own(j, x.ms).CBI), angle = 2 * Math.acos(Math.min(1, Math.abs(q.w))) / D2R;
+    const mean = c.slew > 0 ? angle / c.slew : angle > 0.01 ? Infinity : 0;
+    if (mean > rate * 1.001) out[c.id] = mean;
+  });
+  return out;
+}
+
 /** Body angular rate (rad/s, body axes) by finite difference over 1 s. */
 export function bodyRate(state, t) {
   const a = attitudeAt(state, t).CBI, b = attitudeAt(state, t + 1).CBI; const d = AM.m.mul(b, AM.m.T(a));

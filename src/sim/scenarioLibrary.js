@@ -188,6 +188,7 @@ export function cleanSchedule(x, base, q0 = null, report = null) {
     const seg = { id: id && !ids.has(id) ? id : newId(), start: c.start, slew: inRange(0, 3600)(c.slew) ? c.slew : 60 };
     if (Object.hasOwn(c, 'slew') && !inRange(0, 3600)(c.slew)) reset.add('slew time');
     const nm = cleanChangeName(c.name); if (nm) seg.name = nm; // optional (#55)
+    if (c.autoSlew === true) seg.autoSlew = true; // slew worked out from the turn (#57)
     for (const k of SEGMENT_KEYS) { seg[k] = VALID[k](c[k]) ? c[k] : base[k]; if (Object.hasOwn(c, k) && !VALID[k](c[k])) reset.add(FIELD_NAME[k] || k); }
     if (seg.mode === 'inertial') { if (!quat(c.q)) reset.add('inertial attitude'); const q = quat(c.q) ? c.q : q0 || AM.q.id(); seg.q = AM.q.unit({ w: q.w, x: q.x, y: q.y, z: q.z }); }
     ids.add(seg.id); out.push(seg);

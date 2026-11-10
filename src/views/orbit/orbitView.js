@@ -19,7 +19,8 @@ import { buildSC } from '../../gfx/spacecraftMesh.js';
 import { compAxis } from '../../spacecraft/component.js';
 import { advanceTime, epochDate, orbitElements, applyPreset, targetECEF } from '../../sim/scenario.js';
 import { runStep } from '../../sim/schedule.js';
-import { attitudeAt, bodyRate, payloadComp } from '../../sim/guidance.js';
+import { attitudeAt, autoSlews, bodyRate, payloadComp } from '../../sim/guidance.js';
+import { timelineKey } from '../../sim/timeline.js';
 import { createBodyInset } from './bodyInset.js';
 import { createPayloadInset } from './payloadInset.js';
 import { createTimelineView } from './timelineView.js';
@@ -109,12 +110,15 @@ export function createOrbitView({ renderRail }) {
   }
 
   /* ---------- per frame ---------- */
-  let cur = null, prevScPos = null;
+  let cur = null, prevScPos = null, autoKey = '';
   const scDispScale = () => 0.13 * S.orbit.scale;
   function update(dt) {
     const o = S.orbit;
     if (o.playing) { const t0 = o.t; advanceTime(o, dt); if (runStep(o, t0) || !o.playing) syncAll(); } // a scenario run stops or loops at its end
-    const E = orbitElements(o); const A = attitudeAt(S, o.t, E); cur = A;
+    const E = orbitElements(o);
+    // automatic slew times follow the turns: work them out again when anything they depend on changed
+    const ak = JSON.stringify([timelineKey(S, scVersion(), 0), S.sc.maxRate]); if (ak !== autoKey) { if (autoSlews(S, E)) { save(); syncAll(); } autoKey = JSON.stringify([timelineKey(S, scVersion(), 0), S.sc.maxRate]); }
+    const A = attitudeAt(S, o.t, E); cur = A;
     const gm = ENV.gmst(A.date); earth.rotation.z = gm;
     sunLight.position.set(...AM.v.scale(A.sun, 100)); sunGlow.position.set(...AM.v.scale(A.sun, 700));
     refreshOrbit(o.t, E); refreshTrack(o.t, E); track.visible = o.show.track; eciTriad.visible = o.show.eci;

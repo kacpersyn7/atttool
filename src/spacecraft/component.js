@@ -51,6 +51,11 @@ export function envelope(comps, type, key) {
 }
 
 /** Validate & normalise an imported spacecraft config. Throws Error with a readable message. */
+/** Default and limits of the spacecraft's maximum slew rate (deg/s): the schedule's automatic slew times use it. */
+export const MAX_RATE_DEFAULT = 1, MAX_RATE_MIN = 0.01, MAX_RATE_MAX = 30;
+/** A maximum slew rate as kept: within the limits, else the default (older spacecraft have none). */
+export const cleanMaxRate = x => Number.isFinite(x) && x >= MAX_RATE_MIN && x <= MAX_RATE_MAX ? x : MAX_RATE_DEFAULT;
+
 export function sanitizeSpacecraft(json) {
   const sc = json.sc || json;
   if (!sc.bus || !Array.isArray(sc.comps)) throw new Error('Expected an object with "bus" and "comps".');
@@ -70,5 +75,6 @@ export function sanitizeSpacecraft(json) {
     if (!(c.mass >= 0)) throw new Error(who + ': "mass" must be a number.');
     c.id = c.id || newId(); c.q = AM.q.unit(c.q); delete c.eul; fillParams(c);
   });
+  sc.maxRate = cleanMaxRate(sc.maxRate);
   return sc;
 }
