@@ -50,12 +50,13 @@ export function envelope(comps, type, key) {
   return [[1, 0, 0], [0, 1, 0], [0, 0, 1]].map(e => cs.reduce((s, c) => s + Math.abs(AM.v.dot(compAxis(c), e)) * (c[key] || 0), 0));
 }
 
-/** Validate & normalise an imported spacecraft config. Throws Error with a readable message. */
-/** Default and limits of the spacecraft's maximum slew rate (deg/s): the schedule's automatic slew times use it. */
-export const MAX_RATE_DEFAULT = 1, MAX_RATE_MIN = 0.01, MAX_RATE_MAX = 30;
+/** Default and limits of the spacecraft's maximum slew rate (deg/s): the schedule's automatic slew times use it.
+ * The minimum lets any turn (at most 180°) fit in the longest slew time, 3600 s. */
+export const MAX_RATE_DEFAULT = 1, MAX_RATE_MIN = 0.05, MAX_RATE_MAX = 30;
 /** A maximum slew rate as kept: within the limits, else the default (older spacecraft have none). */
 export const cleanMaxRate = x => Number.isFinite(x) && x >= MAX_RATE_MIN && x <= MAX_RATE_MAX ? x : MAX_RATE_DEFAULT;
 
+/** Validate & normalise an imported spacecraft config. Throws Error with a readable message. */
 export function sanitizeSpacecraft(json) {
   const sc = json.sc || json;
   if (!sc.bus || !Array.isArray(sc.comps)) throw new Error('Expected an object with "bus" and "comps".');

@@ -500,7 +500,18 @@ test('too fast: a fixed slew that needs more than the max rate is listed with it
 test('max slew rate: a spacecraft setting, 1°/s by default and for older spacecraft, kept within limits', () => {
   assert.equal(defaultState().sc.maxRate, 1);
   const old = fresh(); delete old.sc.maxRate; migrate(old); assert.equal(old.sc.maxRate, 1);
-  for (const [v, want] of [[2.5, 2.5], [0, 1], [-1, 1], [100, 1], ['x', 1]]) assert.equal(sanitizeSpacecraft({ sc: { ...structuredClone(defaultState().sc), maxRate: v } }).maxRate, want, String(v));
+  for (const [v, want] of [[2.5, 2.5], [0.05, 0.05], [30, 30], [0.049, 1], [30.01, 1], [0, 1], [-1, 1], [100, 1], ['x', 1]]) assert.equal(sanitizeSpacecraft({ sc: { ...structuredClone(defaultState().sc), maxRate: v } }).maxRate, want, String(v));
   const s = fresh(); s.orbit.schedule = [{ id: 'a', start: at(s, 5), slew: 7, autoSlew: true, mode: 'sun' }];
   assert.equal(cleanSchedule(s.orbit.schedule, s.orbit)[0].autoSlew, true, 'kept on import'); assert.equal('autoSlew' in cleanSchedule([{ start: at(s, 5), mode: 'sun', autoSlew: 'yes' }], s.orbit)[0], false);
+});
+
+test('automatic slew times: an overlapping chain works out in one pass; a half turn at the slowest rate still fits in 3600 s', () => {
+  const s = inertialPair(0); s.sc.maxRate = 1.5; const a = s.orbit.schedule[0]; a.autoSlew = true;
+  s.orbit.schedule.push({ id: 'b', start: at(s, 630), slew: 0, autoSlew: true, mode: 'inertial', q: qz(180) });
+  assert.equal(autoSlews(s), true); assert.deepEqual(s.orbit.schedule.map(c => c.slew), [60, 90], 'b turns 135° from a, halfway through its slew');
+  close(changeTurn(s, 'b').angle, 135, 1e-6); assert.equal(autoSlews(s), false);
+  const h = fresh(); Object.assign(h.orbit, { mode: 'inertial' }); h.rot.q = qz(0); h.sc.maxRate = 0.05;
+  h.orbit.schedule = [{ id: 'x', start: at(h, 600), slew: 0, autoSlew: true, mode: 'inertial', q: qz(180) }]; autoSlews(h);
+  assert.equal(h.orbit.schedule[0].slew, 3600, '180° at 0.05°/s'); assert.ok(180 / 3600 <= 0.05, 'within the rate');
+  const z = inertialPair(0); z.orbit.schedule[0] = { ...z.orbit.schedule[0], autoSlew: true, q: qz(0) }; autoSlews(z); assert.ok(Object.is(z.orbit.schedule[0].slew, 0), 'no turn: 0, not -0');
 });
