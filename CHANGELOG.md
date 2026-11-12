@@ -14,8 +14,7 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 - **Target tracking slews at rise and set** (#65): instead of jumping to the target when it rises, the spacecraft slews to it before the rise, so tracking starts as it rises, and back to the nominal attitude after the set. The time is a new target setting, *Slew to/from* (60 s by default, per schedule change); 0 keeps the jump.
 
 ### Changed
-- **J2 drift of the mean anomaly** (#72): with J2 on, the mean anomaly now drifts at its first-order secular rate too, as the node and perigee did. Along-track timing moves by a few km per orbit, closer to a real orbit. A TLE is flown at exactly the mean motion it states.
-
+- **J2 drift of the mean anomaly** (#72): with J2 on, the mean anomaly now drifts at its first-order secular rate too, as the node and perigee did. Along-track timing moves by up to ~30 km per orbit in LEO (28 km, 3.7 s, at SSO 550 km; 5 km for the ISS), so **saved scenarios with J2 on reach their targets at slightly different times**. A TLE is flown at exactly the mean motion it states (its semi-major axis is the first-order Kozai→Brouwer one, within 0.1 m of SGP4's).
 
 ## [0.9.0] - 2026-11-08
 

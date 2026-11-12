@@ -220,7 +220,7 @@ test('J2: the mean anomaly drifts at the first-order secular rate (Vallado eq. 9
   const r = j2Rates(el.a, el.e, el.i), n = Math.sqrt(ENV.MU / el.a ** 3);
   // by hand: 1.5 n J2 (R/p)² √(1−e²) (1 − 1.5 sin² i)
   const byHand = 1.5 * n * 1.08262668e-3 * (6378.137 / (el.a * (1 - el.e ** 2))) ** 2 * Math.sqrt(1 - el.e ** 2) * (1 - 1.5 * Math.sin(el.i) ** 2);
-  assert.ok(Math.abs(r.M - byHand) < 1e-18); assert.ok(r.M > 0, 'at 51.6° (sin² i < 2/3) it speeds the anomaly up');
+  assert.ok(Math.abs(r.M - byHand) < 1e-18); // Ṁ ~ 1e-7 rad/s: 1e-11 relative, rounding only assert.ok(r.M > 0, 'at 51.6° (sin² i < 2/3) it speeds the anomaly up');
   assert.ok(j2Rates(7000, 0, 98 * D2).M < 0, 'at 98° (sin² i > 2/3) it slows it down');
   const wrap = x => ((x % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI) - Math.PI;
   assert.ok(Math.abs(wrap(M(ENV.propagate(el, t, true)) - (n + r.M) * t)) < 1e-9, 'with J2');
@@ -233,6 +233,10 @@ test('J2: a TLE flies at its stated mean motion (ISS, 15.72125391 rev/day): one 
   const M = st => { const Ea = 2 * Math.atan(Math.sqrt((1 - e) / (1 + e)) * Math.tan(st.nu / 2)); return Ea - e * Math.sin(Ea); };
   const wrap = x => ((x % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI) - Math.PI;
   assert.ok(Math.abs(wrap(M(ENV.propagate(E, 86400, true)) - M(ENV.propagate(E, 0, true)) - nRev * 2 * Math.PI)) < 1e-8);
-  const a2 = smaForMeanMotion(nRev * 2 * Math.PI / 86400, e, E.i); assert.equal(a2, E.a); assert.ok(Math.abs(a2 - Math.cbrt(ENV.MU / (nRev * 2 * Math.PI / 86400) ** 2)) < 15, 'a few km from the two-body value');
+  // SGP4 recovers the same a from a TLE (Spacetrack Report #3, initl: a0'' = 6731.4690 km for this one): first-order Kozai→Brouwer
+  close(E.a, 6731.4690, 1e-3, 'within 1 m of SGP4');
+  const aK = Math.cbrt(ENV.MU / (nRev * 2 * Math.PI / 86400) ** 2); assert.ok(E.a - aK > 0.4 && E.a - aK < 0.6, `+0.5 km at 51.6° (${(E.a - aK).toFixed(3)})`);
+  const n98 = 14.57 * 2 * Math.PI / 86400, d98 = smaForMeanMotion(n98, 0.001, 98 * Math.PI / 180) - Math.cbrt(ENV.MU / n98 ** 2);
+  assert.ok(d98 > -3.0 && d98 < -2.8, `−2.9 km at 98° (${d98.toFixed(3)})`);
   s.orbit.j2 = false; assert.ok(Math.abs(orbitElements(s.orbit).a - Math.cbrt(ENV.MU / (nRev * 2 * Math.PI / 86400) ** 2)) < 1e-9, 'J2 off: two-body');
 });

@@ -369,7 +369,7 @@ function orbitCard(ctx, o, sl) {
   const common = [
     h('div', { class: 'kv' },
       h('dt', null, 'a · e'), h('dd', null, liveText(() => { const E = orbitElements(o); return E.a.toFixed(1) + ' km · ' + E.e.toFixed(5); })),
-      h('dt', null, 'Period'), h('dd', null, liveText(() => (ENV.propagate(orbitElements(o), 0, false).period / 60).toFixed(2) + ' min')),
+      h('dt', null, 'Period', h('span', { class: 'lbl', title: 'Perigee to perigee, as flown: with J2, 2π / (n + Ṁ_J2)' }, ' (anomalistic)')), h('dd', null, liveText(() => { const E = orbitElements(o), r = ENV.j2Rates(E.a, E.e, E.i); return (2 * Math.PI / (r.n + (o.j2 ? r.M : 0)) / 60).toFixed(2) + ' min'; })),
       h('dt', null, 'LTAN (at epoch)'), h('dd', null, liveText(() => hhmm(ltanOf(o)))),
       h('dt', null, 'SSO inclination for this a'), h('dd', null, liveText(() => { const E = orbitElements(o); return deg(ENV.ssoInc(E.a, E.e)).toFixed(2) + '°'; }))),
     check('j2', 'J2 secular drift of Ω, ω and M (makes SSO work)', () => o.j2, v => { o.j2 = v; save(); }),
