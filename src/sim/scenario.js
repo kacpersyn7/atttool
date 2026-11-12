@@ -2,13 +2,14 @@
  * Scenario: turns the user-facing orbit settings (state.orbit) into model inputs —
  * epoch, Keplerian elements — and holds the orbit presets.
  *
- * The orbit can be defined three ways (o.def):
+ * The orbit can be defined four ways (o.def):
  *   'elements'  perigee/apogee altitude + angles (o.hp, o.ha, o.i, o.raan, o.argp, o.nu0)
  *   'rv'        J2000/GCRF state vector at the epoch (o.r km, o.v km/s)
  *   'tle'       a two-line element set (o.tle); the epoch comes from the TLE
  *   'ssrgt'     sun-synchronous repeat ground track: o.rgtR orbits in o.rgtD days, LTAN o.rgtLtan (h), orbit no. 1
  *               crossing the equator northbound at longitude o.rgtLon (deg); solved by ssrgtSolution
- * Switching definitions keeps the current orbit (see switchDefinition).
+ * Switching between elements, r,v and TLE keeps the current orbit (see switchDefinition); switching to a repeat
+ * track keeps the LTAN and solves the rest.
  */
 import { D2R, R2D } from '../core/linalg.js';
 import * as ENV from '../env/index.js';
@@ -190,14 +191,15 @@ export function ssrgtSolution(o) {
 
 /**
  * How well a repeat ground track closes in the model: the distance (km) on the ground between where orbit no. 1
- * crosses the equator and where orbit no. 1 + R does, D days later. Null without a solution.
+ * crosses the equator and where orbit no. 1 + R does, D days later (centimetres: GMST's rate is not quite
+ * constant and it is evaluated with rounding over D days). Null without a solution.
  */
 export function ssrgtClosure(o) {
   const s = ssrgtSolution(o); if (!s) return null;
   const at = t => { const st = ENV.propagate(s.E, t, true); return ENV.eci2ecef(st.r, new Date(epochDate(o).getTime() + t * 1000)); };
   const p1 = at(s.t1), p2 = at(s.t1 + o.rgtR * s.period);
-  const c = Math.max(-1, Math.min(1, (p1[0] * p2[0] + p1[1] * p2[1] + p1[2] * p2[2]) / Math.hypot(...p1) / Math.hypot(...p2)));
-  return ENV.RE * Math.acos(c);
+  const u1 = p1.map(x => x / Math.hypot(...p1)), u2 = p2.map(x => x / Math.hypot(...p2)); // on the sphere: the chord, not acos (useless near 1)
+  return ENV.RE * Math.hypot(u1[0] - u2[0], u1[1] - u2[1], u1[2] - u2[2]);
 }
 
 /** Problem with the current definition (shown in the UI), or null. */
@@ -211,7 +213,8 @@ export function definitionError(o) {
   if (o.def === 'ssrgt') {
     if (!(Number.isInteger(o.rgtR) && o.rgtR > 0 && Number.isInteger(o.rgtD) && o.rgtD > 0)) return 'The repeat cycle needs whole numbers of orbits and days.';
     if (!o.j2) return 'A repeat ground track needs J2: both the sun-synchronous plane and the repeat depend on it.';
-    if (!ssrgtSolution(o)) return `No sun-synchronous orbit between 150 and 3000 km makes ${o.rgtR} orbits in ${o.rgtD} days (${(o.rgtR / o.rgtD).toFixed(3)} per day; LEO is about 12 to 16).`;
+    const pl = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+    if (!ssrgtSolution(o)) return `No sun-synchronous orbit between 150 and 3000 km makes ${pl(o.rgtR, 'orbit')} in ${pl(o.rgtD, 'day')} (${(o.rgtR / o.rgtD).toFixed(3)} per day; LEO is about 12 to 16).`;
   }
   return null;
 }
@@ -231,14 +234,16 @@ export function switchDefinition(o, to) {
   if (to === 'elements') setFieldsFromElements(o, E);
   if (o.def === 'tle' && to !== 'tle') o.epoch = formatEpoch(ep);
   if (to === 'tle' && tleOf(o)) o.t = 0; // a TLE has its own date: start there, as when one is pasted
+  if (to === 'ssrgt') o.rgtLtan = Math.round(ltanOf(o) * 60) / 60; // keep the LTAN (to the minute); altitude, inclination and phase are solved
   o.def = to; o.preset = 'custom';
 }
 
 /** Write the altitude/angle fields from elements (km, rad). */
 export function setFieldsFromElements(o, E) {
-  const r2 = x => +x.toFixed(3);
-  o.hp = r2(E.a * (1 - E.e) - ENV.RE); o.ha = r2(E.a * (1 + E.e) - ENV.RE);
-  o.i = +(E.i * R2D).toFixed(4); o.raan = +(E.raan * R2D).toFixed(4); o.argp = +(E.argp * R2D).toFixed(4); o.nu0 = +(E.nu0 * R2D).toFixed(4);
+  // to the mm and 1e-8°: a repeat ground track switched to elements must still close (1 m in a moves it ~0.4 km a cycle)
+  const km = x => +x.toFixed(6), deg = x => +(x * R2D).toFixed(8);
+  o.hp = km(E.a * (1 - E.e) - ENV.RE); o.ha = km(E.a * (1 + E.e) - ENV.RE);
+  o.i = deg(E.i); o.raan = deg(E.raan); o.argp = deg(E.argp); o.nu0 = deg(E.nu0);
 }
 
 /** Make the state at time t (s after epoch) the new initial state: epoch moves to t, r,v definition. */
