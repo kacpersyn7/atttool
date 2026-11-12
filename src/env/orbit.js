@@ -1,5 +1,5 @@
 /**
- * Two-body Keplerian orbit with optional J2 secular drift of RAAN and argument of perigee.
+ * Two-body Keplerian orbit with optional first-order J2 secular drift of RAAN, argument of perigee and mean anomaly.
  * Elements object: { a (km), e, i, raan, argp, nu0 (rad) }.
  */
 import { v, m } from '../core/linalg.js';
@@ -25,7 +25,7 @@ export function j2Rates(a, e, i) {
 /** Semi-major axis (km) whose mean-anomaly rate with J2 (n + Ṁ_J2) is nTot (rad/s): how a TLE's mean motion is flown. */
 export function smaForMeanMotion(nTot, e, i) {
   let a = Math.cbrt(MU / (nTot * nTot));
-  for (let k = 0; k < 8; k++) { const r = j2Rates(a, e, i); a = Math.cbrt(MU / (nTot - r.M) ** 2); } // converges by a factor ~1e-3 per step
+  for (let k = 0; k < 8; k++) { const r = j2Rates(a, e, i); a = Math.cbrt(MU / (nTot - r.M) ** 2); } // converges by a factor ~3e-4 per step
   return a;
 }
 
