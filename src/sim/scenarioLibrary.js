@@ -22,7 +22,8 @@ import { SEGMENT_KEYS } from './guidance.js';
 
 /** The fields of state.orbit that make up a scenario. refFrame only picks the frame shown, but it goes with the mode's offsets. */
 export const SCENARIO_KEYS = ['preset', 'def', 'r', 'v', 'tle', 'epoch', 'hp', 'ha', 'i', 'raan', 'argp', 'nu0', 'j2', 't',
-  'mode', 'refFrame', 'roll', 'pitch', 'yaw', 'sunAxis', 'sunSec', 'sunSecAxis', 'tgtLat', 'tgtLon', 'tgtAlt', 'tgtComp', 'tgtSlew', 'schedule', 'end'];
+  'mode', 'refFrame', 'roll', 'pitch', 'yaw', 'sunAxis', 'sunSec', 'sunSecAxis', 'tgtLat', 'tgtLon', 'tgtAlt', 'tgtComp', 'tgtSlew', 'schedule', 'end',
+  'rgtR', 'rgtD', 'rgtLtan', 'rgtLon'];
 /** Those that name parts of a spacecraft: only valid on the spacecraft they were saved with. */
 const PART_KEYS = ['tgtComp', 'sunAxis', 'sunSecAxis'];
 
@@ -117,13 +118,14 @@ const vec3 = a => Array.isArray(a) && a.length === 3 && a.every(isNum);
 const angle = inRange(-3600, 3600);
 /** Checks per field, within what the UI allows: a value that fails takes the default. */
 const VALID = {
-  preset: x => x === 'custom' || (isStr(x) && Object.hasOwn(PRESETS, x)), def: oneOf('elements', 'rv', 'tle'), r: x => x === null || vec3(x), v: x => x === null || vec3(x), tle: isStr,
+  preset: x => x === 'custom' || (isStr(x) && Object.hasOwn(PRESETS, x)), def: oneOf('elements', 'rv', 'tle', 'ssrgt'), r: x => x === null || vec3(x), v: x => x === null || vec3(x), tle: isStr,
   epoch: x => isStr(x) && !!parseEpoch(x), hp: inRange(100, 500000), ha: inRange(100, 500000), i: angle, raan: angle, argp: angle, nu0: angle, j2: x => typeof x === 'boolean', t: inRange(-T_MAX, T_MAX),
   mode: oneOf('offsets', 'target', 'sun', 'inertial'), refFrame: x => isStr(x) && Object.hasOwn(ENV.ORBIT_FRAMES, x), roll: angle, pitch: angle, yaw: angle,
   sunAxis: axis, sunSec: oneOf('nadir', 'zenith', 'velocity', 'normal', 'antinormal'), sunSecAxis: axis,
   tgtLat: inRange(-90, 90), tgtLon: angle, tgtAlt: isNum, tgtComp: isStr, tgtSlew: inRange(0, 900),
   schedule: Array.isArray, // and then cleaned change by change (cleanSchedule)
   end: x => x === '' || (isStr(x) && validDate(x)), // '' = automatic
+  rgtR: x => Number.isInteger(x) && x >= 1 && x <= 1000, rgtD: x => Number.isInteger(x) && x >= 1 && x <= 1000, rgtLtan: inRange(0, 24), rgtLon: inRange(-180, 180),
 };
 /** Names of the scenario fields for the import report. */
 const FIELD_NAME = {
@@ -131,6 +133,7 @@ const FIELD_NAME = {
   i: 'inclination', raan: 'RAAN', argp: 'argument of perigee', nu0: 'true anomaly', j2: 'J2', t: 'current time', mode: 'guidance mode', refFrame: 'shown frame',
   roll: 'roll', pitch: 'pitch', yaw: 'yaw', sunAxis: 'Sun axis', sunSec: 'secondary direction', sunSecAxis: 'secondary axis', tgtLat: 'target latitude',
   tgtLon: 'target longitude', tgtAlt: 'target height', tgtComp: 'pointing axis', tgtSlew: 'slew to/from target', schedule: 'mode schedule', end: 'scenario end',
+  rgtR: 'repeat orbits', rgtD: 'repeat days', rgtLtan: 'repeat-track LTAN', rgtLon: 'reference track longitude',
 };
 
 /**

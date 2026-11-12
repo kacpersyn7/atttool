@@ -31,7 +31,7 @@ const HTML = `
 <ul>
 <li>Orbit: Keplerian two-body with optional J2 secular drift of Ω, ω and the mean anomaly. No drag, no SRP. A TLE flies at the mean motion it states.</li>
 <li>Epoch and current time: the epoch is the date the orbit definition holds at; the current time is separate and may be before it. Moving the time keeps the orbit. Moving the epoch keeps the current UTC and re-dates the orbit (an LTAN preset recomputes RAAN). Far from the epoch the Sun geometry and the drift of the plane hold, but not the position along the orbit: there is no drag. Both dates can be set from 1900 to 2200.</li>
-<li>Orbit definition: elements, a J2000/GCRF state vector r, v at the epoch, or a TLE. A TLE is flown with the same Keplerian + J2 model (not SGP4): good near its epoch, drifting by kilometres per day.</li>
+<li>Orbit definition: elements, a J2000/GCRF state vector r, v at the epoch, a TLE, or a sun-synchronous repeat ground track (orbits in days, LTAN and the longitude of a reference track; altitude and inclination are solved with J2, as published for Sentinel-2 and Sentinel-1; no drag, so it never drifts off its track). A TLE is flown with the same Keplerian + J2 model (not SGP4): good near its epoch, drifting by kilometres per day.</li>
 <li>Sun: low-precision almanac formula (~0.01°). Eclipse: cylindrical shadow (no penumbra).</li>
 <li>Moon: low-precision almanac series (~0.3°), direction as seen from the spacecraft (includes the ~1° parallax in LEO). Phase ignored.</li>
 <li>Magnetic field: tilted dipole, pole at 80.8°N 72.7°W, B₀ = 29 900 nT. Real IGRF differs by up to ~20 %.</li>

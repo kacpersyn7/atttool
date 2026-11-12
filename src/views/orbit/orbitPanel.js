@@ -6,7 +6,7 @@ import { deg, esc, fmt, hhmm, tPlus } from '../../ui/format.js';
 import { TYPES } from '../../spacecraft/componentTypes.js';
 import { activeItem, selectSpacecraft, validateAxes } from '../../spacecraft/library.js';
 import { MAX_CHANGES, activeScenario, addScenario, deleteScenario, duplicateScenario, exportScenario, importScenario, newScenarioOrbit, previewScenario, renameScenario, selectScenario } from '../../sim/scenarioLibrary.js';
-import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, DATE_MAX, DATE_MIN, PRESETS, SCRUB_SPANS, clampTime, currentDate, epochDate, farFromEpoch, formatEpoch, ltanOf, orbitElements, scrubCancelResume, scrubEnd, scrubHold, scrubKey, scrubPress, scrubSpan, scrubWindowAt, setCurrentDate, setEpoch, switchDefinition, restartFromState, definitionError, tleOf, parseEpoch, validDate } from '../../sim/scenario.js';
+import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, DATE_MAX, DATE_MIN, PRESETS, SCRUB_SPANS, clampTime, currentDate, epochDate, farFromEpoch, formatEpoch, ltanOf, orbitElements, ssrgtClosure, ssrgtSolution, scrubCancelResume, scrubEnd, scrubHold, scrubKey, scrubPress, scrubSpan, scrubWindowAt, setCurrentDate, setEpoch, switchDefinition, restartFromState, definitionError, tleOf, parseEpoch, validDate } from '../../sim/scenario.js';
 import { copyText, showModal, closeModal, toast } from '../../ui/overlay.js';
 import { downloadText, fileName, onFileDrop, openFileButton } from '../../ui/files.js';
 import { TARGET_SLEW, TARGET_SLEW_MAX, changeTurn, payloadComp, scheduleOrder } from '../../sim/guidance.js';
@@ -374,7 +374,7 @@ function orbitCard(ctx, o, sl) {
       h('dt', null, 'SSO inclination for this a'), h('dd', null, liveText(() => { const E = orbitElements(o); return deg(ENV.ssoInc(E.a, E.e)).toFixed(2) + '°'; }))),
     check('j2', 'J2 secular drift of Ω, ω and M (makes SSO work)', () => o.j2, v => { o.j2 = v; save(); }),
   ];
-  const defSeg = seg([['elements', 'Elements'], ['rv', 'r, v (J2000)'], ['tle', 'TLE']], () => o.def, v => { switchDefinition(o, v); save(); ctx.renderRail(); });
+  const defSeg = seg([['elements', 'Elements'], ['rv', 'r, v (J2000)'], ['tle', 'TLE'], ['ssrgt', 'Repeat track']], () => o.def, v => { switchDefinition(o, v); save(); ctx.renderRail(); });
   let body = [];
   if (o.def === 'elements') body = [
     selectRow({ id: 'preset', label: 'Preset', options: [...Object.entries(PRESETS).map(([k, p]) => [k, p.label]), ['custom', 'Custom']], get: () => o.preset, set: v => { if (v !== 'custom') ctx.applyPreset(v); else o.preset = 'custom'; } }),
@@ -411,6 +411,28 @@ function orbitCard(ctx, o, sl) {
   epochInput.addEventListener('change', () => { if (setEpoch(o, epochInput.value)) { save(); syncAll(); } else refused(); });
   epochInput.addEventListener('blur', () => syncAll());
   onSync(() => { if (document.activeElement !== epochInput) epochInput.value = o.def === 'tle' ? formatEpoch(epochDate(o)) : o.epoch; });
+  if (o.def === 'ssrgt') {
+    const cell = (id, label, key, step, dec, lo, hi, int) => numCell(id, label, () => o[key], x => { if (Number.isFinite(x)) o[key] = Math.max(lo, Math.min(hi, int ? Math.round(x) : x)); changed(); }, step, dec);
+    // published repeat cycles and LTANs (ascending node; 22:30 = descending at 10:30)
+    const MISSIONS = [['Sentinel-2', 143, 10, 22.5], ['Sentinel-1', 175, 12, 18], ['Landsat 8/9', 233, 16, 22], ['Sentinel-3', 385, 27, 22]];
+    const gcd = (a, b) => b ? gcd(b, a % b) : a;
+    body = [
+      h('div', { class: 'grid2' }, cell('rgtR', 'Orbits', 'rgtR', 1, 0, 1, 1000, true), cell('rgtD', 'In days', 'rgtD', 1, 0, 1, 1000, true),
+        cell('rgtLtan', 'LTAN (h)', 'rgtLtan', 0.25, 2, 0, 24), cell('rgtLon', 'Ref. track lon °', 'rgtLon', 0.1, 2, -180, 180)),
+      h('div', { class: 'btns' }, ...MISSIONS.map(([n, R, D, L]) => h('button', { class: 'btn', title: `${R} orbits in ${D} days, LTAN ${hhmm(L)}`, onclick: () => { Object.assign(o, { rgtR: R, rgtD: D, rgtLtan: L }); changed(); } }, n))),
+      status(),
+      liveText(() => {
+        const s = ssrgtSolution(o); if (!s || definitionError(o)) return '';
+        const g = gcd(o.rgtR, o.rgtD), whole = Math.floor(o.rgtR / o.rgtD), rest = o.rgtR - whole * o.rgtD;
+        const per = rest ? `${whole} + ${rest / g}/${o.rgtD / g}` : String(whole), shorter = g > 1 ? ` (it already repeats after ${o.rgtR / g} orbits in ${o.rgtD / g} days)` : '';
+        const cross = new Date(epochDate(o).getTime() + s.t1 * 1000).toISOString().slice(0, 19).replace('T', ' '), cl = ssrgtClosure(o);
+        const row = (k, v) => `<dt>${k}</dt><dd>${v}</dd>`;
+        return `<div class="kv">${row('Orbits per day', per + shorter)}${row('LTAN', hhmm(o.rgtLtan))}${row('Altitude · inclination', `${(s.a - ENV.RE).toFixed(2)} km · ${(s.i * 180 / Math.PI).toFixed(3)}°`)}`
+          + `${row('Period, node to node', (s.period / 60).toFixed(3) + ' min')}${row('Track spacing at the equator', (2 * Math.PI * ENV.RE / o.rgtR).toFixed(1) + ' km')}`
+          + `${row('Orbit 1 crosses ' + fmt(o.rgtLon, 2) + '°', cross + ' UTC')}${row('Closes after ' + o.rgtD + ' days to', cl < 1e-3 ? 'under 1 m' : fmt(cl * 1000, 1) + ' m')}</div>`;
+      }),
+      tip('Altitude and inclination are solved so the orbit is sun-synchronous and repeats its ground track after the given orbits and days, with the J2 secular drift of Ω, ω and M (as Sentinel-2: 143 orbits in 10 days at 786 km). RAAN comes from the LTAN at the epoch; orbit 1 crosses the equator northbound at the reference longitude. Circular. With no drag in the model the track holds forever; a real one needs regular manoeuvres.')];
+  }
   const nowState = () => { const c = ctx.cur(); return c ? { r: c.st.r, v: c.st.v, d: c.date } : null; };
   return card('Orbit', 'Keplerian + J2',
     h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, h('span', { class: 'lbl' }, 'Defined by'), defSeg),
