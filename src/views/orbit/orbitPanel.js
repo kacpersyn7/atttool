@@ -372,7 +372,7 @@ function orbitCard(ctx, o, sl) {
       h('dt', null, 'Period'), h('dd', null, liveText(() => (ENV.propagate(orbitElements(o), 0, false).period / 60).toFixed(2) + ' min')),
       h('dt', null, 'LTAN (at epoch)'), h('dd', null, liveText(() => hhmm(ltanOf(o)))),
       h('dt', null, 'SSO inclination for this a'), h('dd', null, liveText(() => { const E = orbitElements(o); return deg(ENV.ssoInc(E.a, E.e)).toFixed(2) + '°'; }))),
-    check('j2', 'J2 secular drift of Ω and ω (makes SSO work)', () => o.j2, v => { o.j2 = v; save(); }),
+    check('j2', 'J2 secular drift of Ω, ω and M (makes SSO work)', () => o.j2, v => { o.j2 = v; save(); }),
   ];
   const defSeg = seg([['elements', 'Elements'], ['rv', 'r, v (J2000)'], ['tle', 'TLE']], () => o.def, v => { switchDefinition(o, v); save(); ctx.renderRail(); });
   let body = [];

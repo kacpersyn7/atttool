@@ -14,22 +14,36 @@ export function kepler(M, e) {
 }
 
 /**
- * Propagate elements to t seconds after epoch.
- * @returns {{r:number[], v:number[], nu:number, raan:number, argp:number, period:number}} ECI km, km/s
+ * First-order J2 secular rates (rad/s) of mean elements a (km), e, i (rad): node, argument of perigee, and the
+ * mean anomaly beyond the two-body n (Vallado, Fundamentals of Astrodynamics, eq. 9-41).
+ */
+export function j2Rates(a, e, i) {
+  const n = Math.sqrt(MU / (a * a * a)), p = a * (1 - e * e), k = 1.5 * n * J2 * (RE / p) ** 2, s2 = Math.sin(i) ** 2;
+  return { n, raan: -k * Math.cos(i), argp: k * (2 - 2.5 * s2), M: k * Math.sqrt(1 - e * e) * (1 - 1.5 * s2) };
+}
+
+/** Semi-major axis (km) whose mean-anomaly rate with J2 (n + Ṁ_J2) is nTot (rad/s): how a TLE's mean motion is flown. */
+export function smaForMeanMotion(nTot, e, i) {
+  let a = Math.cbrt(MU / (nTot * nTot));
+  for (let k = 0; k < 8; k++) { const r = j2Rates(a, e, i); a = Math.cbrt(MU / (nTot - r.M) ** 2); } // converges by a factor ~1e-3 per step
+  return a;
+}
+
+/**
+ * Propagate elements to t seconds after epoch. With j2, the node, the argument of perigee and the mean anomaly
+ * drift at their first-order J2 secular rates (j2Rates).
+ * @returns {{r:number[], v:number[], nu:number, raan:number, argp:number, period:number}} ECI km, km/s; period is the
+ *   two-body one.
  */
 export function propagate(el, t, j2) {
   const { a, e } = el;
   const n = Math.sqrt(MU / (a * a * a));
   const p = a * (1 - e * e);
-  let raan = el.raan, argp = el.argp;
-  if (j2) {
-    const k = 1.5 * n * J2 * (RE / p) ** 2;
-    raan += -k * Math.cos(el.i) * t;
-    argp += k * (2 - 2.5 * Math.sin(el.i) ** 2) * t;
-  }
+  let raan = el.raan, argp = el.argp, Mdot = n;
+  if (j2) { const r = j2Rates(a, e, el.i); raan += r.raan * t; argp += r.argp * t; Mdot += r.M; }
   const E0 = 2 * Math.atan(Math.sqrt((1 - e) / (1 + e)) * Math.tan(el.nu0 / 2));
   const M0 = E0 - e * Math.sin(E0);
-  const M = M0 + n * t;
+  const M = M0 + Mdot * t;
   const E = kepler(((M % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI), e);
   const nu = 2 * Math.atan2(Math.sqrt(1 + e) * Math.sin(E / 2), Math.sqrt(1 - e) * Math.cos(E / 2));
   const r = p / (1 + e * Math.cos(nu));
