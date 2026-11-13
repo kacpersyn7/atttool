@@ -46,5 +46,5 @@ test('file names: from the scenario or spacecraft name, safe for any system', ()
   assert.equal(fileName('Image pass', 'scenario'), 'Image_pass.scenario.json');
   assert.equal(fileName('../../etc/passwd', 'scenario'), 'etc_passwd.scenario.json');
   assert.equal(fileName('  ', 'spacecraft'), 'spacecraft.spacecraft.json'); assert.equal(fileName('Sat 1 (v2)', 'spacecraft'), 'Sat_1_v2.spacecraft.json');
-  assert.equal(fileName('Przelot nad Kraków', 'scenario'), 'Przelot_nad_Kraków.scenario.json'); assert.equal(fileName('Łódź', 'scenario'), 'Łódź.scenario.json'); assert.equal(fileName('abc.', 'scenario'), 'abc.scenario.json');
+  assert.equal(fileName('Przelot nad Kraków', 'scenario'), 'Przelot_nad_Kraków.scenario.json'); assert.equal(fileName('Łódź', 'scenario'), 'Łódź.scenario.json'); assert.equal(fileName('abc.', 'scenario'), 'abc.scenario.json'); assert.equal(fileName('Pass 1', 'schedule', 'csv'), 'Pass_1.schedule.csv');
 });
