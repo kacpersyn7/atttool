@@ -261,10 +261,13 @@ function scheduleCard(ctx, o) {
   return card('Mode schedule', sched.length ? sched.length + (sched.length === 1 ? ' change' : ' changes') : 'none', ...kids);
 }
 
-/** Select change `id` ('' or null: the initial settings) for editing and go to its start (the rows and the timeline band). */
-export function pickChange(id, ctx) {
+/**
+ * Select change `id` ('' or null: the initial settings) for editing; with seek (the rows) also go to its start. The
+ * timeline band picks without seeking: the time under the pointer stays, and the band does not page away.
+ */
+export function pickChange(id, ctx, seek = true) {
   selChange = id || null;
-  const c = (S.orbit.schedule || []).find(c => c.id === id); if (c) setCurrentDate(S.orbit, c.start);
+  const c = (S.orbit.schedule || []).find(c => c.id === id); if (c && seek) setCurrentDate(S.orbit, c.start);
   save(); ctx.renderRail();
 }
 

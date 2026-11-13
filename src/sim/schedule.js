@@ -70,6 +70,28 @@ export function setChangeMode(c, mode, rotQ) { c.mode = mode; if (mode === 'iner
 /** An inertial change takes Rotation Lab's attitude rotQ now. */
 export function takeRotation(c, rotQ) { c.q = qCopy(rotQ); }
 
+/* ---------- the timeline band (#56) ---------- */
+
+/** The id of the change flying at t (s from the epoch; '' before the first). Ties: the later in the list, as guidance. */
+export function changeAtTime(o, t) {
+  const sched = o.schedule || [], e0 = epochDate(o).getTime(); let id = '';
+  for (const x of scheduleOrder(sched)) if ((x.ms - e0) / 1000 <= t) id = sched[x.i].id;
+  return id;
+}
+
+/**
+ * The change whose start is nearest to t (s from the epoch), within tol seconds and inside [t0, t1] (the window
+ * shown). For starts at the same moment, the one that flies (the later in the list). Null if none.
+ */
+export function startNear(o, t, tol, t0 = -Infinity, t1 = Infinity) {
+  const sched = o.schedule || [], e0 = epochDate(o).getTime(); let best = null, bd = Infinity;
+  for (const x of scheduleOrder(sched)) {
+    const s = (x.ms - e0) / 1000; if (s < t0 || s > t1) continue;
+    const d = Math.abs(s - t); if (d <= tol && d <= bd) { bd = d; best = { id: sched[x.i].id, t: s }; }
+  }
+  return best;
+}
+
 /* ---------- names and editing helpers (#55) ---------- */
 
 /** Set the name of change `id`. @returns false for an unknown change. */
