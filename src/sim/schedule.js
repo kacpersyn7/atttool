@@ -19,12 +19,12 @@ const qCopy = q => ({ w: q.w, x: q.x, y: q.y, z: q.z });
 
 /**
  * Add a change that starts with the settings `g` flying now (the orbit settings or a change; an inertial one keeps
- * its attitude, else Rotation Lab's rotQ), so nothing moves until it is edited. It starts at the current time
- * (whole seconds), or when the slew into `g` ends if that is still under way. @returns the change, or null if the
+ * its attitude, else Rotation Lab's rotQ), so nothing moves until it is edited. It starts at the current time, or at
+ * t (s from the epoch) when given (whole seconds), or when the slew into `g` ends if that is still under way. @returns the change, or null if the
  * schedule is full or the time is outside the date limits.
  */
-export function addChange(o, g, rotQ) {
-  const sched = o.schedule || [], now = currentDate(o).getTime(), d = g !== o ? parseEpoch(g.start) : null;
+export function addChange(o, g, rotQ, t = o.t) {
+  const sched = o.schedule || [], now = epochDate(o).getTime() + t * 1000, d = g !== o ? parseEpoch(g.start) : null;
   const slewEnd = d ? d.getTime() + Math.max(0, +g.slew || 0) * 1000 : -Infinity;
   const start = formatEpoch(new Date((now < slewEnd ? Math.ceil(slewEnd / 1000) : Math.floor(now / 1000)) * 1000));
   if (sched.length >= MAX_CHANGES || !validDate(start)) return null;

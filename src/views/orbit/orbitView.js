@@ -18,14 +18,15 @@ import { earthTexture, earthGeometry, atmosphere, starfield, glowSprite } from '
 import { buildSC } from '../../gfx/spacecraftMesh.js';
 import { compAxis } from '../../spacecraft/component.js';
 import { advanceTime, epochDate, orbitElements, applyPreset, targetECEF } from '../../sim/scenario.js';
-import { runStep } from '../../sim/schedule.js';
+import { addChange, runStep, setChangeStart } from '../../sim/schedule.js';
 import { attitudeAt, autoSlews, bodyRate, payloadComp } from '../../sim/guidance.js';
 import { timelineKey } from '../../sim/timeline.js';
 import { createBodyInset } from './bodyInset.js';
 import { createPayloadInset } from './payloadInset.js';
 import { createTimelineView } from './timelineView.js';
 import { createPlotView } from './plotView.js';
-import { orbitPanel } from './orbitPanel.js';
+import { editSchedule, orbitPanel, pickChange } from './orbitPanel.js';
+import { toast } from '../../ui/overlay.js';
 
 const U = 1 / 1000; // scene unit = 1000 km
 const D2R = AM.D2R;
@@ -79,7 +80,12 @@ export function createOrbitView({ renderRail }) {
   const insetEl = $('#inset');
   const inset = createBodyInset(insetEl, earthMesh.material.map);
   const plEl = $('#plInset'), plInset = createPayloadInset(plEl);
-  const timeline = createTimelineView($('#tlc'));
+  // the Mode band edits the schedule through the panel's selection and undo
+  const timeline = createTimelineView($('#tlc'), {
+    pick: id => pickChange(id, panelCtx),
+    move: (id, start) => { if (editSchedule(() => setChangeStart(S.orbit, id, start), panelCtx) === false) toast('Enter a date from 1900 to 2200'); },
+    add: t => { const g = attitudeAt(S, t).g, c = editSchedule(() => addChange(S.orbit, g, S.rot.q, t), panelCtx); if (c) pickChange(c.id, panelCtx); else toast('The schedule is full or the time is outside 1900 to 2200'); },
+  });
   const plots = createPlotView($('#timeline'));
 
   /* ---------- geometry refresh (cached) ---------- */

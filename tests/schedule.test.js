@@ -515,3 +515,8 @@ test('automatic slew times: an overlapping chain works out in one pass; a half t
   assert.equal(h.orbit.schedule[0].slew, 3600, '180° at 0.05°/s'); assert.ok(180 / 3600 <= 0.05, 'within the rate');
   const z = inertialPair(0); z.orbit.schedule[0] = { ...z.orbit.schedule[0], autoSlew: true, q: qz(0) }; autoSlews(z); assert.ok(Object.is(z.orbit.schedule[0].slew, 0), 'no turn: 0, not -0');
 });
+
+test('a change added at a given time (the timeline band): there, whole seconds, with the settings given', () => {
+  const s = fresh(), o = s.orbit; o.t = 100; const c = addChange(o, o, s.rot.q, 2345.7);
+  assert.equal(parseEpoch(c.start).getTime(), parseEpoch(at(s, 2345)).getTime()); assert.equal(o.t, 100, 'the time is not moved');
+});
