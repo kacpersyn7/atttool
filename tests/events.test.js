@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import * as AM from '../src/core/attitude.js';
 import * as ENV from '../src/env/index.js';
 import { close } from './helpers.js';
-import { firstRise, resolveEventStarts, shadowMargin, cleanOn } from '../src/sim/events.js';
+import { afterCandidates, firstRise, resolveEventStarts, shadowMargin, cleanOn } from '../src/sim/events.js';
 import { applyPreset, epochDate, orbitElements, parseEpoch, targetECEF } from '../src/sim/scenario.js';
-import { scheduleHistory, scheduleNotes, setChangeStart, nudgeChange } from '../src/sim/schedule.js';
+import { duplicateChange, scheduleHistory, scheduleNotes, setChangeStart, nudgeChange } from '../src/sim/schedule.js';
 import { cleanSchedule } from '../src/sim/scenarioLibrary.js';
 import { defaultState, migrate } from '../src/state/store.js';
 
@@ -27,6 +27,7 @@ test('first rise: found to the tolerance, also when it lasts less than the searc
   close(firstRise(t => 0.5 - Math.abs(t - 1003.3), 0, 5000, 20), 1002.8, 0.06, 'a one-second rise between 20 s samples');
   assert.equal(firstRise(t => -1, 0, 5000, 20), null);
   close(firstRise(t => Math.sin(t / 100 + 0.5), 0, 2000, 20), 100 * (2 * Math.PI - 0.5), 0.05, 'already up at the start: the next rise');
+  close(firstRise(t => Math.abs(t - 1003.3) - 0.5, 0, 5000, 20), 1003.8, 0.06, 'up at the start with a one-second dip: the rise out of the dip');
 });
 
 test('eclipse entry and exit: the shadow begins and ends there, and the eclipse lasts 2·acos(√(r²−Rₑ²)/(r cos β))/u̇ (circular, cylindrical shadow)', () => {
@@ -39,7 +40,7 @@ test('eclipse entry and exit: the shadow begins and ends there, and the eclipse 
   const E = orbitElements(o), r = ENV.j2Rates(E.a, 0, E.i), d = new Date(epochDate(o).getTime() + tin * 1000), st = ENV.propagate(E, tin, true);
   const beta = ENV.betaAngle(st.r, st.v, ENV.sunECI(d)), rr = AM.v.norm(st.r);
   const want = 2 * Math.acos(Math.sqrt(rr * rr - ENV.RE ** 2) / (rr * Math.cos(beta))) / (r.n + r.M + r.argp);
-  close(tout - tin, want, 5, `eclipse ${(tout - tin).toFixed(0)} s, formula ${want.toFixed(0)} s (whole-second starts, the Sun moving)`);
+  close(tout - tin, want, 2, `eclipse ${(tout - tin).toFixed(0)} s, formula ${want.toFixed(0)} s`); // two whole-second ceilings + the 0.05 s search
 });
 
 test('target rise and set: the change starts as the target crosses the elevation; an offset moves it', () => {
@@ -66,7 +67,7 @@ test('not found: starts at its search time, marked; an orbit edit moves an event
   const s = fresh('ssodd'), o = s.orbit; o.schedule = [ch(s, 'e', { kind: 'eclipseIn', from: at(s, 0), offset: 0 })];
   let any = false; for (let t = 0; t < 2 * 86400 && !any; t += 20) any = ecl(s, t);
   resolveEventStarts(s);
-  if (!any) { assert.equal(o.schedule[0].on.miss, true); assert.equal(tOf(s, o.schedule[0].start), 0); } else assert.ok(!o.schedule[0].on.miss);
+  assert.equal(any, false, 'set up: no eclipse for a dawn–dusk SSO in early October'); assert.equal(o.schedule[0].on.miss, true); assert.equal(tOf(s, o.schedule[0].start), 0);
   const u = fresh('sso1200'); u.orbit.schedule = [ch(u, 'e', { kind: 'eclipseOut', from: at(u, 0), offset: 0 })]; resolveEventStarts(u); const t1 = u.orbit.schedule[0].start;
   u.orbit.hp = u.orbit.ha = 800; u.orbit.preset = 'custom'; resolveEventStarts(u); assert.notEqual(u.orbit.schedule[0].start, t1, 'a higher orbit leaves the shadow at another time');
 });
@@ -86,4 +87,44 @@ test('editing an event start moves where it looks from (or the offset of "after"
   assert.equal(cleanOn({ kind: 'after', ref: 'nope', offset: 1 }, ids), null); assert.equal(cleanOn({ kind: 'warp' }, ids), null); assert.equal(cleanOn({ kind: 'eclipseIn', from: 'soon' }, ids), null);
   const rep = []; const c = cleanSchedule([{ id: 'a', start: at(s, 10), mode: 'sun' }, { id: 'b', start: at(s, 20), mode: 'sun', on: { kind: 'after', ref: 'a', offset: 5 } }, { id: 'c', start: at(s, 30), mode: 'sun', on: { kind: 'warp' } }], o, null, rep);
   assert.deepEqual(c[1].on, { kind: 'after', from: null, offset: 5, ref: 'a' }); assert.equal('on' in c[2], false); assert.ok(rep.join().includes('event was not valid'), rep.join());
+});
+
+test('eclipse duration at high β (where cos β matters): as the cylindrical-shadow formula', () => {
+  // a 550 km SSO whose plane is turned so that β ≈ 60° (eclipses exist below β* = asin(Rₑ/r) ≈ 67°)
+  const s = fresh('sso1030'), o = s.orbit; let best = null;
+  for (let raan = 0; raan < 360; raan += 1) { o.raan = raan; o.preset = 'custom'; const E = orbitElements(o), st = ENV.propagate(E, 0, true), b = Math.abs(ENV.betaAngle(st.r, st.v, ENV.sunECI(epochDate(o)))) * R2D; if (!best || Math.abs(b - 60) < Math.abs(best.b - 60)) best = { raan, b }; }
+  o.raan = best.raan; o.schedule = [ch(s, 'in', { kind: 'eclipseIn', from: at(s, 0), offset: 0 })]; resolveEventStarts(s); const tin = tOf(s, o.schedule[0].start);
+  o.schedule.push(ch(s, 'out', { kind: 'eclipseOut', from: o.schedule[0].start, offset: 0 })); resolveEventStarts(s); const tout = tOf(s, o.schedule[1].start);
+  const E = orbitElements(o), r = ENV.j2Rates(E.a, 0, E.i), st = ENV.propagate(E, tin, true), beta = ENV.betaAngle(st.r, st.v, ENV.sunECI(new Date(epochDate(o).getTime() + tin * 1000))), rr = AM.v.norm(st.r);
+  const want = 2 * Math.acos(Math.sqrt(rr * rr - ENV.RE ** 2) / (rr * Math.cos(beta))) / (r.n + r.M + r.argp), atZero = 2 * Math.acos(Math.sqrt(rr * rr - ENV.RE ** 2) / rr) / (r.n + r.M + r.argp);
+  assert.ok(Math.abs(beta * R2D) > 55, `set up: β ${(beta * R2D).toFixed(1)}°`); assert.ok(atZero - want > 500, 'β changes the answer by minutes here');
+  close(tout - tin, want, 3, `eclipse ${(tout - tin).toFixed(0)} s, formula ${want.toFixed(0)} s`);
+});
+
+test('a short eclipse is found by both entry and exit, from any phase of the search samples', () => {
+  const s = fresh('sso1200'), o = s.orbit; o.raan = 81.822; o.preset = 'custom'; // an 11 s eclipse near t = 6254–6266 s (verifier's case)
+  for (let k = 0; k < 20; k++) {
+    o.schedule = [ch(s, 'in', { kind: 'eclipseIn', from: at(s, k), offset: 0 }), ch(s, 'out', { kind: 'eclipseOut', from: at(s, k), offset: 0 })];
+    resolveEventStarts(s); const tin = tOf(s, o.schedule[0].start), tout = tOf(s, o.schedule[1].start);
+    assert.ok(tout > tin && tout - tin < 30, `from +${k} s: in ${tin}, out ${tout}`);
+  }
+});
+
+test('a cycle of "after" changes: both are marked, and resolving again changes nothing; the panel never offers one', () => {
+  const s = fresh(), o = s.orbit;
+  o.schedule = [ch(s, 'x', { kind: 'after', ref: 'y', offset: 10, from: at(s, 50) }), ch(s, 'y', { kind: 'after', ref: 'x', offset: 10, from: at(s, 70) })];
+  resolveEventStarts(s); assert.equal(o.schedule[0].on.miss, true); assert.equal(o.schedule[1].on.miss, true); assert.equal(resolveEventStarts(s), false);
+  o.schedule = [ch(s, 'a', undefined, { start: at(s, 100) }), ch(s, 'b', { kind: 'after', ref: 'a', offset: 10, from: at(s, 0) }), ch(s, 'c', { kind: 'after', ref: 'b', offset: 10, from: at(s, 0) })];
+  assert.deepEqual(afterCandidates(o.schedule, 'a').map(c => c.id), [], 'a may not follow b or c: both lead back to it');
+  assert.deepEqual(afterCandidates(o.schedule, 'c').map(c => c.id), ['a', 'b']);
+});
+
+test('duplicate, nudge and import of event changes', () => {
+  const s = fresh('sso1200'), o = s.orbit; o.schedule = [ch(s, 'e', { kind: 'eclipseOut', from: at(s, 0), offset: 0 })]; resolveEventStarts(s); const t1 = tOf(s, o.schedule[0].start);
+  o.t = t1 + 3000; const c = duplicateChange(o, 'e'); resolveEventStarts(s); assert.ok(tOf(s, c.start) > t1 + 3000, 'the copy finds the next exit after where it is put'); assert.ok(!scheduleNotes(o).e, 'the original still flies');
+  const m = fresh('ssodd'); m.orbit.schedule = [ch(m, 'm', { kind: 'eclipseIn', from: at(m, 0), offset: 0 })]; resolveEventStarts(m); assert.equal(nudgeChange(m.orbit, 'm', 60), false, 'a missed event: nothing to nudge');
+  const a = fresh(); a.orbit.schedule = [ch(a, 'r', undefined, { start: at(a, 100) }), ch(a, 'f', { kind: 'after', ref: 'r', offset: 10, from: at(a, 0) })];
+  assert.equal(setChangeStart(a.orbit, 'f', at(a, 100 + 7 * 3600)), false, 'an "after" more than 6 h away is refused');
+  const rep = []; const cl = cleanSchedule([{ start: at(s, 10), mode: 'sun', on: { kind: 'eclipseIn', from: at(s, 0) } }, { id: 'q', start: at(s, 20), mode: 'sun' }, { id: 'q', start: at(s, 30), mode: 'sun', on: { kind: 'eclipseOut', from: at(s, 0) } }], o, null, rep);
+  assert.equal(cl[0].on.kind, 'eclipseIn', 'no id: kept'); assert.equal(cl[2].on.kind, 'eclipseOut', 'a regenerated id: kept'); assert.deepEqual(rep, []);
 });

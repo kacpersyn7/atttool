@@ -46,7 +46,7 @@ export function setChangeStart(o, id, str) {
   // an event-based change (#58) keeps its event: a new start is where to look from, or for 'after' a new offset
   if (c.on && c.on.kind === 'after') {
     const ref = o.schedule.find(x => x.id === c.on.ref), d = ref && parseEpoch(ref.start);
-    if (d) c.on = { ...c.on, offset: Math.round((parseEpoch(str).getTime() - d.getTime()) / 1000) };
+    if (d) { const off = Math.round((parseEpoch(str).getTime() - d.getTime()) / 1000); if (Math.abs(off) > OFFSET_MAX) return false; c.on = { ...c.on, offset: off }; }
   } else if (c.on) { c.on = { ...c.on, from: str }; delete c.on.miss; }
   c.start = str; o.schedule = [...o.schedule]; return true;
 }
@@ -124,6 +124,11 @@ export function duplicateChange(o, id) {
   const taken = new Set(order.map(x => sec(x.ms))); while (taken.has(s)) s += 60;
   const start = formatEpoch(new Date(s * 1000)); if (!validDate(start)) return null;
   const copy = { ...JSON.parse(JSON.stringify(c)), id: newId(), start };
+  if (copy.on) { // its own event from where it is put: the next occurrence, or for 'after' the same distance from what it follows
+    delete copy.on.miss;
+    if (copy.on.kind === 'after') { const ref = sched.find(x => x.id === copy.on.ref), d = ref && parseEpoch(ref.start); const off = d ? Math.round((s * 1000 - d.getTime()) / 1000) : 0; if (d && Math.abs(off) <= OFFSET_MAX) copy.on.offset = off; else delete copy.on; }
+    else copy.on.from = start;
+  }
   o.schedule = [...sched, copy]; return copy;
 }
 
@@ -134,7 +139,8 @@ export function duplicateChange(o, id) {
 export function nudgeChange(o, id, dt) {
   const c = (o.schedule || []).find(c => c.id === id), d = c && parseEpoch(c.start); if (!d) return false;
   if (c.on) {
-    const off = Math.max(-OFFSET_MAX, Math.min(OFFSET_MAX, (+c.on.offset || 0) + dt)); if (!validDate(formatEpoch(new Date(d.getTime() + dt * 1000)))) return false;
+    const off = (+c.on.offset || 0) + dt; // a missed event starts at its search time, whatever the offset: nothing to nudge
+    if (c.on.miss || Math.abs(off) > OFFSET_MAX || !validDate(formatEpoch(new Date(d.getTime() + dt * 1000)))) return false;
     c.on = { ...c.on, offset: off }; c.start = formatEpoch(new Date(d.getTime() + dt * 1000)); o.schedule = [...o.schedule]; return true;
   }
   return setChangeStart(o, id, formatEpoch(new Date(d.getTime() + dt * 1000)));

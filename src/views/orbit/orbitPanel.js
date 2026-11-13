@@ -10,7 +10,7 @@ import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, DATE_MAX, DATE_MIN, PRESETS, SC
 import { copyText, showModal, closeModal, toast } from '../../ui/overlay.js';
 import { downloadText, fileName, onFileDrop, openFileButton } from '../../ui/files.js';
 import { TARGET_SLEW, TARGET_SLEW_MAX, changeTurn, payloadComp, scheduleOrder, tooFast } from '../../sim/guidance.js';
-import { ELEV_MAX, EVENT_KINDS, EVENT_WINDOW, OFFSET_MAX, eventLabel } from '../../sim/events.js';
+import { ELEV_MAX, EVENT_KINDS, EVENT_WINDOW, OFFSET_MAX, afterCandidates, eventLabel } from '../../sim/events.js';
 import { timelineKey } from '../../sim/timeline.js';
 import { NAME_MAX, addChange, adjacentChange, cleanName, deleteChange, duplicateChange, nudgeChange, renameChange, runProgress, scheduleHistory, scenarioSpan, scheduleNotes, setChangeMode, setChangeStart, startRun, takeRotation } from '../../sim/schedule.js';
 import { sensorEval } from '../../sim/sensors.js';
@@ -236,7 +236,7 @@ function scheduleCard(ctx, o) {
     // an event-based change edits where it looks from (#58); the others, and 'after', their start
     const fieldValue = () => sel.on && sel.on.kind !== 'after' ? sel.on.from : sel.start;
     const shown = () => { start.value = fieldValue(); pending.hidden = true; };
-    const commit = () => { if (pending.hidden) return; pending.hidden = true; if (edit(() => setChangeStart(o, sel.id, start.value), false) === false) { refused(); start.value = sel.start; } };
+    const commit = () => { if (pending.hidden) return; pending.hidden = true; if (edit(() => setChangeStart(o, sel.id, start.value), false) === false) { refused(); start.value = fieldValue(); } };
     start.addEventListener('input', () => { pending.hidden = start.value === fieldValue(); });
     start.addEventListener('change', () => { pending.hidden = start.value === fieldValue(); });
     start.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); commit(); } else if (e.key === 'Escape') { e.preventDefault(); shown(); } });
@@ -283,7 +283,7 @@ export function editSchedule(edit, ctx) {
 
 /** Undo for schedule edits: always there, enabled when there is something to undo. Parts deleted since are checked again. */
 function undoButton(o, ctx) {
-  const b = h('button', { class: 'btn', title: 'Undo the last schedule edit: adding, deleting, moving, naming, or the slew or mode of a change. Other settings of a change stay as they are now.',
+  const b = h('button', { class: 'btn', title: 'Undo the last schedule edit: adding, deleting, moving, naming, or the slew, mode or event start of a change. Other settings of a change stay as they are now.',
     onclick: () => { if (!history.undo(o)) return; validateAxes(S); if (!(o.schedule || []).some(c => c.id === selChange)) selChange = null; save(); ctx.renderRail(); } }, 'Undo');
   onSync(() => { b.disabled = !history.size; });
   return b;
@@ -298,7 +298,8 @@ function eventRow(o, sel, edit) {
   kind.value = sel.on ? sel.on.kind : '';
   kind.addEventListener('change', () => edit(() => {
     if (!kind.value) { delete sel.on; return true; }
-    const others = scheduleOrder(o.schedule).map(x => o.schedule[x.i]).filter(c => c.id !== sel.id), before = others.filter(c => c.start <= sel.start).pop() || others[0];
+    const ok = new Set(afterCandidates(o.schedule, sel.id).map(c => c.id)), others = scheduleOrder(o.schedule).map(x => o.schedule[x.i]).filter(c => ok.has(c.id));
+    const before = others.filter(c => parseEpoch(c.start) <= parseEpoch(sel.start)).pop() || others[0]; // the change before it, if it may follow that one
     if (kind.value === 'after' && !before) { toast('There is no other change to start after'); kind.value = sel.on ? sel.on.kind : ''; return false; }
     sel.on = { kind: kind.value, from: sel.start, offset: 0 };
     if (kind.value === 'rise' || kind.value === 'set') sel.on.elev = 10;
@@ -307,11 +308,12 @@ function eventRow(o, sel, edit) {
   }));
   const kids = [h('div', { class: 'row two' }, h('label', { for: 'chOn' }, 'Starts'), kind)];
   if (sel.on) {
-    const num = (id, label, key, lo, hi, step) => numCell(id, label, () => sel.on[key], x => { if (Number.isFinite(x) && x !== sel.on[key]) edit(() => { sel.on = { ...sel.on, [key]: Math.max(lo, Math.min(hi, x)) }; }, false); }, step, 0);
+    const num = (id, label, key, lo, hi, step) => numCell(id, label, () => sel.on[key], x => { const v = Math.max(lo, Math.min(hi, x)); if (Number.isFinite(x) && v !== sel.on[key]) edit(() => { sel.on = { ...sel.on, [key]: v }; }, false); }, step, 0);
     const cells = [num('chOff', sel.on.kind === 'after' ? 'Seconds after' : 'Offset s (− before)', 'offset', -OFFSET_MAX, OFFSET_MAX, 10)];
     if (sel.on.kind === 'rise' || sel.on.kind === 'set') cells.unshift(num('chElev', 'Elevation °', 'elev', 0, ELEV_MAX, 1));
     if (sel.on.kind === 'after') {
-      const ref = h('select', { id: 'chRef', 'aria-label': 'After change' }, ...scheduleOrder(o.schedule).map(x => o.schedule[x.i]).filter(c => c.id !== sel.id).map(c => h('option', { value: c.id }, (c.name ? c.name + ' · ' : '') + showUTC(c.start))));
+      const okRef = new Set(afterCandidates(o.schedule, sel.id).map(c => c.id));
+      const ref = h('select', { id: 'chRef', 'aria-label': 'After change' }, ...scheduleOrder(o.schedule).map(x => o.schedule[x.i]).filter(c => okRef.has(c.id) || c.id === sel.on.ref).map(c => h('option', { value: c.id }, (c.name ? c.name + ' · ' : '') + showUTC(c.start))));
       ref.value = sel.on.ref; ref.addEventListener('change', () => edit(() => { sel.on = { ...sel.on, ref: ref.value }; }, false));
       kids.push(h('div', { class: 'row two' }, h('label', { for: 'chRef' }, 'After'), ref));
     }
@@ -319,7 +321,7 @@ function eventRow(o, sel, edit) {
     kids.push(h('div', { class: 'status' }, liveText(() => {
       const on = sel.on; if (!on) return '';
       const tgt = on.kind === 'rise' || on.kind === 'set' ? ` · target ${fmt(sel.tgtLat, 2)}°, ${fmt(sel.tgtLon, 2)}° (this change's)` : '';
-      if (on.miss) return `<span class="chip warn">${on.kind === 'after' ? 'The change it follows is gone' : 'No ' + esc(eventLabel(sel).toLowerCase()) + ' found within ' + Math.round(EVENT_WINDOW[on.kind] / 86400) + ' days'}: it starts at ${esc(showUTC(sel.start))}</span>`;
+      if (on.miss) return `<span class="chip warn">${on.kind === 'after' ? 'The change it follows is gone, or follows it back' : 'The event (' + esc(eventLabel(sel).toLowerCase()) + ') does not happen within ' + Math.round(EVENT_WINDOW[on.kind] / 86400) + ' days'}: it starts at ${esc(showUTC(sel.start))}</span>`;
       return `<span class="chip dim">⚡ ${esc(eventLabel(sel, changeName))}: ${esc(showUTC(sel.start))}${esc(tgt)}</span>`;
     })));
   }

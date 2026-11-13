@@ -5,7 +5,8 @@
  * `offset` seconds after change `ref` starts. resolveEventStarts writes the result into c.start, so everything else
  * reads starts as before (and an older AttTool that ignores c.on still flies at the resolved time).
  *
- * The events depend only on the orbit (never on the attitude), so resolving is a fixed point. Pure functions.
+ * The events depend on the orbit and the change's own target, never on the attitude, so resolving is a fixed point.
+ * Pure functions.
  */
 import * as AM from '../core/attitude.js';
 import * as ENV from '../env/index.js';
@@ -36,7 +37,8 @@ export function shadowMargin(r, sun) {
 
 /**
  * The first time in [t0, t1] (s) when g goes from ≤ 0 to > 0, to `tol` s; null if it doesn't. Samples every `step`
- * and refines any peak between samples (golden section), so a rise shorter than the step is still found.
+ * and refines any peak between samples (golden section), so a rise shorter than the step is still found; if g is
+ * already up at t0, the first fall is found the same way first, so a short dip is not skipped either.
  */
 export function firstRise(g, t0, t1, step, tol = 0.05) {
   const r = (Math.sqrt(5) - 1) / 2;
@@ -49,10 +51,11 @@ export function firstRise(g, t0, t1, step, tol = 0.05) {
     return gc > 0 ? c : gd > 0 ? d : null;
   };
   const edge = (lo, hi) => { for (let k = 0; k < 60 && hi - lo > tol; k++) { const m = (lo + hi) / 2; if (g(m) > 0) hi = m; else lo = m; } return hi; };
+  if (g(t0) > 0) { // already up at t0: the rise after the first fall, which is found with the same refinement (a short dip too)
+    const fall = firstRise(t => -g(t), t0, t1, step, tol);
+    return fall === null ? null : firstRise(g, fall, t1, step, tol);
+  }
   let s0 = t0, g0 = g(t0), s1 = Math.min(t1, t0 + step), g1 = g(s1);
-  // already up at t0: wait for it to go down first
-  while (g0 > 0 && s1 < t1) { s0 = s1; g0 = g1; s1 = Math.min(t1, s1 + step); g1 = g(s1); }
-  if (g0 > 0) return null;
   if (g1 > 0) return edge(s0, s1);
   if (g1 <= g0) { const p = peak(s0, s1); if (p !== null) return edge(s0, p); }
   while (s1 < t1) {
@@ -87,7 +90,8 @@ const startOf = t => formatEpoch(new Date(Math.min(lim[1], Math.max(lim[0], Math
 /**
  * Work out the starts of event-based changes into c.start (and c.on.miss when the event was not found: then it
  * starts at its search time). Fixed-time changes first, then 'after' changes in reference order; a reference to a
- * missing change or a cycle falls back to `from` and is marked missed. @returns true if a start changed.
+ * missing change or a cycle (every change on it) falls back to `from` and is marked missed. @returns true if a
+ * start changed.
  */
 export function resolveEventStarts(state, E = orbitElements(state.orbit)) {
   const o = state.orbit, sched = o.schedule || []; if (!sched.some(c => c && c.on)) return false;
@@ -110,14 +114,17 @@ export function resolveEventStarts(state, E = orbitElements(state.orbit)) {
     }
     put(c, hit.ms === null ? from : hit.ms + off, hit.ms === null);
   }
-  const visiting = new Set();
-  const after = c => { // 'after' changes, following their references
+  const visiting = new Set(), cyclic = new Set();
+  const fallback = c => { put(c, ms(c.on.from) || ms(c.start), true); return done.get(c.id); };
+  const after = c => { // 'after' changes, following their references; every change on a cycle is marked
     if (done.has(c.id)) return done.get(c.id);
-    const ref = byId.get(c.on.ref);
-    if (!ref || visiting.has(c.id) || ref === c) { put(c, ms(c.on.from) || ms(c.start), true); return done.get(c.id); }
+    if (visiting.has(c.id)) { for (const id of visiting) cyclic.add(id); return NaN; }
+    const ref = byId.get(c.on.ref); if (!ref || ref === c) return fallback(c);
     visiting.add(c.id);
     const base = ref.on && ref.on.kind === 'after' ? after(ref) : ms(ref.start);
     visiting.delete(c.id);
+    if (done.has(c.id)) return done.get(c.id);
+    if (cyclic.has(c.id) || !Number.isFinite(base)) return fallback(c);
     put(c, base + (+c.on.offset || 0) * 1000, false); return done.get(c.id);
   };
   for (const c of sched) if (c.on && c.on.kind === 'after') after(c);
@@ -132,6 +139,13 @@ export function cleanOn(on, ids) {
   if (on.kind === 'after') { if (typeof on.ref !== 'string' || !ids.has(on.ref)) return null; out.ref = on.ref; }
   else if (!out.from) return null;
   return out;
+}
+
+/** Changes that `sel` may follow: not itself, and none whose 'after' chain already leads back to it (no cycles). */
+export function afterCandidates(sched, selId) {
+  const byId = new Map(sched.map(c => [c.id, c]));
+  const leadsTo = c => { const seen = new Set(); for (let x = c; x && x.on && x.on.kind === 'after' && !seen.has(x.id); x = byId.get(x.on.ref)) { if (x.on.ref === selId) return true; seen.add(x.id); } return false; };
+  return sched.filter(c => c.id !== selId && !leadsTo(c));
 }
 
 /** A short description of a change's event, for its row and editor ('' for a fixed time). */
