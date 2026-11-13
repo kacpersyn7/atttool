@@ -18,7 +18,7 @@ import { ensureFleet } from '../spacecraft/library.js';
 import { ensureScenarios, scenarioData, fillChanges } from '../sim/scenarioLibrary.js';
 import { normalizeBus, convertLegacyFrame } from '../spacecraft/bus.js';
 import { defaultAlign } from '../spacecraft/alignment.js';
-import { fillParams } from '../spacecraft/component.js';
+import { fillParams, cleanMaxRate } from '../spacecraft/component.js';
 import { EPOCH0 } from '../sim/scenario.js';
 
 export const STORAGE_KEY = 'atttool.v1';
@@ -67,6 +67,8 @@ export function migrate(s) {
     if (!sc.align) sc.align = defaultAlign(s.orbit.refFrame || 'vvlh');
     // v0.6: new type parameters (e.g. the star tracker's moonExcl) for parts saved before they existed
     (sc.comps || []).forEach(fillParams);
+    // #57: a maximum slew rate for the schedule's automatic slew times
+    sc.maxRate = cleanMaxRate(sc.maxRate);
   }
   // v0.8: the scenario library; parked scenarios get fields added since they were saved
   ensureScenarios(s);

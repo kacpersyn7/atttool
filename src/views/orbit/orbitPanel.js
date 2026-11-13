@@ -1,6 +1,6 @@
 /** Control rail for the Orbit & Frames workspace. */
 import * as ENV from '../../env/index.js';
-import { S, save, scChanged, defaultState } from '../../state/store.js';
+import { S, save, scChanged, scVersion, defaultState } from '../../state/store.js';
 import { h, card, tip, slider, numCell, selectRow, check, seg, liveText, syncAll, onSync, confirmButton } from '../../ui/dom.js';
 import { deg, esc, fmt, hhmm, tPlus } from '../../ui/format.js';
 import { TYPES } from '../../spacecraft/componentTypes.js';
@@ -9,7 +9,8 @@ import { MAX_CHANGES, activeScenario, addScenario, deleteScenario, duplicateScen
 import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, DATE_MAX, DATE_MIN, PRESETS, SCRUB_SPANS, clampTime, currentDate, epochDate, farFromEpoch, formatEpoch, ltanOf, orbitElements, ssrgtClosure, ssrgtSolution, scrubCancelResume, scrubEnd, scrubHold, scrubKey, scrubPress, scrubSpan, scrubWindowAt, setCurrentDate, setEpoch, switchDefinition, restartFromState, definitionError, tleOf, parseEpoch, validDate } from '../../sim/scenario.js';
 import { copyText, showModal, closeModal, toast } from '../../ui/overlay.js';
 import { downloadText, fileName, onFileDrop, openFileButton } from '../../ui/files.js';
-import { TARGET_SLEW, TARGET_SLEW_MAX, changeTurn, payloadComp, scheduleOrder } from '../../sim/guidance.js';
+import { TARGET_SLEW, TARGET_SLEW_MAX, changeTurn, payloadComp, scheduleOrder, tooFast } from '../../sim/guidance.js';
+import { timelineKey } from '../../sim/timeline.js';
 import { NAME_MAX, addChange, adjacentChange, cleanName, deleteChange, duplicateChange, nudgeChange, renameChange, runProgress, scheduleHistory, scenarioSpan, scheduleNotes, setChangeMode, setChangeStart, startRun, takeRotation } from '../../sim/schedule.js';
 import { sensorEval } from '../../sim/sensors.js';
 import { pointing } from '../../sim/payload.js';
@@ -177,7 +178,14 @@ let selChange = null; // id of the change the guidance controls edit; null: the 
 const history = scheduleHistory(); let historyOf = null; // undo for schedule edits, and the scenario it belongs to
 const MODE_SHORT = { offsets: 'Nominal', target: 'Target', sun: 'Sun', inertial: 'Inertial' };
 /** Warning text for scheduleNotes entries. */
-const noteText = ns => (ns || []).map(n => n === 'tie' ? 'Same start as another change: this one flies, as the later in the list' : n === 'overridden' ? 'Never flies: a later change in the list starts at the same moment' : 'Starts during the slew before it, so it blends from that slew').join('. ');
+const noteText = ns => (ns || []).map(n => n.fast ? `Needs ${n.fast.toFixed(2)}°/s on average, more than the spacecraft's max slew rate (${S.sc.maxRate}°/s)` : n === 'tie' ? 'Same start as another change: this one flies, as the later in the list' : n === 'overridden' ? 'Never flies: a later change in the list starts at the same moment' : 'Starts during the slew before it, so it blends from that slew').join('. ');
+/** scheduleNotes plus changes too fast for the spacecraft (tooFast), worked out again only when something they depend on changed. */
+let ratesKey = '', rates = {};
+const withRates = notes => {
+  const k = JSON.stringify([timelineKey(S, scVersion(), 0), S.sc.maxRate]); if (k !== ratesKey) { ratesKey = k; rates = tooFast(S); }
+  for (const [id, r] of Object.entries(rates)) (notes[id] = notes[id] || []).push({ fast: r });
+  return notes;
+};
 /** A start for display: always with seconds, without fractions. */
 const showUTC = str => { const d = parseEpoch(str); return d ? d.toISOString().slice(0, 19).replace('T', ' ') : str; };
 
@@ -202,11 +210,11 @@ function scheduleCard(ctx, o) {
   },
     liveText(() => {
       const cur = ctx.cur(), now = cur && cur.seg ? cur.seg.id : '';
-      const notes = scheduleNotes(o);
+      const notes = withRates(scheduleNotes(o));
       const row = (id, start, mode, slew, warn = '', info = '', name = '') => `<button type="button" class="srow${(selChange || '') === id ? ' on' : ''}" data-id="${esc(id)}" title="${warn ? esc(warn) + '. ' : ''}${info ? esc(info) + '. ' : ''}${id ? 'Edit this change and go to its start' : 'Edit the initial settings'}"><span class="dot${now === id ? ' now' : ''}"></span><span class="st">${start}${warn ? ' <span class="warn">⚠</span>' : ''}</span><span>${MODE_SHORT[mode] || ''}</span><span class="sl">${slew}</span>${name ? `<span class="nm">${esc(name)}</span>` : ''}</button>`;
       const first = scheduleOrder(sched)[0], until = first ? showUTC(sched[first.i].start) : '';
       const today = until && cur && cur.date.toISOString().slice(0, 10) === until.slice(0, 10); // the date only when it isn't the current one
-      return row('', until ? 'Initial · until ' + (today ? until.slice(11) : until.slice(0, 16)) : 'Initial', o.mode, '', '', until ? 'Flies before the first change, until ' + until : '') + scheduleOrder(sched).map(({ i }) => { const c = sched[i]; return row(c.id, esc(showUTC(c.start)), c.mode, c.slew ? c.slew + ' s' : 'jump', noteText(notes[c.id]), '', c.name); }).join('');
+      return row('', until ? 'Initial · until ' + (today ? until.slice(11) : until.slice(0, 16)) : 'Initial', o.mode, '', '', until ? 'Flies before the first change, until ' + until : '') + scheduleOrder(sched).map(({ i }) => { const c = sched[i]; return row(c.id, esc(showUTC(c.start)), c.mode, (c.autoSlew ? 'auto ' : '') + (c.slew ? c.slew + ' s' : 'jump'), noteText(notes[c.id]), '', c.name); }).join('');
     }, 'sched'));
   const kids = [list,
     h('div', { class: 'status' }, liveText(() => { const cur = ctx.cur(); if (!cur) return ''; const s = cur.seg, m = MODE_SHORT[cur.g.mode], nm = s && cur.g.name ? esc(cur.g.name) + ' (' + m + ')' : m;
@@ -221,7 +229,10 @@ function scheduleCard(ctx, o) {
       undoButton(o, ctx))];
   if (sel) {
     const start = dateInput('chStart'), slew = h('input', { type: 'number', id: 'chSlew', min: 0, max: 3600, step: 1 });
-    slew.addEventListener('change', () => { const x = +slew.value; const v = Math.max(0, Math.min(3600, Math.round(x))); if (slew.value !== '' && Number.isFinite(x) && v !== sel.slew) edit(() => { sel.slew = v; }, false); slew.value = sel.slew; syncAll(); });
+    slew.addEventListener('change', () => { const x = +slew.value, v = Math.max(0, Math.min(3600, Math.round(x))); if (slew.value !== '' && Number.isFinite(x) && v !== sel.slew) edit(() => { sel.slew = v; }, false); slew.value = sel.slew; syncAll(); });
+    const auto = h('input', { type: 'checkbox', id: 'chAuto' });
+    auto.addEventListener('change', () => { edit(() => { if (auto.checked) sel.autoSlew = true; else delete sel.autoSlew; }, false); });
+    onSync(() => { auto.checked = !!sel.autoSlew; slew.disabled = !!sel.autoSlew; slew.title = sel.autoSlew ? `Worked out from the turn at the spacecraft's max slew rate (${S.sc.maxRate}°/s, Spacecraft Layout)` : ''; });
     onSync(() => { if (document.activeElement !== slew) slew.value = sel.slew; });
     // a typed start applies on Enter or on leaving the field, not while the date is half typed (change fires per part)
     const pending = h('span', { class: 'lbl', hidden: true }, 'Enter to apply · Esc to undo');
@@ -241,9 +252,10 @@ function scheduleCard(ctx, o) {
       h('button', { class: 'btn', title: 'A copy of this change, starting at the current time', onclick: () => { const c = history.record(o, () => duplicateChange(o, sel.id)); if (!c) { toast(`The schedule holds up to ${MAX_CHANGES} changes, within ${DATE_MIN.slice(0, 4)} to ${DATE_MAX.slice(0, 4)}`); return; } selChange = c.id; save(); ctx.renderRail(); } }, 'Duplicate')));
     kids.push(h('div', { class: 'row two' }, h('label', { for: 'chStart' }, 'Starts (UTC)'), start),
       h('div', { style: 'display:flex;justify-content:space-between;gap:8px' }, pending, h('span', { class: 'lbl', style: 'margin-left:auto' }, liveText(() => { const d = parseEpoch(pending.hidden ? sel.start : start.value); return d ? tPlus((d.getTime() - epochDate(o).getTime()) / 1000) + ' from the epoch' : ''; }))),
-      h('div', { class: 'row two' }, h('label', { for: 'chSlew', title: 'From the attitude before it, 0 to 3600 s (0: a jump)' }, 'Slew (s)'), slew),
+      h('div', { class: 'row two' }, h('label', { for: 'chSlew', title: 'From the attitude before it, 0 to 3600 s (0: a jump)' }, 'Slew (s)'),
+        h('div', { style: 'display:flex;gap:8px;align-items:center' }, slew, h('label', { class: 'chk', title: 'The turn at its start ÷ the max slew rate of the spacecraft', style: 'flex:none' }, auto, 'auto'))),
       h('div', { class: 'status' }, liveText(() => {
-        const tr = changeTurn(S, sel.id), n = noteText(scheduleNotes(o)[sel.id]); if (!tr) return '';
+        const tr = changeTurn(S, sel.id), n = noteText(withRates(scheduleNotes(o))[sel.id]); if (!tr) return '';
         if (tr.overridden) return `<span class="chip warn">${esc(n)}</span>`;
         const turn = tr.rate === null ? `Jumps ${tr.angle.toFixed(1)}°` : `Turns ${tr.angle.toFixed(1)}° in ${sel.slew} s · ${tr.rate.toFixed(2)}°/s on average`;
         return `<span class="chip dim" title="At its start, from the attitude before it. Kinematics only: real wheels may not turn this fast.">${turn}</span>${n ? ` <span class="chip warn">${esc(n)}</span>` : ''}`;

@@ -230,8 +230,7 @@ export function changeTurn(state, id, E = orbitElements(state.orbit)) {
   const o = state.orbit, sc = scheduler(state, E), j = sc.order.findIndex(x => o.schedule[x.i].id === id);
   if (j < 0) return null;
   if (j + 1 < sc.order.length && sc.order[j + 1].ms === sc.order[j].ms) return { overridden: true };
-  const t0 = sc.order[j].ms, q = relativeQ(sc.att(flownBefore(sc.order, j), t0).CBI, sc.own(j, t0).CBI);
-  const angle = 2 * Math.acos(Math.min(1, Math.abs(q.w))) / D2R, slew = Math.max(0, +o.schedule[sc.order[j].i].slew || 0);
+  const angle = turnAt(sc, j), slew = Math.max(0, +o.schedule[sc.order[j].i].slew || 0);
   return { angle, rate: slew ? angle / slew : null };
 }
 
@@ -243,6 +242,48 @@ function geometry(state, E, ms) {
   const nadirI = AM.v.unit(AM.v.scale(st.r, -1)), hI = AM.v.unit(AM.v.cross(st.r, st.v));
   const refVec = k => k === 'nadir' ? nadirI : k === 'normal' ? hI : k === 'antinormal' ? AM.v.scale(hI, -1) : k === 'velocity' ? AM.v.unit(st.v) : k === 'zenith' ? AM.v.scale(nadirI, -1) : nadirI;
   return { date, st, sun, CNI, refVec };
+}
+
+/** The turn (deg) change j of scheduler sc asks for at its start: from what flew before it to its own attitude. */
+function turnAt(sc, j) {
+  const t0 = sc.order[j].ms, q = relativeQ(sc.att(flownBefore(sc.order, j), t0).CBI, sc.own(j, t0).CBI);
+  return 2 * Math.acos(Math.min(1, Math.abs(q.w))) / D2R;
+}
+/** The spacecraft's maximum slew rate (deg/s), with the same default as spacecraft/component.js for one without. */
+const maxRate = state => state.sc.maxRate > 0 ? state.sc.maxRate : 1;
+
+/**
+ * Work out the slew times of changes set to automatic (c.autoSlew): the turn at their start ÷ the spacecraft's
+ * maximum slew rate (state.sc.maxRate, deg/s), rounded up to whole seconds (at most 3600), into c.slew; everything
+ * else reads c.slew as usual. In time order, since a turn starts from what flew before (its slew already written).
+ * The 3D view calls this when anything it depends on changed. @returns true if a slew time changed.
+ */
+export function autoSlews(state, E = orbitElements(state.orbit)) {
+  const o = state.orbit, sched = o.schedule || []; if (!sched.some(c => c && c.autoSlew)) return false;
+  const rate = maxRate(state), sc = scheduler(state, E); let changed = false;
+  sc.order.forEach((x, j) => {
+    const c = sched[x.i]; if (!c.autoSlew) return;
+    // - 1e-9: a turn of exactly 60 rate-seconds is 60 s, not 61 from rounding in the angle
+    const slew = Math.max(0, Math.min(3600, Math.ceil(turnAt(sc, j) / rate - 1e-9)));
+    if (slew !== c.slew) { c.slew = slew; changed = true; }
+  });
+  return changed;
+}
+
+/**
+ * Changes whose (fixed) slew time asks for more than the spacecraft's maximum slew rate, as { id: mean rate deg/s }.
+ * Changes that never fly (overridden) and automatic ones (within the rate by construction) are left out.
+ */
+export function tooFast(state, E = orbitElements(state.orbit)) {
+  const o = state.orbit, sched = o.schedule || [], rate = maxRate(state), out = {};
+  if (!sched.length) return out;
+  const sc = scheduler(state, E);
+  sc.order.forEach((x, j) => {
+    const c = sched[x.i]; if (c.autoSlew || (j + 1 < sc.order.length && sc.order[j + 1].ms === x.ms)) return;
+    const angle = turnAt(sc, j), mean = c.slew > 0 ? angle / c.slew : angle > 0.01 ? Infinity : 0;
+    if (mean > rate * 1.001) out[c.id] = mean; // 0.1 %: a slew set from the readout's rounded rate is not "too fast"
+  });
+  return out;
 }
 
 /** Body angular rate (rad/s, body axes) by finite difference over 1 s. */

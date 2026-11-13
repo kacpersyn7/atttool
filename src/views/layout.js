@@ -21,7 +21,7 @@ import { createAxisWidget } from '../gfx/axisWidget.js';
 import { createPartsTable } from './layout/partsTable.js';
 import { buildSC } from '../gfx/spacecraftMesh.js';
 import { TYPES, axisName } from '../spacecraft/componentTypes.js';
-import { newId, mkComp, qFromBoresight, compAxis, envelope, sanitizeSpacecraft } from '../spacecraft/component.js';
+import { newId, mkComp, qFromBoresight, compAxis, envelope, sanitizeSpacecraft, MAX_RATE_DEFAULT, MAX_RATE_MAX, MAX_RATE_MIN } from '../spacecraft/component.js';
 import { defaultSC } from '../spacecraft/exampleSpacecraft.js';
 import { activeItem, addSpacecraft, deleteSpacecraft, duplicateSpacecraft, renameSpacecraft, replaceActive, selectSpacecraft, validateAxes } from '../spacecraft/library.js';
 import { massProps, maxPrincipalTilt } from '../spacecraft/massProperties.js';
@@ -286,7 +286,9 @@ export function createLayoutView({ renderRail }) {
         h('dt', null, 'Max principal-axis tilt'), h('dd', null, liveText(() => maxPrincipalTilt(MP.E).toFixed(2) + '°'))),
       h('div', { class: 'checks' }, check('l-com', 'Show CoM', () => sh.com, v => { sh.com = v; save(); refreshMass(); }), check('l-pr', 'Principal axes', () => sh.principal, v => { sh.principal = v; save(); refreshMass(); })),
       tip('Bus = uniform box, parts = point masses (arrays as thin plates). Off-diagonal terms couple the axes in Euler\'s equation J·ω̇ + ω×(J·ω) = τ.')));
-    out.push(card('Actuator authority', 'per body axis',
+    out.push(card('Actuator authority', 'slew rate · wheels · torquers',
+      numCell('maxRate', 'Max slew rate °/s', () => S.sc.maxRate ?? MAX_RATE_DEFAULT, x => { if (Number.isFinite(x)) S.sc.maxRate = Math.max(MAX_RATE_MIN, Math.min(MAX_RATE_MAX, x)); save(); syncAll(); const f = $('#maxRate'); if (f) f.value = S.sc.maxRate.toFixed(2); }, 0.05, 2), // the field keeps focus: show the kept value now
+      tip('Used by the Mode schedule: a change with an automatic slew time turns at this rate; a fixed one that would need more is marked. Kinematics only: no wheel torque or momentum.'),
       h('div', { class: 'kv' },
         h('dt', null, 'RW momentum envelope (N·m·s)'), h('dd', null, liveText(() => { const e = envelope(S.sc.comps, 'rw', 'hmax'); return e ? 'X ' + e[0].toFixed(2) + ' · Y ' + e[1].toFixed(2) + ' · Z ' + e[2].toFixed(2) : '—'; })),
         h('dt', null, 'MTQ dipole (A·m²)'), h('dd', null, liveText(() => { const e = envelope(S.sc.comps, 'mtq', 'dipole'); return e ? 'X ' + e[0].toFixed(1) + ' · Y ' + e[1].toFixed(1) + ' · Z ' + e[2].toFixed(1) : '—'; }))),
