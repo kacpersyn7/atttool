@@ -2,11 +2,14 @@
  * Scenario: turns the user-facing orbit settings (state.orbit) into model inputs —
  * epoch, Keplerian elements — and holds the orbit presets.
  *
- * The orbit can be defined three ways (o.def):
+ * The orbit can be defined four ways (o.def):
  *   'elements'  perigee/apogee altitude + angles (o.hp, o.ha, o.i, o.raan, o.argp, o.nu0)
  *   'rv'        J2000/GCRF state vector at the epoch (o.r km, o.v km/s)
  *   'tle'       a two-line element set (o.tle); the epoch comes from the TLE
- * Switching definitions keeps the current orbit (see switchDefinition).
+ *   'ssrgt'     sun-synchronous repeat ground track: o.rgtR orbits in o.rgtD days, LTAN o.rgtLtan (h), orbit no. 1
+ *               crossing the equator northbound at longitude o.rgtLon (deg); solved by ssrgtSolution
+ * Switching between elements, r,v and TLE keeps the current orbit (see switchDefinition); switching to a repeat
+ * track keeps the LTAN and solves the rest.
  */
 import { D2R, R2D } from '../core/linalg.js';
 import * as ENV from '../env/index.js';
@@ -155,11 +158,48 @@ function fieldElements(o) {
  * Falls back to the element fields if the r,v state or the TLE is invalid (the UI shows the error).
  */
 export function orbitElements(o) {
+  if (o.def === 'ssrgt') { const r = ssrgtSolution(o); if (r) return r.E; }
   if (o.def === 'rv' && o.r && o.v) { const c = ENV.rv2coe(o.r, o.v); if (!c.error) return { a: c.a, e: c.e, i: c.i, raan: c.raan, argp: c.argp, nu0: c.nu0 }; }
   if (o.def === 'tle') { // its mean motion is the mean anomaly's rate: with J2 on, the semi-major axis is the one that flies at it
     const t = tleOf(o); if (t) return { a: o.j2 ? ENV.smaForMeanMotion(t.n * 2 * Math.PI / 86400, t.e, t.i * D2R) : t.a, e: t.e, i: t.i * D2R, raan: t.raan * D2R, argp: t.argp * D2R, nu0: ENV.meanToTrue(t.M * D2R, t.e) };
   }
   return fieldElements(o);
+}
+
+const TWO_PI = 2 * Math.PI, wrap2pi = x => ((x % TWO_PI) + TWO_PI) % TWO_PI;
+let rgtCache = { key: null, val: null };
+/**
+ * The orbit of a sun-synchronous repeat ground track (o.def 'ssrgt'), or null if the cycle has no solution:
+ * { E (elements at the epoch: circular, a and i from ENV.solveRepeatSSO, RAAN from the LTAN at the epoch as the LTAN
+ * presets do, phase so that orbit no. 1 crosses the equator northbound at o.rgtLon), t1 (s from the epoch when it
+ * does), a, i, raanRate, uRate, period (node to node, s) }. The node's longitude falls at WE − Ω̇; the first time it
+ * equals o.rgtLon (within a day) is t1, and the phase puts the satellite on the node then.
+ */
+export function ssrgtSolution(o) {
+  const ep = epochDate(o), key = JSON.stringify([o.rgtR, o.rgtD, o.rgtLtan, o.rgtLon, ep.getTime()]);
+  if (rgtCache.key === key) return rgtCache.val;
+  // the Earth turns as the GMST model says (its rate differs from WE by a few parts in 10⁹, metres over a cycle)
+  const w = (wrap2pi(ENV.gmst(new Date(ep.getTime() + 86400e3)) - ENV.gmst(ep)) + TWO_PI) / 86400;
+  const sol = Number.isInteger(o.rgtR) && Number.isInteger(o.rgtD) ? ENV.solveRepeatSSO(o.rgtR, o.rgtD, w) : null; let val = null;
+  if (sol) {
+    const raan = wrap2pi(ENV.sunRA(ep) + (o.rgtLtan - 12) * 15 * D2R);
+    const t1 = wrap2pi(raan - ENV.gmst(ep) - o.rgtLon * D2R) / (w - sol.raanRate);
+    val = { E: { a: sol.a, e: 0, i: sol.i, raan, argp: 0, nu0: wrap2pi(-sol.uRate * t1) }, t1, ...sol };
+  }
+  rgtCache = { key, val }; return val;
+}
+
+/**
+ * How well a repeat ground track closes in the model: the distance (km) on the ground between where orbit no. 1
+ * crosses the equator and where orbit no. 1 + R does, D days later (centimetres: GMST's rate is not quite
+ * constant and it is evaluated with rounding over D days). Null without a solution.
+ */
+export function ssrgtClosure(o) {
+  const s = ssrgtSolution(o); if (!s) return null;
+  const at = t => { const st = ENV.propagate(s.E, t, true); return ENV.eci2ecef(st.r, new Date(epochDate(o).getTime() + t * 1000)); };
+  const p1 = at(s.t1), p2 = at(s.t1 + o.rgtR * s.period);
+  const u1 = p1.map(x => x / Math.hypot(...p1)), u2 = p2.map(x => x / Math.hypot(...p2)); // on the sphere: the chord, not acos (useless near 1)
+  return ENV.RE * Math.hypot(u1[0] - u2[0], u1[1] - u2[1], u1[2] - u2[2]);
 }
 
 /** Problem with the current definition (shown in the UI), or null. */
@@ -170,6 +210,12 @@ export function definitionError(o) {
     const hp = c.a * (1 - c.e) - ENV.RE; if (hp < 0) return `Perigee is ${(-hp).toFixed(0)} km below the surface.`;
   }
   if (o.def === 'tle') { if (!o.tle) return 'Paste a TLE.'; try { ENV.parseTLE(o.tle); } catch (e) { return e.message; } }
+  if (o.def === 'ssrgt') {
+    if (!(Number.isInteger(o.rgtR) && o.rgtR > 0 && Number.isInteger(o.rgtD) && o.rgtD > 0)) return 'The repeat cycle needs whole numbers of orbits and days.';
+    if (!o.j2) return 'A repeat ground track needs J2: both the sun-synchronous plane and the repeat depend on it.';
+    const pl = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+    if (!ssrgtSolution(o)) return `No sun-synchronous orbit between 150 and 3000 km makes ${pl(o.rgtR, 'orbit')} in ${pl(o.rgtD, 'day')} (${(o.rgtR / o.rgtD).toFixed(3)} per day; LEO is about 12 to 16).`;
+  }
   return null;
 }
 
@@ -188,14 +234,16 @@ export function switchDefinition(o, to) {
   if (to === 'elements') setFieldsFromElements(o, E);
   if (o.def === 'tle' && to !== 'tle') o.epoch = formatEpoch(ep);
   if (to === 'tle' && tleOf(o)) o.t = 0; // a TLE has its own date: start there, as when one is pasted
+  if (to === 'ssrgt') o.rgtLtan = Math.round(ltanOf(o) * 60) / 60; // keep the LTAN (to the minute); altitude, inclination and phase are solved
   o.def = to; o.preset = 'custom';
 }
 
 /** Write the altitude/angle fields from elements (km, rad). */
 export function setFieldsFromElements(o, E) {
-  const r2 = x => +x.toFixed(3);
-  o.hp = r2(E.a * (1 - E.e) - ENV.RE); o.ha = r2(E.a * (1 + E.e) - ENV.RE);
-  o.i = +(E.i * R2D).toFixed(4); o.raan = +(E.raan * R2D).toFixed(4); o.argp = +(E.argp * R2D).toFixed(4); o.nu0 = +(E.nu0 * R2D).toFixed(4);
+  // to the mm and 1e-8°: a repeat ground track switched to elements must still close (1 m in a moves it ~0.4 km a cycle)
+  const km = x => +x.toFixed(6), deg = x => +(x * R2D).toFixed(8);
+  o.hp = km(E.a * (1 - E.e) - ENV.RE); o.ha = km(E.a * (1 + E.e) - ENV.RE);
+  o.i = deg(E.i); o.raan = deg(E.raan); o.argp = deg(E.argp); o.nu0 = deg(E.nu0);
 }
 
 /** Make the state at time t (s after epoch) the new initial state: epoch moves to t, r,v definition. */

@@ -4,7 +4,7 @@
  */
 import { v, m } from '../core/linalg.js';
 import { Ra } from '../core/attitude.js';
-import { MU, RE, J2 } from './constants.js';
+import { MU, RE, J2, WE } from './constants.js';
 
 /** Solve Kepler's equation M = E - e sin E (Newton). */
 export function kepler(M, e) {
@@ -134,8 +134,30 @@ export const ORBIT_FRAMES = {
 /** C_FI for frame id `name` ('vvlh' | 'lvlh' | 'vnc'); unknown ids fall back to VVLH. */
 export function orbitFrame(name, r, vel) { return (ORBIT_FRAMES[name] || ORBIT_FRAMES.vvlh).fn(r, vel); }
 
+/** Rate (rad/s) of the mean Sun in right ascension: what a sun-synchronous node follows. */
+export const SUN_RATE = 2 * Math.PI / (365.2422 * 86400);
+
+/**
+ * Sun-synchronous repeat ground track: the circular orbit that makes R revolutions (node to node) while the Earth
+ * turns D times under its orbit plane, with the first-order J2 secular rates of propagate (Ω, ω and M). Both
+ * conditions depend on a and i, so a is found by bisection with i = ssoInc(a) at each step.
+ * `earthRate`: the Earth's rotation rate (rad/s) the ground track is drawn with (the GMST model's, for an exact repeat there).
+ * @returns { a (km), i (rad), raanRate, uRate (rad/s, argument of latitude), period (s, node to node) }, or null if no
+ *   orbit between 150 and 3000 km altitude repeats so.
+ */
+export function solveRepeatSSO(R, D, earthRate = WE) {
+  if (!(R > 0 && D > 0)) return null;
+  const want = (R / D) * (earthRate - SUN_RATE); // the argument of latitude must turn R times while the Earth turns D times relative to the node
+  const g = a => { const i = ssoInc(a), r = j2Rates(a, 0, i); return { gap: r.n + r.M + r.argp - want, i, r }; };
+  let lo = RE + 150, hi = RE + 3000;
+  if (g(lo).gap < 0 || g(hi).gap > 0) return null; // the rate falls with altitude: no root in range
+  for (let k = 0; k < 100 && hi - lo > 1e-9; k++) { const m = (lo + hi) / 2; if (g(m).gap > 0) lo = m; else hi = m; }
+  const a = (lo + hi) / 2, { i, r } = g(a), uRate = r.n + r.M + r.argp;
+  return { a, i, raanRate: r.raan, uRate, period: 2 * Math.PI / uRate };
+}
+
 /** Inclination (rad) that makes the J2 RAAN drift match the mean Sun (sun-synchronous orbit). */
 export function ssoInc(a, e = 0) {
-  const n = Math.sqrt(MU / a ** 3), p = a * (1 - e * e), rate = 2 * Math.PI / (365.2422 * 86400);
-  const c = -rate / (1.5 * n * J2 * (RE / p) ** 2); return Math.acos(Math.max(-1, Math.min(1, c)));
+  const n = Math.sqrt(MU / a ** 3), p = a * (1 - e * e);
+  const c = -SUN_RATE / (1.5 * n * J2 * (RE / p) ** 2); return Math.acos(Math.max(-1, Math.min(1, c)));
 }

@@ -240,3 +240,9 @@ test('J2: a TLE flies at its stated mean motion (ISS, 15.72125391 rev/day): one 
   assert.ok(d98 > -3.0 && d98 < -2.8, `−2.9 km at 98° (${d98.toFixed(3)})`);
   s.orbit.j2 = false; assert.ok(Math.abs(orbitElements(s.orbit).a - Math.cbrt(ENV.MU / (nRev * 2 * Math.PI / 86400) ** 2)) < 1e-9, 'J2 off: two-body');
 });
+
+test('repeat orbit solver: R orbits node to node while the Earth turns D times under the plane; no LEO root gives null', () => {
+  const s = ENV.solveRepeatSSO(143, 10), r = j2Rates(s.a, 0, s.i);
+  assert.ok(Math.abs(143 * 2 * Math.PI / (r.n + r.M + r.argp) - 10 * 2 * Math.PI / (ENV.WE - ENV.SUN_RATE)) < 1e-6, 'the two periods of the cycle agree (s)');
+  assert.ok(Math.abs(r.raan - ENV.SUN_RATE) < 1e-15, 'sun-synchronous'); assert.equal(ENV.solveRepeatSSO(1, 1), null); assert.equal(ENV.solveRepeatSSO(0, 10), null);
+});
