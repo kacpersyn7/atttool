@@ -227,7 +227,7 @@ function scheduleCard(ctx, o) {
       undoButton(o, ctx)),
     h('div', { class: 'btns' },
       h('button', { class: 'btn', title: 'Paste, open or drop a schedule as CSV (a pass plan from a spreadsheet or another tool)', onclick: () => csvDialog(o, ctx) }, 'Import CSV…'),
-      h('button', { class: 'btn', title: 'The schedule as CSV: one row per change', onclick: () => downloadText(fileName(activeScenario(S).name, 'schedule', 'csv'), scheduleToCSV(o, S.sc.comps, { comma: !!(o.plot && o.plot.comma) }), 'text/csv') }, 'Download CSV'))];
+      h('button', { class: 'btn', title: 'The schedule as CSV: one row per change', onclick: () => downloadText(fileName(activeScenario(S).name, 'schedule', 'csv'), scheduleToCSV(o, S.sc.comps, { comma: (o.plot && o.plot.comma) ?? localeComma }), 'text/csv') }, 'Download CSV'))];
   if (sel) {
     const start = dateInput('chStart'), slew = h('input', { type: 'number', id: 'chSlew', min: 0, max: 3600, step: 1 });
     slew.addEventListener('change', () => { const x = +slew.value, v = Math.max(0, Math.min(3600, Math.round(x))); if (slew.value !== '' && Number.isFinite(x) && v !== sel.slew) edit(() => { sel.slew = v; }, false); slew.value = sel.slew; syncAll(); });
@@ -268,27 +268,30 @@ function scheduleCard(ctx, o) {
   return card('Mode schedule', sched.length ? sched.length + (sched.length === 1 ? ' change' : ' changes') : 'none', ...kids);
 }
 
+/** Decimal commas by default where the browser's language writes them (as the signal CSV export). */
+const localeComma = (() => { try { return new Intl.NumberFormat(navigator.language).format(1.5).includes(','); } catch (e) { return false; } })();
+
 /** Import the schedule from CSV (#61): a preview of what is read and why rows were left out, then add or replace. */
 function csvDialog(o, ctx, text = '') {
   const ta = h('textarea', { style: 'width:100%;min-height:160px;font-family:var(--f-mono);font-size:12px', placeholder: 'utc,mode,name,slew_s,target_lat_deg,target_lon_deg,…  (one row per change; open or drop a .csv here)' });
-  const info = h('div'), act = h('div', { class: 'btns', style: 'margin-top:8px' }); let res = null, tm = 0;
+  const info = h('div'), act = h('div', { class: 'btns', style: 'margin-top:8px' }); let res = null, tm = 0; // (readCsv: not dom.check)
   const done = (msg, f) => { f(); closeModal(); validateAxes(S); ctx.renderRail(); toast(msg); };
-  const check = () => {
+  const readCsv = () => {
     info.replaceChildren(); act.replaceChildren(); res = null; if (!ta.value.trim()) return;
-    try { res = scheduleFromCSV(ta.value, o, S.sc.comps); } catch (e) { info.innerHTML = `<p class="tip" style="color:var(--bad)">Cannot import: ${esc(e.message)}</p>`; return; }
+    try { res = scheduleFromCSV(ta.value, o, S.sc.comps, S.rot.q); } catch (e) { info.innerHTML = `<p class="tip" style="color:var(--bad)">Cannot import: ${esc(e.message)}</p>`; return; }
     info.innerHTML = `<p class="tip" style="margin:6px 0 0">${res.changes.length} of ${res.rows} row${res.rows === 1 ? '' : 's'} read as changes.</p>`
       + (res.report.length ? `<ul class="imp-rep">${res.report.map(r => `<li>${esc(r)}</li>`).join('')}</ul>` : '');
     if (!res.changes.length) return;
     const n = res.changes.length, total = (o.schedule || []).length + n;
-    const add = h('button', { class: 'btn primary', onclick: () => { clearTimeout(tm); check(); if (!res) return; done(`${n} change${n === 1 ? '' : 's'} added`, () => editSchedule(() => { o.schedule = [...(o.schedule || []), ...forAdding(res.changes, o.schedule || [])]; }, ctx)); } }, 'Add to the schedule');
-    if (total > MAX_CHANGES) { add.disabled = true; add.title = `The schedule holds up to ${MAX_CHANGES} changes`; }
-    act.append(add, confirmButton('Replace the schedule', 'Click again to replace it', () => { clearTimeout(tm); check(); if (!res) return; done(`Schedule replaced: ${res.changes.length} change${res.changes.length === 1 ? '' : 's'}`, () => { selChange = null; editSchedule(() => { o.schedule = res.changes; }, ctx); }); }));
+    const add = h('button', { class: 'btn primary', onclick: () => { clearTimeout(tm); readCsv(); if (!res) return; done(`${n} change${n === 1 ? '' : 's'} added`, () => editSchedule(() => { o.schedule = [...(o.schedule || []), ...forAdding(res.changes, o.schedule || [])]; }, ctx)); } }, 'Add to the schedule');
+    if (total > MAX_CHANGES) { add.disabled = true; info.insertAdjacentHTML('beforeend', `<p class="tip" style="color:var(--warn)">Adding them would make ${total} changes; the schedule holds up to ${MAX_CHANGES}. Replace it instead, or import fewer.</p>`); }
+    act.append(add, confirmButton('Replace the schedule', 'Click again to replace it', () => { clearTimeout(tm); readCsv(); if (!res) return; done(`Schedule replaced: ${res.changes.length} change${res.changes.length === 1 ? '' : 's'}`, () => { selChange = null; editSchedule(() => { o.schedule = res.changes; }, ctx); }); }));
   };
-  ta.addEventListener('input', () => { clearTimeout(tm); tm = setTimeout(() => { if (ta.isConnected) check(); }, 250); });
-  const load = t => { ta.value = t; check(); };
-  const box = h('div', null, h('h2', null, 'Import the schedule (CSV)'), h('div', { class: 'btns', style: 'margin-bottom:6px' }, openFileButton('Open file…', load, ['csv', 'txt'])), ta, info, act,
-    tip('A header row, then one row per change. Columns: <code>utc</code> (required), <code>mode</code> (nominal, target, sun, inertial), <code>name</code>, <code>slew_s</code> (or auto), the mode settings and an event start; <b>Download CSV</b> writes every column. Comma, semicolon or tab separated; decimal commas with semicolons. Parts by name. Empty cells take the scenario values. Undo takes an import back.'));
-  onFileDrop(box, load, ['csv', 'txt']);
+  ta.addEventListener('input', () => { clearTimeout(tm); tm = setTimeout(() => { if (ta.isConnected) readCsv(); }, 250); });
+  const load = t => { ta.value = t; readCsv(); };
+  const box = h('div', null, h('h2', null, 'Import the schedule (CSV)'), h('div', { class: 'btns', style: 'margin-bottom:6px' }, openFileButton('Open file…', load, ['csv', 'tsv', 'txt'])), ta, info, act,
+    tip('A header row, then one row per change. Columns: <code>utc</code> (required), <code>mode</code> (nominal, target, sun, inertial; empty: the scenario mode), <code>name</code>, <code>slew_s</code> (seconds or auto; empty: 60), the mode settings and an event start (without <code>event_from_utc</code> it looks from the start); <b>Download CSV</b> writes every column. Comma, semicolon or tab separated; decimal commas unless comma-separated. Parts by name (<code>default</code>: the first payload camera). Other empty cells take the scenario values. Adding keeps references to changes in the file only. Undo takes an import back.'));
+  onFileDrop(box, load, ['csv', 'tsv', 'txt']);
   showModal(box); if (text) load(text);
 }
 

@@ -42,7 +42,7 @@ test('schedule CSV: a hand-written file (semicolons, decimal commas, quotes, any
   assert.equal(a.start, at(s, 900)); assert.equal(b.mode, 'sun'); assert.equal(b.autoSlew, true); assert.equal(b.tgtLat, o.tgtLat, 'an empty cell: the scenario value');
   assert.equal(c.tgtComp, o.tgtComp, 'an unknown part: the default');
   const rep = r.report.join(' | ');
-  for (const want of ['Columns not used: comment', 'unknown guidance mode', 'no readable start time', 'no part named "Nope"']) assert.ok(rep.includes(want), `${want}: ${rep}`);
+  for (const want of ['Columns not used: comment', 'Line 4: unknown mode "warp"', 'Line 5: the start "soon"', 'Line 6: no part named "Nope"']) assert.ok(rep.includes(want), `${want}: ${rep}`);
   assert.throws(() => scheduleFromCSV('mode,name\nsun,x', o, s.sc.comps), /utc/); assert.throws(() => scheduleFromCSV('', o, s.sc.comps), /empty/);
 });
 
@@ -51,4 +51,38 @@ test('schedule CSV: rows and separators; adding to a schedule gives clashing ids
   assert.deepEqual(parseCSVRows('a,b\n"line\nbreak",2\n\n').rows, [['a', 'b'], ['line\nbreak', '2']]);
   const added = forAdding([{ id: 'a', on: null }, { id: 'n', on: { kind: 'after', ref: 'a', offset: 5 } }], [{ id: 'a' }]);
   assert.notEqual(added[0].id, 'a'); assert.equal(added[1].on.ref, added[0].id); assert.equal(added[1].id, 'n');
+});
+
+test('schedule CSV: Excel details (byte-order mark, formula-like cells, CR line ends, Unicode minus) and exact numbers', () => {
+  const s = fresh(), o = s.orbit;
+  o.schedule = [{ id: 'a', start: at(s, 600), slew: 1 / 3, mode: 'sun', name: '=SUM(A1)', sunAxis: '+X', sunSecAxis: '-Z', sunSec: 'nadir', roll: 0, pitch: 0, yaw: 0, tgtLat: 52.23, tgtLon: 21.01, tgtAlt: 0, tgtComp: '', tgtSlew: 60 }];
+  const csv = scheduleToCSV(o, s.sc.comps);
+  assert.ok(csv.startsWith('﻿utc,'), 'a byte-order mark, then the header');
+  assert.ok(csv.includes(",'=SUM(A1),") && csv.includes(",'+X,") && csv.includes(",'-Z,"), 'formula-like text gets a leading quote');
+  assert.ok(!/,'-?\d/.test(csv), 'numbers do not');
+  const back = scheduleFromCSV(csv.replace(/\n/g, '\r'), o, s.sc.comps);
+  assert.deepEqual(back.report, []);
+  const [c] = back.changes;
+  assert.deepEqual([c.name, c.sunAxis, c.sunSecAxis, c.slew, c.tgtComp], ['=SUM(A1)', '+X', '-Z', 1 / 3, ''], 'the quote is dropped; the number is exact; default part');
+  assert.deepEqual(parseCSVRows('﻿"utc";x\r1;2\r').rows, [['utc', 'x'], ['1', '2']], 'a quoted header after a BOM; CR-only lines');
+});
+
+test('schedule CSV: empty mode, events (any case, Unicode minus, no from), inertial without q, a "default" part over a base part', () => {
+  const s = fresh(), o = s.orbit, cam = s.sc.comps.find(c => c.type === 'payload');
+  o.mode = 'target'; o.tgtComp = cam.id;
+  const q0 = { w: Math.SQRT1_2, x: Math.SQRT1_2, y: 0, z: 0 };
+  const csv = [
+    'utc,mode,event,event_offset_s,event_elev_deg,pointing_part,roll_deg',
+    `${at(s, 600)},,RISE,−60,10,default,`,
+    `${at(s, 1200)},inertial,,,,,`,
+    `${at(s, 1800)},nominal,eclipseout,ten,,,abc`,
+  ].join('\n');
+  const r = scheduleFromCSV(csv, o, s.sc.comps, q0), [a, b, c] = r.changes;
+  assert.equal(a.mode, 'target', 'an empty mode: the scenario mode');
+  assert.deepEqual(a.on, { kind: 'rise', from: at(s, 600), offset: -60, elev: 10 }, 'kind in any case; the Unicode minus; from defaults to the start');
+  assert.equal(a.tgtComp, '', '"default" is kept over the scenario part');
+  for (const k of ['w', 'x', 'y', 'z']) assert.ok(Math.abs(b.q[k] - q0[k]) < 1e-12, 'inertial without q: the Rotation Lab attitude');
+  assert.equal(c.on.kind, 'eclipseOut'); assert.equal(c.on.offset, 0); assert.equal(c.roll, o.roll);
+  const rep = r.report.join(' | ');
+  for (const want of ["Line 3: no inertial attitude (q_w … q_z), so Rotation Lab's", 'Line 4: event_offset_s "ten" is not a number', 'Line 4: roll_deg "abc" is not a number']) assert.ok(rep.includes(want), `${want}: ${rep}`);
 });

@@ -20,13 +20,13 @@ export function fileName(name, kind, ext = 'json') {
 async function readFile(f, onText, exts = ['json']) {
   const ok = exts.some(x => f.name.toLowerCase().endsWith('.' + x) || f.type.includes(x));
   if (!ok) { toast(`${f.name} is not a ${exts.map(x => '.' + x).join(' or ')} file`); return; }
-  if (f.size > MAX_BYTES) { toast(`${f.name} is too large to be AttTool JSON`); return; }
+  if (f.size > MAX_BYTES) { toast(`${f.name} is too large for AttTool (over 5 MB)`); return; }
   try { onText(await f.text(), f.name); } catch (e) { toast('Could not read ' + f.name); }
 }
 
 /** An "Open file…" button (with its hidden file input) that passes the text of the chosen file to onText. */
 export function openFileButton(label, onText, exts = ['json']) {
-  const input = h('input', { type: 'file', accept: exts.map(x => '.' + x).join(','), hidden: true });
+  const input = h('input', { type: 'file', accept: [...exts.map(x => '.' + x), ...(exts.includes('json') ? ['application/json'] : [])].join(','), hidden: true });
   input.addEventListener('change', () => { const f = input.files[0]; input.value = ''; if (f) readFile(f, onText, exts); });
   return h('span', null, h('button', { class: 'btn', type: 'button', onclick: () => input.click() }, label), input);
 }
