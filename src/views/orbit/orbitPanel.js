@@ -193,11 +193,7 @@ function scheduleCard(ctx, o) {
   if (historyOf !== S.scenarios.active) { history.clear(); historyOf = S.scenarios.active; } // undo stays within a scenario
   const sched = o.schedule || [], sel = sched.find(c => c.id === selChange) || null;
   const edit = (f, rebuild = true) => { const r = history.record(o, f); if (r !== false && r !== null) save(); if (rebuild) ctx.renderRail(); else syncAll(); return r; }; // a schedule edit that can be undone
-  const pick = id => {
-    selChange = id || null;
-    const c = sched.find(c => c.id === id); if (c) setCurrentDate(o, c.start); // jump to its start
-    save(); ctx.renderRail();
-  };
+  const pick = id => pickChange(id, ctx);
   // the live list may be redrawn between press and release (a start applied on blur changes it), and then the
   // browser fires no click: a pointer picks the row the press started on when it is released over the list;
   // click is left for the keyboard (Enter / Space on a row)
@@ -261,8 +257,25 @@ function scheduleCard(ctx, o) {
         return `<span class="chip dim" title="At its start, from the attitude before it. Kinematics only: real wheels may not turn this fast.">${turn}</span>${n ? ` <span class="chip warn">${esc(n)}</span>` : ''}`;
       })));
   }
-  kids.push(tip('Each change slews from the attitude before it to its own over the slew time; both are worked out at every moment, so scrubbing works. Kinematics only: no wheels or torque limits. Times are UTC, so they stay put when the epoch moves. Click a row to edit it in <b>Attitude guidance</b>; a typed start applies on Enter.'));
+  kids.push(tip('Each change slews from the attitude before it to its own over the slew time; both are worked out at every moment, so scrubbing works. Kinematics only: no wheels or torque limits. Times are UTC, so they stay put when the epoch moves. Click a row to edit it in <b>Attitude guidance</b>; a typed start applies on Enter. On the timeline Mode band: click a block to pick its change, drag its left edge to move it, double-click to add a change there.'));
   return card('Mode schedule', sched.length ? sched.length + (sched.length === 1 ? ' change' : ' changes') : 'none', ...kids);
+}
+
+/**
+ * Select change `id` ('' or null: the initial settings) for editing; with seek (the rows) also go to its start. The
+ * timeline band picks without seeking: the time under the pointer stays, and the band does not page away.
+ */
+export function pickChange(id, ctx, seek = true) {
+  selChange = id || null;
+  const c = (S.orbit.schedule || []).find(c => c.id === id); if (c && seek) setCurrentDate(S.orbit, c.start);
+  save(); ctx.renderRail();
+}
+
+/** A schedule edit made outside the card (the timeline band): undoable like the card's own. @returns what edit returned. */
+export function editSchedule(edit, ctx) {
+  if (historyOf !== S.scenarios.active) { history.clear(); historyOf = S.scenarios.active; }
+  const r = history.record(S.orbit, edit); if (r !== false && r !== null) { save(); ctx.renderRail(); }
+  return r;
 }
 
 /** Undo for schedule edits: always there, enabled when there is something to undo. Parts deleted since are checked again. */

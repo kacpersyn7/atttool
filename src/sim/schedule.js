@@ -19,12 +19,12 @@ const qCopy = q => ({ w: q.w, x: q.x, y: q.y, z: q.z });
 
 /**
  * Add a change that starts with the settings `g` flying now (the orbit settings or a change; an inertial one keeps
- * its attitude, else Rotation Lab's rotQ), so nothing moves until it is edited. It starts at the current time
- * (whole seconds), or when the slew into `g` ends if that is still under way. @returns the change, or null if the
+ * its attitude, else Rotation Lab's rotQ), so nothing moves until it is edited. It starts at the current time, or at
+ * t (s from the epoch) when given (whole seconds), or when the slew into `g` ends if that is still under way. @returns the change, or null if the
  * schedule is full or the time is outside the date limits.
  */
-export function addChange(o, g, rotQ) {
-  const sched = o.schedule || [], now = currentDate(o).getTime(), d = g !== o ? parseEpoch(g.start) : null;
+export function addChange(o, g, rotQ, t = o.t) {
+  const sched = o.schedule || [], now = epochDate(o).getTime() + t * 1000, d = g !== o ? parseEpoch(g.start) : null;
   const slewEnd = d ? d.getTime() + Math.max(0, +g.slew || 0) * 1000 : -Infinity;
   const start = formatEpoch(new Date((now < slewEnd ? Math.ceil(slewEnd / 1000) : Math.floor(now / 1000)) * 1000));
   if (sched.length >= MAX_CHANGES || !validDate(start)) return null;
@@ -69,6 +69,28 @@ export function setChangeMode(c, mode, rotQ) { c.mode = mode; if (mode === 'iner
 
 /** An inertial change takes Rotation Lab's attitude rotQ now. */
 export function takeRotation(c, rotQ) { c.q = qCopy(rotQ); }
+
+/* ---------- the timeline band (#56) ---------- */
+
+/** The id of the change flying at t (s from the epoch; '' before the first). Ties: the later in the list, as guidance. */
+export function changeAtTime(o, t) {
+  const sched = o.schedule || [], e0 = epochDate(o).getTime(); let id = '';
+  for (const x of scheduleOrder(sched)) if ((x.ms - e0) / 1000 <= t) id = sched[x.i].id;
+  return id;
+}
+
+/**
+ * The change whose start is nearest to t (s from the epoch), within tol seconds and inside [t0, t1] (the window
+ * shown). For starts at the same moment, the one that flies (the later in the list). Null if none.
+ */
+export function startNear(o, t, tol, t0 = -Infinity, t1 = Infinity) {
+  const sched = o.schedule || [], e0 = epochDate(o).getTime(); let best = null, bd = Infinity;
+  for (const x of scheduleOrder(sched)) {
+    const s = (x.ms - e0) / 1000; if (s < t0 || s > t1) continue;
+    const d = Math.abs(s - t); if (d <= tol && d <= bd) { bd = d; best = { id: sched[x.i].id, t: s }; }
+  }
+  return best;
+}
 
 /* ---------- names and editing helpers (#55) ---------- */
 
