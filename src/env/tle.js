@@ -3,8 +3,9 @@
  * to the classical elements used by the Keplerian + J2 propagator.
  *
  * Note: a TLE is meant for the SGP4 model. Using its mean elements with Keplerian + J2 secular
- * drift is an approximation: good at the epoch, drifting by kilometres per day (no drag, no
- * Brouwer/Kozai mean-motion correction, TEME treated as ECI). Fine for visualising geometry.
+ * drift is an approximation: good at the epoch, drifting by kilometres per day (no drag, no SGP4
+ * periodic terms; with J2 on, only the first-order Kozai→Brouwer recovery of a, see
+ * sim/scenario.js orbitElements; TEME treated as ECI). Fine for visualising geometry.
  */
 import { MU } from './constants.js';
 

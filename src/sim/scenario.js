@@ -156,7 +156,9 @@ function fieldElements(o) {
  */
 export function orbitElements(o) {
   if (o.def === 'rv' && o.r && o.v) { const c = ENV.rv2coe(o.r, o.v); if (!c.error) return { a: c.a, e: c.e, i: c.i, raan: c.raan, argp: c.argp, nu0: c.nu0 }; }
-  if (o.def === 'tle') { const t = tleOf(o); if (t) return { a: t.a, e: t.e, i: t.i * D2R, raan: t.raan * D2R, argp: t.argp * D2R, nu0: ENV.meanToTrue(t.M * D2R, t.e) }; }
+  if (o.def === 'tle') { // its mean motion is the mean anomaly's rate: with J2 on, the semi-major axis is the one that flies at it
+    const t = tleOf(o); if (t) return { a: o.j2 ? ENV.smaForMeanMotion(t.n * 2 * Math.PI / 86400, t.e, t.i * D2R) : t.a, e: t.e, i: t.i * D2R, raan: t.raan * D2R, argp: t.argp * D2R, nu0: ENV.meanToTrue(t.M * D2R, t.e) };
+  }
   return fieldElements(o);
 }
 
