@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as AM from '../src/core/attitude.js';
 import * as ENV from '../src/env/index.js';
 import { close, closeArr } from './helpers.js';
-import { attitudeAt, bodyRate, blendAttitude, changeTurn, payloadComp, relativeQ, scheduleOrder } from '../src/sim/guidance.js';
+import { attitudeAt, autoSlews, bodyRate, blendAttitude, changeTurn, payloadComp, relativeQ, scheduleOrder, tooFast } from '../src/sim/guidance.js';
 import { AUTO_END_MARGIN, NAME_MAX, adjacentChange, cleanName, duplicateChange, nudgeChange, renameChange, scheduleHistory, addChange, deleteChange, runProgress, runStep, scenarioSpan, scheduleNotes, setChangeMode, setChangeStart, startRun, takeRotation, DEFAULT_SLEW } from '../src/sim/schedule.js';
 import { computeTimeline, timelineKey } from '../src/sim/timeline.js';
 import { pointing } from '../src/sim/payload.js';
@@ -11,6 +11,7 @@ import { advanceTime, applyPreset, currentDate, epochDate, orbitElements, parseE
 import { MAX_CHANGES, addScenario, cleanSchedule, exportScenario, importScenario, scenarioData, selectScenario } from '../src/sim/scenarioLibrary.js';
 import { defaultState, migrate } from '../src/state/store.js';
 import { signalCatalog } from '../src/sim/signals.js';
+import { sanitizeSpacecraft } from '../src/spacecraft/component.js';
 import { addSpacecraft, selectSpacecraft, validateAxes } from '../src/spacecraft/library.js';
 import { sensorEval } from '../src/sim/sensors.js';
 
@@ -135,7 +136,7 @@ test('schedule: the timeline shows a mode band with the slews and recomputes whe
 
 test('schedule edits: a change starts from what flies now, at whole seconds; edits replace the array', () => {
   const s = fresh(); s.orbit.t = 100.7; const o = s.orbit, before = o.schedule;
-  const c = addChange(o, o, s.rot.q); assert.equal(c.start, at(s, 100)); assert.equal(c.slew, DEFAULT_SLEW); assert.equal(c.mode, o.mode); assert.notEqual(o.schedule, before);
+  const c = addChange(o, o, s.rot.q); assert.equal(c.start, at(s, 100)); assert.equal(c.autoSlew, true, 'a new change slews automatically'); assert.equal(c.slew, 0, 'until it is worked out'); assert.equal(c.mode, o.mode); assert.notEqual(o.schedule, before);
   closeArr(attitudeAt(s, 500).CBI, attitudeAt({ ...s, orbit: { ...o, schedule: [] } }, 500).CBI, 1e-12, 'nothing moves until it is edited');
   setChangeMode(c, 'inertial', qz(33)); assert.deepEqual(c.q, qz(33)); takeRotation(c, qz(44)); assert.deepEqual(c.q, qz(44));
   const c2 = addChange(o, c, qz(0)); assert.deepEqual(c2.q, qz(44), 'an inertial change keeps its own attitude'); assert.notEqual(c2.q, c.q, 'a copy');
@@ -470,4 +471,47 @@ test('duplicate: never on another change, never inside a slew under way, whole s
 test('names: cut to 40 whole characters and trimmed after cutting', () => {
   assert.equal(cleanName('a'.repeat(39) + ' b'), 'a'.repeat(39)); assert.equal(Array.from(cleanName('a'.repeat(39) + '🛰️x')).length, 40);
   assert.ok(!/[\\uD800-\\uDBFF]$/.test(cleanName('a'.repeat(39) + '🛰')), 'no half emoji'); assert.equal(cleanName('  Downlink  '), 'Downlink');
+});
+
+test('automatic slew time: the turn at the start ÷ the max slew rate (90° at 1.5°/s → 60 s), rounded up; in time order', () => {
+  const s = inertialPair(5); s.sc.maxRate = 1.5; const c = s.orbit.schedule[0]; c.autoSlew = true;
+  assert.equal(autoSlews(s), true); assert.equal(c.slew, 60); assert.equal(autoSlews(s), false, 'nothing changes the second time');
+  s.sc.maxRate = 0.7; autoSlews(s); assert.equal(c.slew, Math.ceil(90 / 0.7), 'rounded up to whole seconds');
+  close(Math.hypot(...bodyRate(s, 650)) * R2D, Math.sin(90 / c.slew * D2R) * R2D, 1e-6, 'and it flies at about the max rate');
+  // a second automatic change starts from where the first one ends
+  s.sc.maxRate = 1.5; s.orbit.schedule.push({ id: 'b', start: at(s, 2000), slew: 0, autoSlew: true, mode: 'inertial', q: qz(150) }); autoSlews(s);
+  assert.equal(s.orbit.schedule[0].slew, 60); assert.equal(s.orbit.schedule[1].slew, 40, '60° more at 1.5°/s');
+  assert.equal(tooFast(s).b, undefined, 'automatic ones are never too fast');
+});
+
+test('automatic slew time into a moving target uses the turn at its start (as changeTurn)', () => {
+  const s = fresh(); applyPreset(s.orbit, 'sso1030'); Object.assign(s.orbit, { mode: 'offsets', roll: 0, pitch: 0, yaw: 0 }); s.sc.maxRate = 2;
+  const A = attitudeAt(s, 900), ll = ENV.ecef2ll(ENV.eci2ecef(A.st.r, A.date));
+  s.orbit.schedule = [{ id: 't', start: at(s, 800), slew: 0, autoSlew: true, mode: 'target', tgtLat: ll.lat * R2D + 3, tgtLon: ll.lon * R2D, tgtAlt: 0, tgtSlew: 0 }];
+  autoSlews(s); const tr = changeTurn(s, 't'); assert.ok(tr.angle > 5, `set up: a real turn (${tr.angle.toFixed(1)}°)`); assert.equal(s.orbit.schedule[0].slew, Math.ceil(tr.angle / 2));
+});
+
+test('too fast: a fixed slew that needs more than the max rate is listed with its mean rate', () => {
+  const s = inertialPair(30); s.sc.maxRate = 1.5; close(tooFast(s).a, 3, 1e-6, '90° in 30 s = 3°/s');
+  s.orbit.schedule[0].slew = 60; assert.deepEqual(tooFast(s), {}, 'exactly the max rate is fine');
+  s.orbit.schedule[0].slew = 0; assert.equal(tooFast(s).a, Infinity, 'a jump');
+});
+
+test('max slew rate: a spacecraft setting, 1°/s by default and for older spacecraft, kept within limits', () => {
+  assert.equal(defaultState().sc.maxRate, 1);
+  const old = fresh(); delete old.sc.maxRate; migrate(old); assert.equal(old.sc.maxRate, 1);
+  for (const [v, want] of [[2.5, 2.5], [0.05, 0.05], [30, 30], [0.049, 1], [30.01, 1], [0, 1], [-1, 1], [100, 1], ['x', 1]]) assert.equal(sanitizeSpacecraft({ sc: { ...structuredClone(defaultState().sc), maxRate: v } }).maxRate, want, String(v));
+  const s = fresh(); s.orbit.schedule = [{ id: 'a', start: at(s, 5), slew: 7, autoSlew: true, mode: 'sun' }];
+  assert.equal(cleanSchedule(s.orbit.schedule, s.orbit)[0].autoSlew, true, 'kept on import'); assert.equal('autoSlew' in cleanSchedule([{ start: at(s, 5), mode: 'sun', autoSlew: 'yes' }], s.orbit)[0], false);
+});
+
+test('automatic slew times: an overlapping chain works out in one pass; a half turn at the slowest rate still fits in 3600 s', () => {
+  const s = inertialPair(0); s.sc.maxRate = 1.5; const a = s.orbit.schedule[0]; a.autoSlew = true;
+  s.orbit.schedule.push({ id: 'b', start: at(s, 630), slew: 0, autoSlew: true, mode: 'inertial', q: qz(180) });
+  assert.equal(autoSlews(s), true); assert.deepEqual(s.orbit.schedule.map(c => c.slew), [60, 90], 'b turns 135° from a, halfway through its slew');
+  close(changeTurn(s, 'b').angle, 135, 1e-6); assert.equal(autoSlews(s), false);
+  const h = fresh(); Object.assign(h.orbit, { mode: 'inertial' }); h.rot.q = qz(0); h.sc.maxRate = 0.05;
+  h.orbit.schedule = [{ id: 'x', start: at(h, 600), slew: 0, autoSlew: true, mode: 'inertial', q: qz(180) }]; autoSlews(h);
+  assert.equal(h.orbit.schedule[0].slew, 3600, '180° at 0.05°/s'); assert.ok(180 / 3600 <= 0.05, 'within the rate');
+  const z = inertialPair(0); z.orbit.schedule[0] = { ...z.orbit.schedule[0], autoSlew: true, q: qz(0) }; autoSlews(z); assert.ok(Object.is(z.orbit.schedule[0].slew, 0), 'no turn: 0, not -0');
 });
