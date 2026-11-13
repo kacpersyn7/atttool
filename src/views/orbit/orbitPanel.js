@@ -10,6 +10,7 @@ import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, DATE_MAX, DATE_MIN, PRESETS, SC
 import { copyText, showModal, closeModal, toast } from '../../ui/overlay.js';
 import { downloadText, fileName, onFileDrop, openFileButton } from '../../ui/files.js';
 import { TARGET_SLEW, TARGET_SLEW_MAX, changeTurn, payloadComp, scheduleOrder, tooFast } from '../../sim/guidance.js';
+import { ELEV_MAX, EVENT_KINDS, EVENT_WINDOW, OFFSET_MAX, afterCandidates, eventLabel } from '../../sim/events.js';
 import { timelineKey } from '../../sim/timeline.js';
 import { NAME_MAX, addChange, adjacentChange, cleanName, deleteChange, duplicateChange, nudgeChange, renameChange, runProgress, scheduleHistory, scenarioSpan, scheduleNotes, setChangeMode, setChangeStart, startRun, takeRotation } from '../../sim/schedule.js';
 import { sensorEval } from '../../sim/sensors.js';
@@ -178,7 +179,7 @@ let selChange = null; // id of the change the guidance controls edit; null: the 
 const history = scheduleHistory(); let historyOf = null; // undo for schedule edits, and the scenario it belongs to
 const MODE_SHORT = { offsets: 'Nominal', target: 'Target', sun: 'Sun', inertial: 'Inertial' };
 /** Warning text for scheduleNotes entries. */
-const noteText = ns => (ns || []).map(n => n.fast ? `Needs ${n.fast.toFixed(2)}°/s on average, more than the spacecraft's max slew rate (${S.sc.maxRate}°/s)` : n === 'tie' ? 'Same start as another change: this one flies, as the later in the list' : n === 'overridden' ? 'Never flies: a later change in the list starts at the same moment' : 'Starts during the slew before it, so it blends from that slew').join('. ');
+const noteText = ns => (ns || []).map(n => n.fast ? `Needs ${n.fast.toFixed(2)}°/s on average, more than the spacecraft's max slew rate (${S.sc.maxRate}°/s)` : n === 'tie' ? 'Same start as another change: this one flies, as the later in the list' : n === 'overridden' ? 'Never flies: a later change in the list starts at the same moment' : n === 'miss' ? 'Its event was not found (or it names a change that is gone): it starts at its search time' : 'Starts during the slew before it, so it blends from that slew').join('. ');
 /** scheduleNotes plus changes too fast for the spacecraft (tooFast), worked out again only when something they depend on changed. */
 let ratesKey = '', rates = {};
 const withRates = notes => {
@@ -193,11 +194,7 @@ function scheduleCard(ctx, o) {
   if (historyOf !== S.scenarios.active) { history.clear(); historyOf = S.scenarios.active; } // undo stays within a scenario
   const sched = o.schedule || [], sel = sched.find(c => c.id === selChange) || null;
   const edit = (f, rebuild = true) => { const r = history.record(o, f); if (r !== false && r !== null) save(); if (rebuild) ctx.renderRail(); else syncAll(); return r; }; // a schedule edit that can be undone
-  const pick = id => {
-    selChange = id || null;
-    const c = sched.find(c => c.id === id); if (c) setCurrentDate(o, c.start); // jump to its start
-    save(); ctx.renderRail();
-  };
+  const pick = id => pickChange(id, ctx);
   // the live list may be redrawn between press and release (a start applied on blur changes it), and then the
   // browser fires no click: a pointer picks the row the press started on when it is released over the list;
   // click is left for the keyboard (Enter / Space on a row)
@@ -214,7 +211,7 @@ function scheduleCard(ctx, o) {
       const row = (id, start, mode, slew, warn = '', info = '', name = '') => `<button type="button" class="srow${(selChange || '') === id ? ' on' : ''}" data-id="${esc(id)}" title="${warn ? esc(warn) + '. ' : ''}${info ? esc(info) + '. ' : ''}${id ? 'Edit this change and go to its start' : 'Edit the initial settings'}"><span class="dot${now === id ? ' now' : ''}"></span><span class="st">${start}${warn ? ' <span class="warn">⚠</span>' : ''}</span><span>${MODE_SHORT[mode] || ''}</span><span class="sl">${slew}</span>${name ? `<span class="nm">${esc(name)}</span>` : ''}</button>`;
       const first = scheduleOrder(sched)[0], until = first ? showUTC(sched[first.i].start) : '';
       const today = until && cur && cur.date.toISOString().slice(0, 10) === until.slice(0, 10); // the date only when it isn't the current one
-      return row('', until ? 'Initial · until ' + (today ? until.slice(11) : until.slice(0, 16)) : 'Initial', o.mode, '', '', until ? 'Flies before the first change, until ' + until : '') + scheduleOrder(sched).map(({ i }) => { const c = sched[i]; return row(c.id, esc(showUTC(c.start)), c.mode, (c.autoSlew ? 'auto ' : '') + (c.slew ? c.slew + ' s' : 'jump'), noteText(notes[c.id]), '', c.name); }).join('');
+      return row('', until ? 'Initial · until ' + (today ? until.slice(11) : until.slice(0, 16)) : 'Initial', o.mode, '', '', until ? 'Flies before the first change, until ' + until : '') + scheduleOrder(sched).map(({ i }) => { const c = sched[i]; return row(c.id, esc(showUTC(c.start)), c.mode, (c.autoSlew ? 'auto ' : '') + (c.slew ? c.slew + ' s' : 'jump'), noteText(notes[c.id]), '', [c.name, c.on ? '⚡ ' + eventLabel(c, changeName) : ''].filter(Boolean).join(' · ')); }).join('');
     }, 'sched'));
   const kids = [list,
     h('div', { class: 'status' }, liveText(() => { const cur = ctx.cur(); if (!cur) return ''; const s = cur.seg, m = MODE_SHORT[cur.g.mode], nm = s && cur.g.name ? esc(cur.g.name) + ' (' + m + ')' : m;
@@ -236,10 +233,12 @@ function scheduleCard(ctx, o) {
     onSync(() => { if (document.activeElement !== slew) slew.value = sel.slew; });
     // a typed start applies on Enter or on leaving the field, not while the date is half typed (change fires per part)
     const pending = h('span', { class: 'lbl', hidden: true }, 'Enter to apply · Esc to undo');
-    const shown = () => { start.value = sel.start; pending.hidden = true; };
-    const commit = () => { if (pending.hidden) return; pending.hidden = true; if (edit(() => setChangeStart(o, sel.id, start.value), false) === false) { refused(); start.value = sel.start; } };
-    start.addEventListener('input', () => { pending.hidden = start.value === sel.start; });
-    start.addEventListener('change', () => { pending.hidden = start.value === sel.start; });
+    // an event-based change edits where it looks from (#58); the others, and 'after', their start
+    const fieldValue = () => sel.on && sel.on.kind !== 'after' ? sel.on.from : sel.start;
+    const shown = () => { start.value = fieldValue(); pending.hidden = true; };
+    const commit = () => { if (pending.hidden) return; pending.hidden = true; if (edit(() => setChangeStart(o, sel.id, start.value), false) === false) { refused(); start.value = fieldValue(); } };
+    start.addEventListener('input', () => { pending.hidden = start.value === fieldValue(); });
+    start.addEventListener('change', () => { pending.hidden = start.value === fieldValue(); });
     start.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); commit(); } else if (e.key === 'Escape') { e.preventDefault(); shown(); } });
     start.addEventListener('blur', commit);
     onSync(() => { if (document.activeElement !== start) shown(); });
@@ -250,8 +249,8 @@ function scheduleCard(ctx, o) {
       h('button', { class: 'btn', title: 'Start one minute earlier', onclick: () => { if (edit(() => nudgeChange(o, sel.id, -60), false) === false) refused(); } }, '−1 min'),
       h('button', { class: 'btn', title: 'Start one minute later', onclick: () => { if (edit(() => nudgeChange(o, sel.id, 60), false) === false) refused(); } }, '+1 min'),
       h('button', { class: 'btn', title: 'A copy of this change, starting at the current time', onclick: () => { const c = history.record(o, () => duplicateChange(o, sel.id)); if (!c) { toast(`The schedule holds up to ${MAX_CHANGES} changes, within ${DATE_MIN.slice(0, 4)} to ${DATE_MAX.slice(0, 4)}`); return; } selChange = c.id; save(); ctx.renderRail(); } }, 'Duplicate')));
-    kids.push(h('div', { class: 'row two' }, h('label', { for: 'chStart' }, 'Starts (UTC)'), start),
-      h('div', { style: 'display:flex;justify-content:space-between;gap:8px' }, pending, h('span', { class: 'lbl', style: 'margin-left:auto' }, liveText(() => { const d = parseEpoch(pending.hidden ? sel.start : start.value); return d ? tPlus((d.getTime() - epochDate(o).getTime()) / 1000) + ' from the epoch' : ''; }))),
+    kids.push(eventRow(o, sel, edit), h('div', { class: 'row two' }, h('label', { for: 'chStart', title: sel.on && sel.on.kind !== 'after' ? 'The event is looked for from this time on' : '' }, sel.on ? (sel.on.kind === 'after' ? 'Starts (UTC)' : 'Look from (UTC)') : 'Starts (UTC)'), start),
+      h('div', { style: 'display:flex;justify-content:space-between;gap:8px' }, pending, h('span', { class: 'lbl', style: 'margin-left:auto' }, liveText(() => { const d = parseEpoch(pending.hidden ? fieldValue() : start.value); return d ? tPlus((d.getTime() - epochDate(o).getTime()) / 1000) + ' from the epoch' : ''; }))),
       h('div', { class: 'row two' }, h('label', { for: 'chSlew', title: 'From the attitude before it, 0 to 3600 s (0: a jump)' }, 'Slew (s)'),
         h('div', { style: 'display:flex;gap:8px;align-items:center' }, slew, h('label', { class: 'chk', title: 'The turn at its start ÷ the max slew rate of the spacecraft', style: 'flex:none' }, auto, 'auto'))),
       h('div', { class: 'status' }, liveText(() => {
@@ -261,16 +260,72 @@ function scheduleCard(ctx, o) {
         return `<span class="chip dim" title="At its start, from the attitude before it. Kinematics only: real wheels may not turn this fast.">${turn}</span>${n ? ` <span class="chip warn">${esc(n)}</span>` : ''}`;
       })));
   }
-  kids.push(tip('Each change slews from the attitude before it to its own over the slew time; both are worked out at every moment, so scrubbing works. Kinematics only: no wheels or torque limits. Times are UTC, so they stay put when the epoch moves. Click a row to edit it in <b>Attitude guidance</b>; a typed start applies on Enter.'));
+  kids.push(tip('Each change slews from the attitude before it to its own over the slew time; both are worked out at every moment, so scrubbing works. Kinematics only: no wheels or torque limits. Times are UTC, so they stay put when the epoch moves. Click a row to edit it in <b>Attitude guidance</b>; a typed start applies on Enter. On the timeline Mode band: click a block to pick its change, drag its left edge to move it, double-click to add a change there.'));
   return card('Mode schedule', sched.length ? sched.length + (sched.length === 1 ? ' change' : ' changes') : 'none', ...kids);
+}
+
+/**
+ * Select change `id` ('' or null: the initial settings) for editing; with seek (the rows) also go to its start. The
+ * timeline band picks without seeking: the time under the pointer stays, and the band does not page away.
+ */
+export function pickChange(id, ctx, seek = true) {
+  selChange = id || null;
+  const c = (S.orbit.schedule || []).find(c => c.id === id); if (c && seek) setCurrentDate(S.orbit, c.start);
+  save(); ctx.renderRail();
+}
+
+/** A schedule edit made outside the card (the timeline band): undoable like the card's own. @returns what edit returned. */
+export function editSchedule(edit, ctx) {
+  if (historyOf !== S.scenarios.active) { history.clear(); historyOf = S.scenarios.active; }
+  const r = history.record(S.orbit, edit); if (r !== false && r !== null) { save(); ctx.renderRail(); }
+  return r;
 }
 
 /** Undo for schedule edits: always there, enabled when there is something to undo. Parts deleted since are checked again. */
 function undoButton(o, ctx) {
-  const b = h('button', { class: 'btn', title: 'Undo the last schedule edit: adding, deleting, moving, naming, or the slew or mode of a change. Other settings of a change stay as they are now.',
+  const b = h('button', { class: 'btn', title: 'Undo the last schedule edit: adding, deleting, moving, naming, or the slew, mode or event start of a change. Other settings of a change stay as they are now.',
     onclick: () => { if (!history.undo(o)) return; validateAxes(S); if (!(o.schedule || []).some(c => c.id === selChange)) selChange = null; save(); ctx.renderRail(); } }, 'Undo');
   onSync(() => { b.disabled = !history.size; });
   return b;
+}
+
+/** What a change is called in an event label: its name, else its start. */
+const changeName = id => { const c = (S.orbit.schedule || []).find(c => c.id === id); return c ? (c.name || 'the change at ' + showUTC(c.start).slice(11)) : 'a change that is gone'; };
+
+/** The Starts choice of a change (#58): a fixed time, or an event with its settings, and when it works out. */
+function eventRow(o, sel, edit) {
+  const kind = h('select', { id: 'chOn', 'aria-label': 'Starts' }, h('option', { value: '' }, 'At a time'), ...EVENT_KINDS.map(([k, n]) => h('option', { value: k }, n)));
+  kind.value = sel.on ? sel.on.kind : '';
+  kind.addEventListener('change', () => edit(() => {
+    if (!kind.value) { delete sel.on; return true; }
+    const ok = new Set(afterCandidates(o.schedule, sel.id).map(c => c.id)), others = scheduleOrder(o.schedule).map(x => o.schedule[x.i]).filter(c => ok.has(c.id));
+    const before = others.filter(c => parseEpoch(c.start) <= parseEpoch(sel.start)).pop() || others[0]; // the change before it, if it may follow that one
+    if (kind.value === 'after' && !before) { toast('There is no other change to start after'); kind.value = sel.on ? sel.on.kind : ''; return false; }
+    sel.on = { kind: kind.value, from: sel.start, offset: 0 };
+    if (kind.value === 'rise' || kind.value === 'set') sel.on.elev = 10;
+    if (kind.value === 'after') { sel.on.ref = before.id; sel.on.offset = 600; }
+    return true;
+  }));
+  const kids = [h('div', { class: 'row two' }, h('label', { for: 'chOn' }, 'Starts'), kind)];
+  if (sel.on) {
+    const num = (id, label, key, lo, hi, step) => numCell(id, label, () => sel.on[key], x => { const v = Math.max(lo, Math.min(hi, x)); if (Number.isFinite(x) && v !== sel.on[key]) edit(() => { sel.on = { ...sel.on, [key]: v }; }, false); }, step, 0);
+    const cells = [num('chOff', sel.on.kind === 'after' ? 'Seconds after' : 'Offset s (− before)', 'offset', -OFFSET_MAX, OFFSET_MAX, 10)];
+    if (sel.on.kind === 'rise' || sel.on.kind === 'set') cells.unshift(num('chElev', 'Elevation °', 'elev', 0, ELEV_MAX, 1));
+    if (sel.on.kind === 'after') {
+      const okRef = new Set(afterCandidates(o.schedule, sel.id).map(c => c.id));
+      const ref = h('select', { id: 'chRef', 'aria-label': 'After change' }, ...scheduleOrder(o.schedule).map(x => o.schedule[x.i]).filter(c => okRef.has(c.id) || c.id === sel.on.ref).map(c => h('option', { value: c.id }, (c.name ? c.name + ' · ' : '') + showUTC(c.start))));
+      ref.value = sel.on.ref; ref.addEventListener('change', () => edit(() => { sel.on = { ...sel.on, ref: ref.value }; }, false));
+      kids.push(h('div', { class: 'row two' }, h('label', { for: 'chRef' }, 'After'), ref));
+    }
+    kids.push(h('div', { class: 'grid2' }, ...cells));
+    kids.push(h('div', { class: 'status' }, liveText(() => {
+      const on = sel.on; if (!on) return '';
+      const tgt = on.kind === 'rise' || on.kind === 'set' ? ` · target ${fmt(sel.tgtLat, 2)}°, ${fmt(sel.tgtLon, 2)}° (this change's)` : '';
+      if (on.miss) return `<span class="chip warn">${on.kind === 'after' ? 'The change it follows is gone, or follows it back' : 'The event (' + esc(eventLabel(sel).toLowerCase()) + ') does not happen within ' + Math.round(EVENT_WINDOW[on.kind] / 86400) + ' days'}: it starts at ${esc(showUTC(sel.start))}</span>`;
+      return `<span class="chip dim">⚡ ${esc(eventLabel(sel, changeName))}: ${esc(showUTC(sel.start))}${esc(tgt)}</span>`;
+    })));
+  }
+  return h('div', null, ...kids);
 }
 
 /* ---------------- Time slider: a window that follows the current time ---------------- */
