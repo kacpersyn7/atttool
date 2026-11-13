@@ -7,6 +7,7 @@ import { SEGMENT_KEYS, flownBefore, scheduleOrder } from './guidance.js';
 import * as ENV from '../env/index.js';
 import { clampTime, currentDate, epochDate, formatEpoch, orbitElements, parseEpoch, validDate } from './scenario.js';
 import { MAX_CHANGES, NAME_MAX, cleanChangeName } from './scenarioLibrary.js';
+import { OFFSET_MAX } from './events.js';
 export { NAME_MAX };
 /** A change name as kept (scenarioLibrary.cleanChangeName). */
 export const cleanName = cleanChangeName;
@@ -42,6 +43,11 @@ export function deleteChange(o, id) {
 /** Move change `id` to start at UTC `str` (the change object stays, the array is replaced). @returns false, changing nothing, if it isn't a date within the limits. */
 export function setChangeStart(o, id, str) {
   const c = (o.schedule || []).find(c => c.id === id); if (!c || !validDate(str)) return false;
+  // an event-based change (#58) keeps its event: a new start is where to look from, or for 'after' a new offset
+  if (c.on && c.on.kind === 'after') {
+    const ref = o.schedule.find(x => x.id === c.on.ref), d = ref && parseEpoch(ref.start);
+    if (d) c.on = { ...c.on, offset: Math.round((parseEpoch(str).getTime() - d.getTime()) / 1000) };
+  } else if (c.on) { c.on = { ...c.on, from: str }; delete c.on.miss; }
   c.start = str; o.schedule = [...o.schedule]; return true;
 }
 
@@ -61,6 +67,7 @@ export function scheduleNotes(o) {
     const p = order[k], pc = sched[p.i];
     if (x.ms < p.ms + Math.max(0, +pc.slew || 0) * 1000) add(c.id, 'overlap');
   });
+  for (const c of sched) if (c && c.on && c.on.miss) add(c.id, 'miss'); // its event was not found (#58)
   return notes;
 }
 
@@ -120,9 +127,16 @@ export function duplicateChange(o, id) {
   o.schedule = [...sched, copy]; return copy;
 }
 
-/** Move change `id` by dt seconds. @returns false if it would leave the date limits. */
+/**
+ * Move change `id` by dt seconds. An event-based change (#58) keeps its event and moves its offset instead (so
+ * ±1 min fine-tunes it rather than jumping to the next occurrence). @returns false if it would leave the date limits.
+ */
 export function nudgeChange(o, id, dt) {
   const c = (o.schedule || []).find(c => c.id === id), d = c && parseEpoch(c.start); if (!d) return false;
+  if (c.on) {
+    const off = Math.max(-OFFSET_MAX, Math.min(OFFSET_MAX, (+c.on.offset || 0) + dt)); if (!validDate(formatEpoch(new Date(d.getTime() + dt * 1000)))) return false;
+    c.on = { ...c.on, offset: off }; c.start = formatEpoch(new Date(d.getTime() + dt * 1000)); o.schedule = [...o.schedule]; return true;
+  }
   return setChangeStart(o, id, formatEpoch(new Date(d.getTime() + dt * 1000)));
 }
 
@@ -140,7 +154,7 @@ export function adjacentChange(o, dir) {
 }
 
 /** What undo restores of a change; its other settings (roll, axes, target, its attitude q, …) keep their current values. */
-const TRACKED = ['start', 'slew', 'autoSlew', 'name', 'mode'];
+const TRACKED = ['start', 'slew', 'autoSlew', 'name', 'mode', 'on'];
 
 /**
  * Undo for schedule edits: record(o, edit) runs edit() and, if it changed something (it returns neither false
@@ -161,7 +175,7 @@ export function scheduleHistory(limit = 50) {
         const cur = now.get(c.id); if (!cur) return c;
         const keep = Object.fromEntries(Object.entries(cur).filter(([k]) => !TRACKED.includes(k)));
         const back = { ...keep, ...Object.fromEntries(TRACKED.filter(k => k in c).map(k => [k, c[k]])) };
-        if (!('name' in c)) delete back.name; if (!('autoSlew' in c)) delete back.autoSlew;
+        if (!('name' in c)) delete back.name; if (!('autoSlew' in c)) delete back.autoSlew; if (!('on' in c)) delete back.on;
         return back;
       });
       return true;
