@@ -17,15 +17,17 @@ import { COL, V3, Arrow, makeTriad, makeLabel, setObjFromCBR, fixLabels, dispose
 import { earthTexture, earthGeometry, atmosphere, starfield, glowSprite } from '../../gfx/earth.js';
 import { buildSC } from '../../gfx/spacecraftMesh.js';
 import { compAxis } from '../../spacecraft/component.js';
-import { advanceTime, epochDate, orbitElements, applyPreset, targetECEF } from '../../sim/scenario.js';
-import { runStep } from '../../sim/schedule.js';
+import { advanceTime, epochDate, orbitElements, applyPreset, targetECEF, DATE_MAX, DATE_MIN } from '../../sim/scenario.js';
+import { addChange, runStep, setChangeStart } from '../../sim/schedule.js';
+import { resolveEventStarts } from '../../sim/events.js';
 import { attitudeAt, autoSlews, bodyRate, payloadComp } from '../../sim/guidance.js';
 import { timelineKey } from '../../sim/timeline.js';
 import { createBodyInset } from './bodyInset.js';
 import { createPayloadInset } from './payloadInset.js';
 import { createTimelineView } from './timelineView.js';
 import { createPlotView } from './plotView.js';
-import { orbitPanel } from './orbitPanel.js';
+import { editSchedule, orbitPanel, pickChange } from './orbitPanel.js';
+import { toast } from '../../ui/overlay.js';
 
 const U = 1 / 1000; // scene unit = 1000 km
 const D2R = AM.D2R;
@@ -79,7 +81,14 @@ export function createOrbitView({ renderRail }) {
   const insetEl = $('#inset');
   const inset = createBodyInset(insetEl, earthMesh.material.map);
   const plEl = $('#plInset'), plInset = createPayloadInset(plEl);
-  const timeline = createTimelineView($('#tlc'));
+  // the Mode band edits the schedule through the panel's selection and undo
+  const timeline = createTimelineView($('#tlc'), {
+    pick: id => pickChange(id, panelCtx, false),
+    move: (id, start) => { const c = (S.orbit.schedule || []).find(c => c.id === id); if (!c || c.start === start) return; // the same second: nothing to undo
+      if (editSchedule(() => setChangeStart(S.orbit, id, start), panelCtx) === false) toast(`A start must be from ${DATE_MIN.slice(0, 4)} to ${DATE_MAX.slice(0, 4)}`); },
+    add: t => { const g = attitudeAt(S, t).g, c = editSchedule(() => addChange(S.orbit, g, S.rot.q, t), panelCtx);
+      if (c) pickChange(c.id, panelCtx, false); else toast(`The schedule holds up to ${MAX_CHANGES} changes, from ${DATE_MIN.slice(0, 4)} to ${DATE_MAX.slice(0, 4)}`); },
+  });
   const plots = createPlotView($('#timeline'));
 
   /* ---------- geometry refresh (cached) ---------- */
@@ -117,7 +126,8 @@ export function createOrbitView({ renderRail }) {
     if (o.playing) { const t0 = o.t; advanceTime(o, dt); if (runStep(o, t0) || !o.playing) syncAll(); } // a scenario run stops or loops at its end
     const E = orbitElements(o);
     // automatic slew times follow the turns: work them out again when anything they depend on changed
-    const ak = JSON.stringify([timelineKey(S, scVersion(), 0), S.sc.maxRate]); if (ak !== autoKey) { if (autoSlews(S, E)) { save(); syncAll(); } autoKey = JSON.stringify([timelineKey(S, scVersion(), 0), S.sc.maxRate]); }
+    // event starts first: automatic slews turn from what flies at those starts
+    const ak = JSON.stringify([timelineKey(S, scVersion(), 0), S.sc.maxRate]); if (ak !== autoKey) { if (resolveEventStarts(S, E) | autoSlews(S, E)) { save(); syncAll(); } autoKey = JSON.stringify([timelineKey(S, scVersion(), 0), S.sc.maxRate]); }
     const A = attitudeAt(S, o.t, E); cur = A;
     const gm = ENV.gmst(A.date); earth.rotation.z = gm;
     sunLight.position.set(...AM.v.scale(A.sun, 100)); sunGlow.position.set(...AM.v.scale(A.sun, 700));

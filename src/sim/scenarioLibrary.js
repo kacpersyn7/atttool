@@ -19,6 +19,7 @@ import { activeItem as activeSC, selectSpacecraft, uniqueName, validateAxes } fr
 import * as AM from '../core/attitude.js';
 import { DATE_MAX, DATE_MIN, PRESETS, T_MAX, applyPreset, parseEpoch, validDate } from './scenario.js';
 import { SEGMENT_KEYS } from './guidance.js';
+import { cleanOn } from './events.js';
 
 /** The fields of state.orbit that make up a scenario. refFrame only picks the frame shown, but it goes with the mode's offsets. */
 export const SCENARIO_KEYS = ['preset', 'def', 'r', 'v', 'tle', 'epoch', 'hp', 'ha', 'i', 'raan', 'argp', 'nu0', 'j2', 't',
@@ -180,7 +181,7 @@ const quat = q => q && typeof q === 'object' && [q.w, q.x, q.y, q.z].every(isNum
  */
 export function cleanSchedule(x, base, q0 = null, report = null) {
   if (!Array.isArray(x)) return [];
-  const ids = new Set(), out = [], dropped = { start: 0, dates: 0, many: 0, mode: 0, other: 0 }, reset = new Set();
+  const ids = new Set(), out = [], pairs = [], dropped = { start: 0, dates: 0, many: 0, mode: 0, other: 0 }, reset = new Set();
   if (x.length > MAX_CHANGES) dropped.many = x.length - MAX_CHANGES;
   for (const c of x.slice(0, MAX_CHANGES)) {
     if (!c || typeof c !== 'object') { dropped.other++; continue; }
@@ -194,9 +195,13 @@ export function cleanSchedule(x, base, q0 = null, report = null) {
     if (c.autoSlew === true) seg.autoSlew = true; // slew worked out from the turn (#57)
     for (const k of SEGMENT_KEYS) { seg[k] = VALID[k](c[k]) ? c[k] : base[k]; if (Object.hasOwn(c, k) && !VALID[k](c[k])) reset.add(FIELD_NAME[k] || k); }
     if (seg.mode === 'inertial') { if (!quat(c.q)) reset.add('inertial attitude'); const q = quat(c.q) ? c.q : q0 || AM.q.id(); seg.q = AM.q.unit({ w: q.w, x: q.x, y: q.y, z: q.z }); }
-    ids.add(seg.id); out.push(seg);
+    ids.add(seg.id); out.push(seg); pairs.push([seg, c]);
   }
+  // event starts (#58): after the ids are settled, since 'after' names another change
+  const kept = new Set(out.map(c => c.id)); let lostEvents = 0;
+  for (const [seg, c] of pairs) { if (!c.on) continue; const on = cleanOn(c.on, kept); if (on) seg.on = on; else lostEvents++; } // paired as kept, whatever its id became
   if (report) {
+    if (lostEvents) report.push(`${lostEvents} schedule change${lostEvents === 1 ? ' keeps' : 's keep'} a fixed start: ${lostEvents === 1 ? 'its' : 'their'} event was not valid.`);
     const n = (k, what) => dropped[k] ? report.push(`${dropped[k]} schedule change${dropped[k] === 1 ? '' : 's'} dropped: ${what}.`) : 0;
     n('start', 'no readable start time'); n('dates', `a start outside ${DATE_MIN.slice(0, 4)} to ${DATE_MAX.slice(0, 4)}`); n('many', `more than ${MAX_CHANGES} changes`); n('mode', 'an unknown guidance mode'); n('other', 'not a change at all');
     if (reset.size) report.push(`In schedule changes, reset to the scenario's own value: ${[...reset].join(', ')}.`);
