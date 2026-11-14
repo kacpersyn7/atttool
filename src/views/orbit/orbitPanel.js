@@ -9,7 +9,7 @@ import { MAX_CHANGES, activeScenario, addScenario, deleteScenario, duplicateScen
 import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, DATE_MAX, DATE_MIN, PRESETS, SCRUB_SPANS, clampTime, currentDate, epochDate, farFromEpoch, formatEpoch, ltanOf, orbitElements, ssrgtClosure, ssrgtSolution, scrubCancelResume, scrubEnd, scrubHold, scrubKey, scrubPress, scrubSpan, scrubWindowAt, setCurrentDate, setEpoch, switchDefinition, restartFromState, definitionError, tleOf, parseEpoch, validDate } from '../../sim/scenario.js';
 import { copyText, showModal, closeModal, toast } from '../../ui/overlay.js';
 import { downloadText, fileName, onFileDrop, openFileButton } from '../../ui/files.js';
-import { forAdding, scheduleFromCSV, scheduleToCSV } from '../../sim/scheduleCsv.js';
+import { exampleScheduleCSV, forAdding, scheduleFromCSV, scheduleToCSV } from '../../sim/scheduleCsv.js';
 import { TARGET_SLEW, TARGET_SLEW_MAX, changeTurn, payloadComp, scheduleOrder, tooFast } from '../../sim/guidance.js';
 import { ELEV_MAX, EVENT_KINDS, EVENT_WINDOW, OFFSET_MAX, afterCandidates, eventLabel } from '../../sim/events.js';
 import { timelineKey } from '../../sim/timeline.js';
@@ -274,7 +274,7 @@ const localeComma = (() => { try { return new Intl.NumberFormat(navigator.langua
 /** Import the schedule from CSV (#61): a preview of what is read and why rows were left out, then add or replace. */
 function csvDialog(o, ctx, text = '') {
   const ta = h('textarea', { style: 'width:100%;min-height:160px;font-family:var(--f-mono);font-size:12px', placeholder: 'utc,mode,name,slew_s,target_lat_deg,target_lon_deg,…  (one row per change; open or drop a .csv here)' });
-  const info = h('div'), act = h('div', { class: 'btns', style: 'margin-top:8px' }); let res = null, tm = 0; // (readCsv: not dom.check)
+  const info = h('div'), act = h('div', { class: 'btns', style: 'margin-top:8px' }); let res = null, tm = 0;
   const done = (msg, f) => { f(); closeModal(); validateAxes(S); ctx.renderRail(); toast(msg); };
   const readCsv = () => {
     info.replaceChildren(); act.replaceChildren(); res = null; if (!ta.value.trim()) return;
@@ -289,8 +289,9 @@ function csvDialog(o, ctx, text = '') {
   };
   ta.addEventListener('input', () => { clearTimeout(tm); tm = setTimeout(() => { if (ta.isConnected) readCsv(); }, 250); });
   const load = t => { ta.value = t; readCsv(); };
-  const box = h('div', null, h('h2', null, 'Import the schedule (CSV)'), h('div', { class: 'btns', style: 'margin-bottom:6px' }, openFileButton('Open file…', load, ['csv', 'tsv', 'txt'])), ta, info, act,
-    tip('A header row, then one row per change. Columns: <code>utc</code> (required), <code>mode</code> (nominal, target, sun, inertial; empty: the scenario mode), <code>name</code>, <code>slew_s</code> (seconds or auto; empty: 60), the mode settings and an event start (without <code>event_from_utc</code> it looks from the start); <b>Download CSV</b> writes every column. Comma, semicolon or tab separated; decimal commas unless comma-separated. Parts by name (<code>default</code>: the first payload camera). Other empty cells take the scenario values. Adding keeps references to changes in the file only. Undo takes an import back.'));
+  const box = h('div', null, h('h2', null, 'Import the schedule (CSV)'), h('div', { class: 'btns', style: 'margin-bottom:6px' }, openFileButton('Open file…', load, ['csv', 'tsv', 'txt']),
+      h('button', { class: 'btn', title: 'A file with one change in each mode, to fill in', onclick: () => downloadText(fileName(activeScenario(S).name, 'schedule-example', 'csv'), exampleScheduleCSV(o, S.sc.comps, { comma: (o.plot && o.plot.comma) ?? localeComma }), 'text/csv') }, 'Example file')), ta, info, act,
+    tip('A header row, then one row per change; <b>Example file</b> has one change in each mode. Columns: <code>utc</code> (required), <code>mode</code> (nominal, target, sun, inertial; empty: the scenario mode), <code>name</code>, <code>slew_s</code> (seconds or auto; empty: 60), an event start (without <code>event_from_utc</code> it looks from the start), then one group per mode: fill the columns of the row\'s mode (target: place, <code>pointing_part</code>, <code>target_slew_s</code>; sun: axes; nominal: roll, pitch, yaw; inertial: <code>q_w</code> … <code>q_z</code>). Comma, semicolon or tab separated; decimal commas unless comma-separated. Parts by name (<code>default</code>: the first payload camera). Empty cells take the scenario values. Adding keeps references to changes in the file only. Undo takes an import back.'));
   onFileDrop(box, load, ['csv', 'tsv', 'txt']);
   showModal(box); if (text) load(text);
 }

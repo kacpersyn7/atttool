@@ -1,11 +1,19 @@
 /**
  * The mode schedule as CSV (#61): one row per change, for pass plans kept in a spreadsheet or made by another tool.
- * Columns (any order; unknown ones are reported and ignored; empty cells take the scenario's own value):
- *   utc · name · mode (nominal | target | sun | inertial) · slew_s (seconds, or auto) · roll_deg · pitch_deg · yaw_deg
- *   · sun_axis · sun_secondary_axis (+X … −Z, or part:<name>) · sun_secondary_toward (nadir | zenith | velocity | normal
- *   | antinormal) · target_lat_deg · target_lon_deg · target_height_m · pointing_part (a part name, or default) · target_slew_s
- *   · q_w · q_x · q_y · q_z (inertial attitude) · event (eclipseOut | eclipseIn | rise | set | after) · event_from_utc
- *   · event_offset_s · event_elev_deg · event_after (the id of the change it follows) · id
+ * Columns, common ones first, then one group per mode (any order on reading; unknown ones are reported and ignored):
+ *   utc · name · mode (nominal | target | sun | inertial) · slew_s (seconds, or auto)
+ *   · event (eclipseOut | eclipseIn | rise | set | after) · event_from_utc · event_offset_s · event_elev_deg
+ *   · event_after (the id of the change it follows)
+ *   · target: target_lat_deg · target_lon_deg · target_height_m · pointing_part (a part name, or default) · target_slew_s
+ *   · sun: sun_axis · sun_secondary_axis (+X … −Z, or a part name) · sun_secondary_toward (nadir | zenith | velocity
+ *     | normal | antinormal)
+ *   · nominal: roll_deg · pitch_deg · yaw_deg
+ *   · inertial: q_w · q_x · q_y · q_z
+ *   · id
+ * A row is written with the cells its mode flies on only (the target place also for a rise or set event); the others
+ * are left empty, so what matters on a row can be seen. An empty cell takes the scenario's own value; a cell that its
+ * row's mode doesn't use is still read, and reported, as editing it changes nothing in flight. The scenario JSON keeps
+ * every setting of every change. Parts may be written as Name or part:Name in any part column.
  * Separators: comma, semicolon or tab, found from the header; with a semicolon or tab, decimal commas are read too.
  * Rows go through cleanSchedule, so they are checked exactly like a scenario JSON. An empty mode takes the scenario's;
  * an event without event_from_utc looks from the change's own start. Cells that would start a spreadsheet formula
@@ -15,13 +23,24 @@
  */
 import { newId } from '../spacecraft/component.js';
 import { cleanSchedule } from './scenarioLibrary.js';
-import { DATE_MAX, DATE_MIN, validDate } from './scenario.js';
+import { DATE_MAX, DATE_MIN, epochDate, formatEpoch, validDate } from './scenario.js';
 
-export const CSV_COLUMNS = ['utc', 'name', 'mode', 'slew_s', 'roll_deg', 'pitch_deg', 'yaw_deg', 'sun_axis', 'sun_secondary_axis', 'sun_secondary_toward',
-  'target_lat_deg', 'target_lon_deg', 'target_height_m', 'pointing_part', 'target_slew_s', 'q_w', 'q_x', 'q_y', 'q_z',
-  'event', 'event_from_utc', 'event_offset_s', 'event_elev_deg', 'event_after', 'id'];
+const PLACE = ['target_lat_deg', 'target_lon_deg', 'target_height_m'];
+/** The columns each mode flies on (by mode as stored); the rest of a row's mode columns are left empty. */
+export const MODE_COLUMNS = {
+  target: [...PLACE, 'pointing_part', 'target_slew_s'],
+  sun: ['sun_axis', 'sun_secondary_axis', 'sun_secondary_toward'],
+  offsets: ['roll_deg', 'pitch_deg', 'yaw_deg'],
+  inertial: ['q_w', 'q_x', 'q_y', 'q_z'],
+};
+export const CSV_COLUMNS = ['utc', 'name', 'mode', 'slew_s', 'event', 'event_from_utc', 'event_offset_s', 'event_elev_deg', 'event_after',
+  ...MODE_COLUMNS.target, ...MODE_COLUMNS.sun, ...MODE_COLUMNS.offsets, ...MODE_COLUMNS.inertial, 'id'];
+const MODE_SET = new Set(Object.values(MODE_COLUMNS).flat());
+/** The mode columns a change flies on: its mode's, and the target place for a rise or set event (#58). */
+const usedColumns = (mode, kind) => new Set([...(MODE_COLUMNS[mode] || []), ...(kind === 'rise' || kind === 'set' ? PLACE : [])]);
 const MODE_OUT = { offsets: 'nominal', target: 'target', sun: 'sun', inertial: 'inertial' };
 const MODE_IN = { nominal: 'offsets', offsets: 'offsets', target: 'target', sun: 'sun', inertial: 'inertial' };
+const AXIS = /^[+-][XYZ]$/;
 
 const NUMBER = /^[-+]?(\d+([.,]\d*)?|[.,]\d+)(e[-+]?\d+)?$/i;
 /** A cell as written: a leading ' if a spreadsheet would read it as a formula (not for numbers), quoted if it holds the separator, a quote or a line break. */
@@ -37,24 +56,26 @@ export function readNumber(s, decimalComma) {
 }
 
 /**
- * The schedule of orbit settings o as CSV. Parts are written by name (`comps`: the spacecraft's parts), so the file
- * reads well and moves between spacecraft. comma: semicolon-separated with decimal commas (as the signal CSV).
+ * The schedule of orbit settings o as CSV, each row with the cells its mode uses (MODE_COLUMNS). Parts are written by
+ * name (`comps`: the spacecraft's parts), so the file reads well and moves between spacecraft. comma:
+ * semicolon-separated with decimal commas (as the signal CSV).
  */
 export function scheduleToCSV(o, comps, { comma = false } = {}) {
   const sep = comma ? ';' : ',', name = id => (comps.find(c => c.id === id) || {}).name || '';
   const num = x => { if (!Number.isFinite(x)) return ''; const s = String(x); return comma ? s.replace('.', ',') : s; }; // exact: the shortest text that reads back as the same number
-  const axis = a => typeof a === 'string' && a.startsWith('comp:') ? 'part:' + name(a.slice(5)) : a || '';
+  const axis = a => typeof a === 'string' && a.startsWith('comp:') ? name(a.slice(5)) : a || ''; // a part by its name
   const rows = [CSV_COLUMNS.join(sep)];
   for (const c of o.schedule || []) {
-    const on = c.on || {}, q = c.q || {};
+    const on = c.on || {}, q = c.q || {}, used = usedColumns(c.mode, on.kind);
     const v = {
       utc: c.start, name: c.name || '', mode: MODE_OUT[c.mode] || c.mode, slew_s: c.autoSlew ? 'auto' : num(c.slew),
-      roll_deg: num(c.roll), pitch_deg: num(c.pitch), yaw_deg: num(c.yaw), sun_axis: axis(c.sunAxis), sun_secondary_axis: axis(c.sunSecAxis), sun_secondary_toward: c.sunSec || '',
+      event: on.kind || '', event_from_utc: on.from || '', event_offset_s: c.on ? num(+on.offset || 0) : '', event_elev_deg: on.kind === 'rise' || on.kind === 'set' ? num(on.elev) : '', event_after: on.ref || '',
       target_lat_deg: num(c.tgtLat), target_lon_deg: num(c.tgtLon), target_height_m: num(c.tgtAlt), pointing_part: c.tgtComp ? name(c.tgtComp) : 'default', target_slew_s: num(c.tgtSlew),
-      q_w: c.mode === 'inertial' ? num(q.w) : '', q_x: c.mode === 'inertial' ? num(q.x) : '', q_y: c.mode === 'inertial' ? num(q.y) : '', q_z: c.mode === 'inertial' ? num(q.z) : '',
-      event: on.kind || '', event_from_utc: on.from || '', event_offset_s: c.on ? num(+on.offset || 0) : '', event_elev_deg: on.kind === 'rise' || on.kind === 'set' ? num(on.elev) : '', event_after: on.ref || '', id: c.id,
+      sun_axis: axis(c.sunAxis), sun_secondary_axis: axis(c.sunSecAxis), sun_secondary_toward: c.sunSec || '',
+      roll_deg: num(c.roll), pitch_deg: num(c.pitch), yaw_deg: num(c.yaw),
+      q_w: num(q.w), q_x: num(q.x), q_y: num(q.y), q_z: num(q.z), id: c.id,
     };
-    rows.push(CSV_COLUMNS.map(k => cell(v[k], sep)).join(sep));
+    rows.push(CSV_COLUMNS.map(k => cell(MODE_SET.has(k) && !used.has(k) ? '' : v[k], sep)).join(sep));
   }
   return '\uFEFF' + rows.join('\n') + '\n';
 }
@@ -92,7 +113,7 @@ export function scheduleFromCSV(text, base, comps, q0 = null) {
   const report = [], unknown = head.filter(h => h && !CSV_COLUMNS.includes(h));
   if (unknown.length) report.push(`Columns not used: ${unknown.join(', ')}.`);
   const decimalComma = sep !== ',', kinds = new Map([['eclipseout', 'eclipseOut'], ['eclipsein', 'eclipseIn'], ['rise', 'rise'], ['set', 'set'], ['after', 'after']]);
-  const raws = [];
+  const raws = [], unusedAt = new Map(); // column → lines where a cell is filled that its row's mode doesn't use
   rows.slice(1).forEach((r, k) => {
     const line = lines[k + 1], g = key => col(key) < 0 ? undefined : r[col(key)], say = m => report.push(`Line ${line}: ${m}.`);
     const num = (key) => { const x = readNumber(g(key), decimalComma); if (Number.isNaN(x)) { say(`${key} "${g(key).trim()}" is not a number, so the scenario's value is used`); return undefined; } return x; };
@@ -103,7 +124,13 @@ export function scheduleFromCSV(text, base, comps, q0 = null) {
       if (ps.length > 1) say(`${ps.length} parts are named "${n}": the first is used`);
       return ps[0].id;
     };
-    const axis = s0 => { const t = (s0 || '').trim(); if (!t) return undefined; if (/^part:/i.test(t)) { const id = partId(t.slice(5)); return id ? 'comp:' + id : undefined; } return t.replace(/\u2212/g, '-').toUpperCase(); };
+    const bare = t => t.replace(/^part:/i, '').trim(); // part:Name or Name
+    const axis = s0 => {
+      const t = (s0 || '').trim(); if (!t) return undefined;
+      const ax = t.replace(/\u2212/g, '-').toUpperCase(); if (AXIS.test(ax)) return ax;
+      if (/^part:/i.test(t) || comps.some(c => c.name === t)) { const id = partId(bare(t)); return id ? 'comp:' + id : undefined; }
+      say(`"${t}" is neither an axis (+X … −Z) nor a part on this spacecraft, so the scenario's is used`); return undefined;
+    };
     const utc = s0 => { const t = (s0 || '').trim().replace(' ', 'T').replace(/Z$/i, ''); return t || undefined; };
     const start = utc(g('utc'));
     if (!start || !validDate(start)) { say(`the start "${(g('utc') || '').trim()}" is not a UTC date and time from ${DATE_MIN.slice(0, 4)} to ${DATE_MAX.slice(0, 4)} (YYYY-MM-DD HH:MM:SS), so the row is left out`); return; }
@@ -113,7 +140,7 @@ export function scheduleFromCSV(text, base, comps, q0 = null) {
     const slew = (g('slew_s') || '').trim().toLowerCase(); if (slew === 'auto') { c.autoSlew = true; c.slew = 0; } else c.slew = num('slew_s');
     for (const [k2, key] of [['roll', 'roll_deg'], ['pitch', 'pitch_deg'], ['yaw', 'yaw_deg'], ['tgtLat', 'target_lat_deg'], ['tgtLon', 'target_lon_deg'], ['tgtAlt', 'target_height_m'], ['tgtSlew', 'target_slew_s']]) c[k2] = num(key);
     c.sunAxis = axis(g('sun_axis')); c.sunSecAxis = axis(g('sun_secondary_axis')); c.sunSec = (g('sun_secondary_toward') || '').trim().toLowerCase() || undefined;
-    c.tgtComp = partId(g('pointing_part'));
+    c.tgtComp = partId(bare(g('pointing_part') || ''));
     const qs = ['q_w', 'q_x', 'q_y', 'q_z'].map(num); if (qs.every(Number.isFinite)) c.q = { w: qs[0], x: qs[1], y: qs[2], z: qs[3] };
     else if (mode === 'inertial') say(`no inertial attitude (q_w … q_z), so ${q0 ? "Rotation Lab's" : 'the identity'} is used`);
     const ev0 = (g('event') || '').trim();
@@ -123,9 +150,29 @@ export function scheduleFromCSV(text, base, comps, q0 = null) {
       else c.on = { kind, from: utc(g('event_from_utc')) || (kind === 'after' ? null : start), offset: num('event_offset_s') ?? 0, elev: num('event_elev_deg'), ref: (g('event_after') || '').trim() || undefined };
     }
     for (const k2 of Object.keys(c)) if (c[k2] === undefined) delete c[k2]; // empty cells: the scenario's own value
+    const used = usedColumns(mode, c.on && c.on.kind);
+    for (const key of MODE_SET) if (!used.has(key) && (g(key) || '').trim() && !(key === 'pointing_part' && g(key).trim().toLowerCase() === 'default')) (unusedAt.get(key) || unusedAt.set(key, []).get(key)).push(line);
     raws.push(c);
   });
+  for (const [key, ls] of unusedAt) report.push(`${key} is filled on line${ls.length > 1 ? 's' : ''} ${ls.length > 4 ? ls.slice(0, 4).join(', ') + ' …' : ls.join(', ')}, where the mode doesn't use it: kept, but it changes nothing in flight.`);
   return { changes: cleanSchedule(raws, base, q0, report), report, rows: rows.length - 1 };
+}
+
+/**
+ * An example file to start from: one change in each mode, from the next whole 10 minutes after the scenario's time
+ * o.t, with the scenario's target and Sun axes; the Sun change starts on an eclipse exit and the inertial one 20 min
+ * after it, so the event columns are shown too.
+ */
+export function exampleScheduleCSV(o, comps, opts) {
+  const t0 = Math.ceil((epochDate(o).getTime() + (+o.t || 0) * 1000) / 600e3) * 600e3, at = min => formatEpoch(new Date(t0 + min * 60e3));
+  const sun = { sunAxis: o.sunAxis || '-Z', sunSecAxis: o.sunSecAxis || '+X', sunSec: o.sunSec || 'nadir' };
+  const schedule = [
+    { id: 'ex1', start: at(0), slew: 60, mode: 'offsets', name: 'Example: roll 20°', roll: 20, pitch: 0, yaw: 0 },
+    { id: 'ex2', start: at(20), slew: 0, autoSlew: true, mode: 'target', name: 'Example: image the target', tgtLat: o.tgtLat, tgtLon: o.tgtLon, tgtAlt: o.tgtAlt, tgtComp: '', tgtSlew: 60 },
+    { id: 'ex3', start: at(40), slew: 0, autoSlew: true, mode: 'sun', name: 'Example: Sun after the eclipse', ...sun, on: { kind: 'eclipseOut', from: at(40), offset: 0 } },
+    { id: 'ex4', start: at(60), slew: 0, autoSlew: true, mode: 'inertial', name: 'Example: hold inertial', q: { w: 1, x: 0, y: 0, z: 0 }, on: { kind: 'after', from: null, offset: 1200, ref: 'ex3' } },
+  ];
+  return scheduleToCSV({ schedule }, comps, opts);
 }
 
 /**
