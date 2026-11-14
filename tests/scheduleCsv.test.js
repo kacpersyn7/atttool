@@ -19,17 +19,17 @@ test('schedule CSV: export then import gives the same schedule (names, auto slew
     const csv = scheduleToCSV(o, s.sc.comps, { comma }), back = scheduleFromCSV(csv, o, s.sc.comps);
     assert.deepEqual(back.report, [], `comma ${comma}: ${back.report}`); assert.equal(back.rows, 4);
     const q12 = l => JSON.parse(JSON.stringify(l), (k, v) => typeof v === 'number' ? +v.toPrecision(12) : v); // a quaternion is renormalised on import: the last bit may move
-    // what each mode flies on comes back; settings kept for other modes come back as the scenario's
-    const flies = { offsets: ['roll', 'pitch', 'yaw'], target: ['tgtLat', 'tgtLon', 'tgtAlt', 'tgtComp', 'tgtSlew'], sun: ['sunAxis', 'sunSecAxis', 'sunSec'], inertial: ['q'] };
-    const want = o.schedule.map(c => { const w = { ...c }; for (const k of ['roll', 'pitch', 'yaw', 'sunAxis', 'sunSecAxis', 'sunSec', 'tgtLat', 'tgtLon', 'tgtAlt', 'tgtComp', 'tgtSlew']) if (!flies[c.mode].includes(k)) w[k] = o[k]; return w; });
+    // the payload and what each mode flies on come back; attitude settings kept for other modes come back as the scenario's
+    const flies = { offsets: ['roll', 'pitch', 'yaw'], target: ['tgtSlew'], sun: ['sunAxis', 'sunSecAxis', 'sunSec'], inertial: ['q'] };
+    const want = o.schedule.map(c => { const w = { ...c }; for (const k of ['roll', 'pitch', 'yaw', 'sunAxis', 'sunSecAxis', 'sunSec', 'tgtSlew']) if (!flies[c.mode].includes(k)) w[k] = o[k]; return w; });
     assert.deepEqual(q12(back.changes), q12(want), `comma ${comma}: the same schedule`);
   }
   assert.ok(scheduleToCSV(o, s.sc.comps).includes('"Charge, then image"'), 'a name with the separator is quoted');
   const lines = scheduleToCSV(o, s.sc.comps).slice(1).split('\n'), head = lines[0].split(','), row = k => Object.fromEntries(head.map((h, i) => [h, parseCSVRows(lines[k]).rows[0][i] ?? '']));
   assert.equal(row(1).sun_axis, str.name, 'parts by name');
-  assert.deepEqual([row(1).target_lat_deg, row(1).roll_deg, row(1).q_w], ['', '', ''], 'a sun row: only the sun columns');
+  assert.deepEqual([row(1).target_lat_deg, row(1).pointing_part, row(1).roll_deg, row(1).target_slew_s, row(1).q_w], ['52.23', 'default', '', '', ''], 'a sun row: the payload and the sun columns');
   assert.deepEqual([row(2).target_lat_deg, row(2).pointing_part, row(2).sun_axis], ['-33.87', cam.name, ''], 'a target row: only the target columns');
-  assert.deepEqual([row(4).roll_deg, row(4).target_lat_deg], ['25.5', ''], 'a nominal row');
+  assert.deepEqual([row(4).roll_deg, row(4).target_lat_deg, row(4).sun_axis], ['25.5', '52.23', ''], 'a nominal row: the payload and its own columns');
   assert.deepEqual(head.slice(0, 9), ['utc', 'name', 'mode', 'slew_s', 'event', 'event_from_utc', 'event_offset_s', 'event_elev_deg', 'event_after'], 'common columns first');
 });
 
@@ -108,11 +108,37 @@ test('schedule CSV: unused cells are reported but kept; part:Name or Name in any
   assert.equal(a.tgtComp, cam.id); assert.equal(b.sunAxis, 'comp:' + str.id); assert.equal(c.sunAxis, 'comp:' + str.id);
   assert.equal(b.roll, 5, 'kept'); assert.equal(c.tgtLat, 40, 'a rise event uses its target place');
   const rep = r.report.join(' | ');
-  assert.ok(rep.includes("roll_deg is filled on line 3, where the mode doesn't use it"), rep);
-  assert.ok(!rep.includes('target_lat_deg is filled') && !rep.includes('pointing_part is filled'), 'the place of a rise event and "default" are not reported: ' + rep);
+  assert.ok(rep.includes('Line 3: roll_deg is not used in sun mode: kept, but it changes nothing in flight'), rep);
+  assert.ok(!rep.includes('target_lat_deg') && !rep.includes('pointing_part'), 'payload cells are used in every mode: ' + rep);
   assert.ok(rep.includes('Line 5: "Banana" is neither an axis'), rep); assert.equal(d.sunAxis, o.sunAxis);
   const ex = scheduleFromCSV(exampleScheduleCSV({ ...o, t: 0 }, s.sc.comps), o, s.sc.comps);
   assert.deepEqual(ex.report, []); assert.deepEqual(ex.changes.map(x => x.mode), ['offsets', 'target', 'sun', 'inertial']);
   assert.deepEqual(ex.changes[3].on, { kind: 'after', from: null, offset: 1200, ref: 'ex3' });
   assert.equal(ex.changes[2].on.kind, 'eclipseOut'); assert.equal(ex.changes[0].roll, 20);
+});
+
+test('schedule CSV: the payload of a non-target change round-trips; parts named like an axis or "default"; one report per unused cell', () => {
+  const s = fresh(), o = s.orbit, cam = s.sc.comps.find(c => c.type === 'payload'), str = s.sc.comps.find(c => c.type === 'str');
+  const cam2 = { ...cam, id: 'cam2', name: 'default' }; str.name = '-Z';
+  const comps = [...s.sc.comps, cam2];
+  o.schedule = [
+    { id: 'a', start: at(s, 600), slew: 30, mode: 'offsets', roll: 25, pitch: 0, yaw: 0, tgtLat: 10, tgtLon: 30, tgtAlt: 5, tgtComp: 'cam2' },
+    { id: 'b', start: at(s, 1200), slew: 30, mode: 'sun', sunAxis: 'comp:' + str.id, sunSecAxis: 'comp:' + str.id, sunSec: 'zenith', tgtComp: cam.id },
+  ];
+  for (const comma of [false, true]) {
+    const csv = scheduleToCSV(o, comps, { comma });
+    assert.ok(csv.includes('part:default') && csv.includes('part:-Z'), 'names that would read as something else get part:');
+    const r = scheduleFromCSV(csv, o, comps), [a, b] = r.changes;
+    assert.deepEqual(r.report, []);
+    assert.deepEqual([a.tgtLat, a.tgtLon, a.tgtAlt, a.tgtComp], [10, 30, 5, 'cam2'], `comma ${comma}: a nominal change keeps its payload and target`);
+    assert.deepEqual([b.sunAxis, b.sunSecAxis, b.tgtComp], ['comp:' + str.id, 'comp:' + str.id, cam.id], 'part:-Z in both axis columns');
+  }
+  const r = scheduleFromCSV(['utc,mode,sun_axis,roll_deg,yaw_deg,target_slew_s', `${at(s, 600)},sun,-Z,abc,,`, `${at(s, 900)},nominal,Banana,,,90`, `${at(s, 1200)},sun,,4,5,`].join('\n'), o, comps);
+  const rep = r.report.join(' | ');
+  assert.ok(rep.includes('Line 2: "-Z" is read as the axis -Z; a part with that name is written part:-Z'), rep);
+  assert.ok(rep.includes('Line 2: roll_deg "abc" is not a number') && !rep.includes('Line 2: roll_deg is not used'), 'an unreadable cell is not also reported as kept: ' + rep);
+  assert.ok(rep.includes('Line 3: target_slew_s is not used in nominal mode') && !rep.includes('Line 3: sun_axis is not used'), rep);
+  assert.ok(rep.includes('Line 4: roll_deg, yaw_deg are not used in sun mode: kept, but they change nothing in flight'), 'one sentence per line: ' + rep);
+  const s2 = fresh(), ex = scheduleFromCSV(exampleScheduleCSV({ ...s2.orbit, t: 0 }, s2.sc.comps, { comma: true }), s2.orbit, s2.sc.comps);
+  assert.deepEqual(ex.report, []); assert.equal(ex.changes.length, 4); assert.equal(ex.changes[1].tgtLat, s2.orbit.tgtLat, 'decimal commas');
 });
