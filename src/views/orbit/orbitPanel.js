@@ -59,6 +59,9 @@ export function orbitPanel(ctx) {
   if (selChange && !sched.some(c => c.id === selChange)) selChange = null; // gone: deleted, another scenario
   const g = sched.find(c => c.id === selChange) || o; // the settings the guidance controls edit
   const modeCtl = [];
+  // what is edited here may not be what flies now (and the 3D view shows): say so, in every mode (#80)
+  const notFlying = () => { const cur = ctx.cur(); return cur && cur.g !== g && sched.length ? `<span class="chip dim" style="white-space:normal" title="The 3D view shows the current time${g === o ? '' : '. Go to start, in Mode schedule, jumps to this change'}">Not flying now · ${g === o ? 'a change is' : 'starts ' + esc(showUTC(g.start))}</span>` : ''; };
+  if (g.mode !== 'target') modeCtl.push(h('div', { class: 'status' }, liveText(notFlying)));
   const axLbl = (name, color, ax) => h('span', null, name + ' · ', h('span', { class: 'ax', style: 'color:var(--ax-' + color + ')' }, ax));
   if (g.mode === 'offsets') modeCtl.push(
     slider({ id: 'roll', label: axLbl('Roll φ', 'x', 'X″'), min: -60, max: 60, step: .5, get: () => g.roll, set: x => { g.roll = x; save(); } }),
@@ -79,7 +82,7 @@ export function orbitPanel(ctx) {
   if (g.mode === 'target') modeCtl.push(
     h('div', { class: 'grid2' }, numCell('tlat', 'Latitude °', () => g.tgtLat, x => { g.tgtLat = x; save(); }, .1, 2), numCell('tlon', 'Longitude °', () => g.tgtLon, x => { g.tgtLon = x; save(); }, .1, 2), altCell('talt', 'Height m')),
     selectRow({ id: 'tgtComp', label: 'Pointing axis', options: S.sc.comps.filter(c => TYPES[c.type].cone).map(c => [c.id, c.name]), get: () => (payloadComp(S, g) || {}).id, set: v => { g.tgtComp = v; save(); ctx.renderRail(); } }),
-    h('div', { class: 'status' }, liveText(() => { const cur = ctx.cur(); if (cur && cur.g !== g && sched.length) return `<span class="chip dim">Not flying now: ${g === o ? 'a change is' : 'it starts at ' + esc(showUTC(g.start))}</span>`; if (cur && cur.seg && cur.seg.slew !== null) return `<span class="chip warn">Slewing into this change (Mode schedule) · ${(100 * cur.seg.slew).toFixed(0)} %</span>`; return !cur || !cur.flag ? '' : cur.flag.slew ? (cur.flag.slew.rising ? `<span class="chip warn">Slewing to the target · ${(100 * cur.flag.slew.w).toFixed(0)} % · rises in ${cur.flag.slew.dt.toFixed(0)} s</span>` : `<span class="chip warn">Target set ${cur.flag.slew.dt.toFixed(0)} s ago · slewing back · ${(100 * (1 - cur.flag.slew.w)).toFixed(0)} %</span>`) : cur.flag.below ? `<span class="chip dim">Target below horizon · holding the nominal attitude</span>` : `<span class="chip ok">Tracking · elevation ${deg(cur.flag.elev).toFixed(1)}°</span>`; })),
+    h('div', { class: 'status' }, liveText(() => { const cur = ctx.cur(), away = notFlying(); if (away) return away; if (cur && cur.seg && cur.seg.slew !== null) return `<span class="chip warn">Slewing into this change (Mode schedule) · ${(100 * cur.seg.slew).toFixed(0)} %</span>`; return !cur || !cur.flag ? '' : cur.flag.slew ? (cur.flag.slew.rising ? `<span class="chip warn">Slewing to the target · ${(100 * cur.flag.slew.w).toFixed(0)} % · rises in ${cur.flag.slew.dt.toFixed(0)} s</span>` : `<span class="chip warn">Target set ${cur.flag.slew.dt.toFixed(0)} s ago · slewing back · ${(100 * (1 - cur.flag.slew.w)).toFixed(0)} %</span>`) : cur.flag.below ? `<span class="chip dim">Target below horizon · holding the nominal attitude</span>` : `<span class="chip ok">Tracking · elevation ${deg(cur.flag.elev).toFixed(1)}°</span>`; })),
     tgtSlewRow(g),
     tip('Boresight → line of sight to the ground point, body +X kept toward velocity. Below the horizon it holds the nominal attitude, and it slews to the target that many seconds before the target rises (so tracking starts at the rise) and back after it sets; 0 jumps. Watch the body rate rise near closest approach.'));
   if (g.mode === 'inertial' && g === o) modeCtl.push(tip('Body frame fixed in ECI using the attitude from <b>Rotation Lab</b> (reference R = ECI). Watch the Sun and Earth sweep around the spacecraft once per orbit.'));
@@ -209,7 +212,7 @@ function scheduleCard(ctx, o) {
     liveText(() => {
       const cur = ctx.cur(), now = cur && cur.seg ? cur.seg.id : '';
       const notes = withRates(scheduleNotes(o));
-      const row = (id, start, mode, slew, warn = '', info = '', name = '') => `<button type="button" class="srow${(selChange || '') === id ? ' on' : ''}" data-id="${esc(id)}" title="${warn ? esc(warn) + '. ' : ''}${info ? esc(info) + '. ' : ''}${id ? 'Edit this change and go to its start' : 'Edit the initial settings'}"><span class="dot${now === id ? ' now' : ''}"></span><span class="st">${start}${warn ? ' <span class="warn">⚠</span>' : ''}</span><span>${MODE_SHORT[mode] || ''}</span><span class="sl">${slew}</span>${name ? `<span class="nm">${esc(name)}</span>` : ''}</button>`;
+      const row = (id, start, mode, slew, warn = '', info = '', name = '') => `<button type="button" class="srow${(selChange || '') === id ? ' on' : ''}" data-id="${esc(id)}" title="${warn ? esc(warn) + '. ' : ''}${info ? esc(info) + '. ' : ''}${id ? 'Edit this change (the time stays)' : 'Edit the initial settings'}"><span class="dot${now === id ? ' now' : ''}"></span><span class="st">${start}${warn ? ' <span class="warn">⚠</span>' : ''}</span><span>${MODE_SHORT[mode] || ''}</span><span class="sl">${slew}</span>${name ? `<span class="nm">${esc(name)}</span>` : ''}</button>`;
       const first = scheduleOrder(sched)[0], until = first ? showUTC(sched[first.i].start) : '';
       const today = until && cur && cur.date.toISOString().slice(0, 10) === until.slice(0, 10); // the date only when it isn't the current one
       return row('', until ? 'Initial · until ' + (today ? until.slice(11) : until.slice(0, 16)) : 'Initial', o.mode, '', '', until ? 'Flies before the first change, until ' + until : '') + scheduleOrder(sched).map(({ i }) => { const c = sched[i]; return row(c.id, esc(showUTC(c.start)), c.mode, (c.autoSlew ? 'auto ' : '') + (c.slew ? c.slew + ' s' : 'jump'), noteText(notes[c.id]), '', [c.name, c.on ? '⚡ ' + eventLabel(c, changeName) : ''].filter(Boolean).join(' · ')); }).join('');
@@ -252,6 +255,7 @@ function scheduleCard(ctx, o) {
     kids.push(h('div', { class: 'btns' },
       h('button', { class: 'btn', title: 'Start one minute earlier', onclick: () => { if (edit(() => nudgeChange(o, sel.id, -60), false) === false) refused(); } }, '−1 min'),
       h('button', { class: 'btn', title: 'Start one minute later', onclick: () => { if (edit(() => nudgeChange(o, sel.id, 60), false) === false) refused(); } }, '+1 min'),
+      h('button', { class: 'btn', title: 'Move the current time to the start of this change', onclick: () => { if (setCurrentDate(o, sel.start)) { save(); syncAll(); } } }, 'Go to start'),
       h('button', { class: 'btn', title: 'A copy of this change, starting at the current time', onclick: () => { const c = history.record(o, () => duplicateChange(o, sel.id)); if (!c) { toast(`The schedule holds up to ${MAX_CHANGES} changes, within ${DATE_MIN.slice(0, 4)} to ${DATE_MAX.slice(0, 4)}`); return; } selChange = c.id; save(); ctx.renderRail(); } }, 'Duplicate')));
     kids.push(eventRow(o, sel, edit), h('div', { class: 'row two' }, h('label', { for: 'chStart', title: sel.on && sel.on.kind !== 'after' ? 'The event is looked for from this time on' : '' }, sel.on ? (sel.on.kind === 'after' ? 'Starts (UTC)' : 'Look from (UTC)') : 'Starts (UTC)'), start),
       h('div', { style: 'display:flex;justify-content:space-between;gap:8px' }, pending, h('span', { class: 'lbl', style: 'margin-left:auto' }, liveText(() => { const d = parseEpoch(pending.hidden ? fieldValue() : start.value); return d ? tPlus((d.getTime() - epochDate(o).getTime()) / 1000) + ' from the epoch' : ''; }))),
@@ -264,7 +268,7 @@ function scheduleCard(ctx, o) {
         return `<span class="chip dim" title="At its start, from the attitude before it. Kinematics only: real wheels may not turn this fast.">${turn}</span>${n ? ` <span class="chip warn">${esc(n)}</span>` : ''}`;
       })));
   }
-  kids.push(tip('Each change slews from the attitude before it to its own over the slew time; both are worked out at every moment, so scrubbing works. Kinematics only: no wheels or torque limits. Times are UTC, so they stay put when the epoch moves. Click a row to edit it in <b>Attitude guidance</b>; a typed start applies on Enter. On the timeline Mode band: click a block to pick its change, drag its left edge to move it, double-click to add a change there.'));
+  kids.push(tip('Each change slews from the attitude before it to its own over the slew time; both are worked out at every moment, so scrubbing works. Kinematics only: no wheels or torque limits. Times are UTC, so they stay put when the epoch moves. Click a row to edit it in <b>Attitude guidance</b> (the time stays; <b>Go to start</b> jumps to it); a typed start applies on Enter. On the timeline Mode band: click a block to pick its change, drag its left edge to move it, double-click to add a change there.'));
   return card('Mode schedule', sched.length ? sched.length + (sched.length === 1 ? ' change' : ' changes') : 'none', ...kids);
 }
 
@@ -297,12 +301,11 @@ function csvDialog(o, ctx, text = '') {
 }
 
 /**
- * Select change `id` ('' or null: the initial settings) for editing; with seek (the rows) also go to its start. The
- * timeline band picks without seeking: the time under the pointer stays, and the band does not page away.
+ * Select change `id` ('' or null: the initial settings) for editing. The time stays where it is (#80): editing a
+ * change must not lose the moment being looked at; Go to start in its editor jumps there.
  */
-export function pickChange(id, ctx, seek = true) {
+export function pickChange(id, ctx) {
   selChange = id || null;
-  const c = (S.orbit.schedule || []).find(c => c.id === id); if (c && seek) setCurrentDate(S.orbit, c.start);
   save(); ctx.renderRail();
 }
 
