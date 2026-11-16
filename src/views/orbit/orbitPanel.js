@@ -60,7 +60,7 @@ export function orbitPanel(ctx) {
   const g = sched.find(c => c.id === selChange) || o; // the settings the guidance controls edit
   const modeCtl = [];
   // what is edited here may not be what flies now (and the 3D view shows): say so, in every mode (#80)
-  const notFlying = () => { const cur = ctx.cur(); return cur && cur.g !== g && sched.length ? `<span class="chip dim" title="The 3D view shows the current time">Not flying now: ${g === o ? 'a change is' : 'it starts at ' + esc(showUTC(g.start)) + ' (Go to start, in Mode schedule)'}</span>` : ''; };
+  const notFlying = () => { const cur = ctx.cur(); return cur && cur.g !== g && sched.length ? `<span class="chip dim" style="white-space:normal" title="The 3D view shows the current time${g === o ? '' : '. Go to start, in Mode schedule, jumps to this change'}">Not flying now · ${g === o ? 'a change is' : 'starts ' + esc(showUTC(g.start))}</span>` : ''; };
   if (g.mode !== 'target') modeCtl.push(h('div', { class: 'status' }, liveText(notFlying)));
   const axLbl = (name, color, ax) => h('span', null, name + ' · ', h('span', { class: 'ax', style: 'color:var(--ax-' + color + ')' }, ax));
   if (g.mode === 'offsets') modeCtl.push(
