@@ -88,7 +88,7 @@ S.orbit ──orbitElements()──► elements ──propagate()──► r, v
 
 ## Build
 
-`scripts/build.mjs` is a small bundler (about 100 lines) written for this code style. It wraps each module in a function scope, orders them so dependencies come first, and inlines the CSS. It also swaps the import map for the three.js UMD scripts. It fails loudly on unsupported syntax: default exports, dynamic `import()`, and import cycles.
+`scripts/build.mjs` builds the single file with a small bundler, `scripts/bundle.mjs`, written for this code style. It wraps each module in a function scope, orders them so dependencies come first, and inlines the CSS. It also swaps the import map for the three.js UMD scripts. It fails loudly on unsupported syntax (default exports, dynamic `import()`, import cycles) and on a named import that it doesn't find exported. `tests/bundle.test.js` checks that each module exports the same names in the bundle as it does as a real module.
 
 If the project outgrows it, for example when moving to TypeScript or npm packages, switch to Vite. The source already uses standard ES modules and the bare `'three'` specifier, so `npm i three@0.128.0 vite` plus a `vite.config.js` is all it takes.
 
