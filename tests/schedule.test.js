@@ -4,7 +4,7 @@ import * as AM from '../src/core/attitude.js';
 import * as ENV from '../src/env/index.js';
 import { close, closeArr } from './helpers.js';
 import { attitudeAt, autoSlews, bodyRate, blendAttitude, changeTurn, payloadComp, relativeQ, scheduleOrder, tooFast } from '../src/sim/guidance.js';
-import { AUTO_END_MARGIN, NAME_MAX, adjacentChange, cleanName, duplicateChange, nudgeChange, renameChange, scheduleHistory, addChange, deleteChange, runProgress, runStep, scenarioSpan, scheduleNotes, setChangeMode, setChangeStart, startRun, takeRotation, DEFAULT_SLEW } from '../src/sim/schedule.js';
+import { AUTO_END_MARGIN, NAME_MAX, changeAtTime, startNear, adjacentChange, cleanName, duplicateChange, nudgeChange, renameChange, scheduleHistory, addChange, deleteChange, runProgress, runStep, scenarioSpan, scheduleNotes, setChangeMode, setChangeStart, startRun, takeRotation, DEFAULT_SLEW } from '../src/sim/schedule.js';
 import { computeTimeline, timelineKey } from '../src/sim/timeline.js';
 import { pointing } from '../src/sim/payload.js';
 import { advanceTime, applyPreset, currentDate, epochDate, orbitElements, parseEpoch, restartFromState, setEpoch, targetECEF } from '../src/sim/scenario.js';
@@ -514,4 +514,22 @@ test('automatic slew times: an overlapping chain works out in one pass; a half t
   h.orbit.schedule = [{ id: 'x', start: at(h, 600), slew: 0, autoSlew: true, mode: 'inertial', q: qz(180) }]; autoSlews(h);
   assert.equal(h.orbit.schedule[0].slew, 3600, '180° at 0.05°/s'); assert.ok(180 / 3600 <= 0.05, 'within the rate');
   const z = inertialPair(0); z.orbit.schedule[0] = { ...z.orbit.schedule[0], autoSlew: true, q: qz(0) }; autoSlews(z); assert.ok(Object.is(z.orbit.schedule[0].slew, 0), 'no turn: 0, not -0');
+});
+
+test('a change added at a given time (the timeline band): there, whole seconds, with the settings given', () => {
+  const s = fresh(), o = s.orbit; o.t = 100; const c = addChange(o, o, s.rot.q, 2345.7);
+  assert.equal(parseEpoch(c.start).getTime(), parseEpoch(at(s, 2345)).getTime()); assert.equal(o.t, 100, 'the time is not moved');
+});
+
+test('band helpers: the change flying at t, and the nearest start within a tolerance and a window', () => {
+  const s = fresh(), o = s.orbit;
+  o.schedule = [{ id: 'a', start: at(s, 600), slew: 0, mode: 'sun' }, { id: 'b', start: at(s, 620), slew: 0, mode: 'offsets' }, { id: 'x', start: at(s, 2000), slew: 0, mode: 'sun' }, { id: 'y', start: at(s, 2000), slew: 0, mode: 'offsets' }];
+  assert.equal(changeAtTime(o, 100), ''); assert.equal(changeAtTime(o, 610), 'a'); assert.equal(changeAtTime(o, 620), 'b'); assert.equal(changeAtTime(o, 2500), 'y', 'a tie: the one that flies');
+  assert.deepEqual(startNear(o, 603, 30), { id: 'a', t: 600 }, 'the nearest, not the last within reach'); assert.deepEqual(startNear(o, 615, 30), { id: 'b', t: 620 });
+  assert.equal(startNear(o, 2000, 5).id, 'y', 'a tie: the one that flies'); assert.equal(startNear(o, 700, 30), null); assert.equal(startNear(o, 603, 30, 1000, 3000), null, 'outside the window');
+});
+
+test('a change added at a time inside a slew under way starts when the slew ends (nothing scheduled moves)', () => {
+  const s = inertialPair(60), o = s.orbit; const c = addChange(o, o.schedule[0], s.rot.q, 620);
+  assert.equal(parseEpoch(c.start).getTime(), parseEpoch(at(s, 660)).getTime());
 });
