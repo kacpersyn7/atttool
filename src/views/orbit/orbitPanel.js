@@ -59,6 +59,9 @@ export function orbitPanel(ctx) {
   if (selChange && !sched.some(c => c.id === selChange)) selChange = null; // gone: deleted, another scenario
   const g = sched.find(c => c.id === selChange) || o; // the settings the guidance controls edit
   const modeCtl = [];
+  // what is edited here may not be what flies now (and the 3D view shows): say so, in every mode (#80)
+  const notFlying = () => { const cur = ctx.cur(); return cur && cur.g !== g && sched.length ? `<span class="chip dim" title="The 3D view shows the current time">Not flying now: ${g === o ? 'a change is' : 'it starts at ' + esc(showUTC(g.start)) + ' (Go to start, in Mode schedule)'}</span>` : ''; };
+  if (g.mode !== 'target') modeCtl.push(h('div', { class: 'status' }, liveText(notFlying)));
   const axLbl = (name, color, ax) => h('span', null, name + ' · ', h('span', { class: 'ax', style: 'color:var(--ax-' + color + ')' }, ax));
   if (g.mode === 'offsets') modeCtl.push(
     slider({ id: 'roll', label: axLbl('Roll φ', 'x', 'X″'), min: -60, max: 60, step: .5, get: () => g.roll, set: x => { g.roll = x; save(); } }),
@@ -79,7 +82,7 @@ export function orbitPanel(ctx) {
   if (g.mode === 'target') modeCtl.push(
     h('div', { class: 'grid2' }, numCell('tlat', 'Latitude °', () => g.tgtLat, x => { g.tgtLat = x; save(); }, .1, 2), numCell('tlon', 'Longitude °', () => g.tgtLon, x => { g.tgtLon = x; save(); }, .1, 2), altCell('talt', 'Height m')),
     selectRow({ id: 'tgtComp', label: 'Pointing axis', options: S.sc.comps.filter(c => TYPES[c.type].cone).map(c => [c.id, c.name]), get: () => (payloadComp(S, g) || {}).id, set: v => { g.tgtComp = v; save(); ctx.renderRail(); } }),
-    h('div', { class: 'status' }, liveText(() => { const cur = ctx.cur(); if (cur && cur.g !== g && sched.length) return `<span class="chip dim">Not flying now: ${g === o ? 'a change is' : 'it starts at ' + esc(showUTC(g.start))}</span>`; if (cur && cur.seg && cur.seg.slew !== null) return `<span class="chip warn">Slewing into this change (Mode schedule) · ${(100 * cur.seg.slew).toFixed(0)} %</span>`; return !cur || !cur.flag ? '' : cur.flag.slew ? (cur.flag.slew.rising ? `<span class="chip warn">Slewing to the target · ${(100 * cur.flag.slew.w).toFixed(0)} % · rises in ${cur.flag.slew.dt.toFixed(0)} s</span>` : `<span class="chip warn">Target set ${cur.flag.slew.dt.toFixed(0)} s ago · slewing back · ${(100 * (1 - cur.flag.slew.w)).toFixed(0)} %</span>`) : cur.flag.below ? `<span class="chip dim">Target below horizon · holding the nominal attitude</span>` : `<span class="chip ok">Tracking · elevation ${deg(cur.flag.elev).toFixed(1)}°</span>`; })),
+    h('div', { class: 'status' }, liveText(() => { const cur = ctx.cur(), away = notFlying(); if (away) return away; if (cur && cur.seg && cur.seg.slew !== null) return `<span class="chip warn">Slewing into this change (Mode schedule) · ${(100 * cur.seg.slew).toFixed(0)} %</span>`; return !cur || !cur.flag ? '' : cur.flag.slew ? (cur.flag.slew.rising ? `<span class="chip warn">Slewing to the target · ${(100 * cur.flag.slew.w).toFixed(0)} % · rises in ${cur.flag.slew.dt.toFixed(0)} s</span>` : `<span class="chip warn">Target set ${cur.flag.slew.dt.toFixed(0)} s ago · slewing back · ${(100 * (1 - cur.flag.slew.w)).toFixed(0)} %</span>`) : cur.flag.below ? `<span class="chip dim">Target below horizon · holding the nominal attitude</span>` : `<span class="chip ok">Tracking · elevation ${deg(cur.flag.elev).toFixed(1)}°</span>`; })),
     tgtSlewRow(g),
     tip('Boresight → line of sight to the ground point, body +X kept toward velocity. Below the horizon it holds the nominal attitude, and it slews to the target that many seconds before the target rises (so tracking starts at the rise) and back after it sets; 0 jumps. Watch the body rate rise near closest approach.'));
   if (g.mode === 'inertial' && g === o) modeCtl.push(tip('Body frame fixed in ECI using the attitude from <b>Rotation Lab</b> (reference R = ECI). Watch the Sun and Earth sweep around the spacecraft once per orbit.'));
@@ -259,12 +262,10 @@ function scheduleCard(ctx, o) {
       h('div', { class: 'row two' }, h('label', { for: 'chSlew', title: 'From the attitude before it, 0 to 3600 s (0: a jump)' }, 'Slew (s)'),
         h('div', { style: 'display:flex;gap:8px;align-items:center' }, slew, h('label', { class: 'chk', title: 'The turn at its start ÷ the max slew rate of the spacecraft', style: 'flex:none' }, auto, 'auto'))),
       h('div', { class: 'status' }, liveText(() => {
-        // the 3D view shows the current time, not the change picked: say so, as editing one that isn't flying shows nothing there
-        const cur = ctx.cur(), away = cur && !(cur.seg && cur.seg.id === sel.id) ? '<span class="chip dim" title="The 3D view shows the current time: Go to start to see this change">Not flying now</span> ' : '';
-        const tr = changeTurn(S, sel.id), n = noteText(withRates(scheduleNotes(o))[sel.id]); if (!tr) return away;
-        if (tr.overridden) return away + `<span class="chip warn">${esc(n)}</span>`;
+        const tr = changeTurn(S, sel.id), n = noteText(withRates(scheduleNotes(o))[sel.id]); if (!tr) return '';
+        if (tr.overridden) return `<span class="chip warn">${esc(n)}</span>`;
         const turn = tr.rate === null ? `Jumps ${tr.angle.toFixed(1)}°` : `Turns ${tr.angle.toFixed(1)}° in ${sel.slew} s · ${tr.rate.toFixed(2)}°/s on average`;
-        return away + `<span class="chip dim" title="At its start, from the attitude before it. Kinematics only: real wheels may not turn this fast.">${turn}</span>${n ? ` <span class="chip warn">${esc(n)}</span>` : ''}`;
+        return `<span class="chip dim" title="At its start, from the attitude before it. Kinematics only: real wheels may not turn this fast.">${turn}</span>${n ? ` <span class="chip warn">${esc(n)}</span>` : ''}`;
       })));
   }
   kids.push(tip('Each change slews from the attitude before it to its own over the slew time; both are worked out at every moment, so scrubbing works. Kinematics only: no wheels or torque limits. Times are UTC, so they stay put when the epoch moves. Click a row to edit it in <b>Attitude guidance</b> (the time stays; <b>Go to start</b> jumps to it); a typed start applies on Enter. On the timeline Mode band: click a block to pick its change, drag its left edge to move it, double-click to add a change there.'));
