@@ -83,11 +83,11 @@ export function createOrbitView({ renderRail }) {
   const plEl = $('#plInset'), plInset = createPayloadInset(plEl);
   // the Mode band edits the schedule through the panel's selection and undo
   const timeline = createTimelineView($('#tlc'), {
-    pick: id => pickChange(id, panelCtx, false),
+    pick: id => pickChange(id, panelCtx),
     move: (id, start) => { const c = (S.orbit.schedule || []).find(c => c.id === id); if (!c || c.start === start) return; // the same second: nothing to undo
       if (editSchedule(() => setChangeStart(S.orbit, id, start), panelCtx) === false) toast(`A start must be from ${DATE_MIN.slice(0, 4)} to ${DATE_MAX.slice(0, 4)}`); },
     add: t => { const g = attitudeAt(S, t).g, c = editSchedule(() => addChange(S.orbit, g, S.rot.q, t), panelCtx);
-      if (c) pickChange(c.id, panelCtx, false); else toast(`The schedule holds up to ${MAX_CHANGES} changes, from ${DATE_MIN.slice(0, 4)} to ${DATE_MAX.slice(0, 4)}`); },
+      if (c) pickChange(c.id, panelCtx); else toast(`The schedule holds up to ${MAX_CHANGES} changes, from ${DATE_MIN.slice(0, 4)} to ${DATE_MAX.slice(0, 4)}`); },
   });
   const plots = createPlotView($('#timeline'));
 
