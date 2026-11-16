@@ -452,7 +452,7 @@ function scenarioCard(ctx) {
       h('button', { class: 'btn', onclick: () => copyText(JSON.stringify(exportScenario(S), null, 1), 'Scenario JSON') }, 'Copy JSON'),
       h('button', { class: 'btn', title: 'Save this scenario as a .json file', onclick: () => downloadText(fileName(activeScenario(S).name, 'scenario'), JSON.stringify(exportScenario(S), null, 1)) }, 'Download'),
       h('button', { class: 'btn', title: 'Paste, open or drop a scenario JSON', onclick: () => importDlg() }, 'Import…')),
-    tip('A scenario keeps the orbit, its epoch, the current time, guidance and target, and which spacecraft flies it. Display options are shared. <b>Copy JSON</b> and <b>Download</b> hold the scenario and the name of its spacecraft (the spacecraft itself is in <b>Spacecraft Layout</b>). To import, paste, open or drop a file on this card.')), t => importDlg(t)); // drop a scenario file on the card to import it
+    tip('A scenario keeps the orbit, its epoch, the current time, guidance and target, and which spacecraft flies it. Display options are shared. <b>Copy JSON</b> and <b>Download</b> hold the scenario (its orbit as now defined, not what the other orbit tabs keep) and the name of its spacecraft (the spacecraft itself is in <b>Spacecraft Layout</b>). To import, paste, open or drop a file on this card.')), t => importDlg(t)); // drop a scenario file on the card to import it
 }
 
 /* ---------------- Orbit card: elements / r,v / TLE ---------------- */
@@ -472,17 +472,17 @@ function orbitCard(ctx, o, sl) {
       h('dt', null, 'Period', h('span', { class: 'lbl', title: 'Perigee to perigee, as flown: with J2, 2π / (n + Ṁ_J2)' }, ' (anomalistic)')), h('dd', null, liveText(() => { const E = orbitElements(o), r = ENV.j2Rates(E.a, E.e, E.i); return (2 * Math.PI / (r.n + (o.j2 ? r.M : 0)) / 60).toFixed(2) + ' min'; })),]),
       h('dt', null, 'LTAN (at epoch)'), h('dd', null, liveText(() => hhmm(ltanOf(o)))),
       h('dt', null, 'SSO inclination for this a'), h('dd', null, liveText(() => { const E = orbitElements(o); return deg(ENV.ssoInc(E.a, E.e)).toFixed(2) + '°'; }))),
-    check('j2', 'J2 secular drift of Ω, ω and M (makes SSO work)', () => o.j2, v => { o.j2 = v; save(); }),
+    check('j2', 'J2 secular drift of Ω, ω and M (makes SSO work)', () => o.j2, v => { o.j2 = v; save(); syncAll(); }),
   ];
   const defSeg = seg(Object.entries(DEF_NAMES), () => o.def, v => { switchDefinition(o, v); save(); ctx.renderRail(); });
   // each tab keeps what was entered in it (#81); this brings the orbit of the tab before over, on request
   const usePrev = h('button', { class: 'btn', onclick: () => { if (usePreviousOrbit(o)) { save(); ctx.renderRail(); } } });
   let prevKey = null;
   onSync(() => {
-    const k = JSON.stringify([o.def, o.defFrom, o.defs, o.epoch, ...(DEF_FIELDS[o.def] || []).map(f => o[f])]); if (k === prevKey) return; prevKey = k;
+    const k = JSON.stringify([o.def, o.defFrom, o.defs, o.j2, ...(DEF_FIELDS[o.def] || []).map(f => o[f])]); if (k === prevKey) return; prevKey = k; // J2: a repeat track needs it, a TLE's a depends on it
     const p = previousOrbit(o); usePrev.hidden = !p; if (!p) return;
     usePrev.textContent = `Use the orbit from ${p.name}`;
-    usePrev.title = `Replace what this tab holds with the orbit the ${p.name} tab defines${o.def === 'ssrgt' ? ' (its LTAN: a repeat track solves the rest)' : ''}${p.epoch !== o.epoch ? ', and its epoch' : ''}. The time stays.`;
+    usePrev.title = `Replace what this tab holds with the orbit the ${p.name} tab defines${o.def === 'ssrgt' ? ' (its LTAN: a repeat track solves the rest)' : ''}${p.inputs.epoch !== o.epoch ? ', and its epoch' : ''}. The current UTC stays.`;
   });
   let body = [];
   if (o.def === 'elements') body = [

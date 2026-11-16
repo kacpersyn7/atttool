@@ -450,8 +450,8 @@ test('time: a TLE keeps its own epoch; going to it starts there, leaving it keep
   switchDefinition(o, 'tle'); assert.equal(o.t, 0); assert.equal(currentDate(o).toISOString(), '2008-09-20T12:25:40.104Z');
   assert.equal(setEpoch(o, '2027-01-01T00:00'), false); assert.equal(currentDate(o).toISOString(), '2008-09-20T12:25:40.104Z');
   o.t = 100; const u = currentDate(o).getTime(), x = JSON.parse(JSON.stringify(o));
-  // the elements tab was used before (#81): it gets its own fields and epoch back, and the time from the epoch stays (not the 2008 UTC, years away)
-  switchDefinition(o, 'elements'); assert.equal(o.epoch, timeState({}).orbit.epoch); assert.equal(o.t, 100);
+  // the elements tab was used before (#81): it gets its own fields and epoch back, and the time it was left at (not the 2008 UTC, years away)
+  switchDefinition(o, 'elements'); assert.equal(o.epoch, timeState({}).orbit.epoch); assert.equal(o.t, 500);
   // a tab not used yet is filled from the TLE's orbit, at the TLE's epoch: the UTC stays
   x.defs = {}; switchDefinition(x, 'elements'); assert.equal(currentDate(x).getTime(), u); assert.equal(x.epoch, '2008-09-20T12:25:40.104');
 });
@@ -546,7 +546,8 @@ test('time: holding the slider pauses playback and release resumes it, whatever 
 
 test('time: scenarios accept negative and long times, not beyond the date range', () => {
   const d = timeState().orbit;
-  for (const t of [-1, 30 * DAY, -T_MAX, T_MAX]) assert.equal(sanitizeScenario({ t }, d).t, t);
+  for (const t of [-1, 30 * DAY, -100 * 365 * DAY]) assert.equal(sanitizeScenario({ t }, d).t, t);
+  for (const t of [-T_MAX, T_MAX]) assert.equal(sanitizeScenario({ t }, d).t, clampTime(d, t), 'kept within 1900–2200 for its epoch');
   for (const t of [T_MAX + 1, 1e15, NaN, Infinity, '5']) assert.equal(sanitizeScenario({ t }, d).t, d.t);
 });
 

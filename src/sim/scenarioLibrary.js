@@ -17,7 +17,7 @@ import * as ENV from '../env/index.js';
 import { newId } from '../spacecraft/component.js';
 import { activeItem as activeSC, selectSpacecraft, uniqueName, validateAxes } from '../spacecraft/library.js';
 import * as AM from '../core/attitude.js';
-import { DATE_MAX, DATE_MIN, DEF_FIELDS, DEF_NAMES, PRESETS, T_MAX, applyPreset, parseEpoch, validDate } from './scenario.js';
+import { DATE_MAX, DATE_MIN, DEF_FIELDS, DEF_NAMES, PRESETS, T_MAX, applyPreset, clampTime, parseEpoch, validDate } from './scenario.js';
 import { SEGMENT_KEYS } from './guidance.js';
 import { cleanOn } from './events.js';
 
@@ -25,6 +25,8 @@ import { cleanOn } from './events.js';
 export const SCENARIO_KEYS = ['preset', 'def', 'r', 'v', 'tle', 'epoch', 'hp', 'ha', 'i', 'raan', 'argp', 'nu0', 'j2', 't',
   'mode', 'refFrame', 'roll', 'pitch', 'yaw', 'sunAxis', 'sunSec', 'sunSecAxis', 'tgtLat', 'tgtLon', 'tgtAlt', 'tgtComp', 'tgtSlew', 'schedule', 'end',
   'rgtR', 'rgtD', 'rgtLtan', 'rgtLon', 'defs', 'defFrom'];
+/** Scenario fields kept in the library (parking, duplicate, the save) but not exported: what the other orbit tabs hold (#81). */
+export const LOCAL_KEYS = ['defs', 'defFrom'];
 /** Those that name parts of a spacecraft: only valid on the spacecraft they were saved with. */
 const PART_KEYS = ['tgtComp', 'sunAxis', 'sunSecAxis'];
 
@@ -106,7 +108,8 @@ export const SCENARIO_FORMAT = FORMAT_SCHEDULE;
 
 /** The active scenario as plain JSON. The spacecraft is only named. */
 export function exportScenario(s) {
-  const orbit = parked(s), format = orbit.schedule && orbit.schedule.length ? FORMAT_SCHEDULE : 1;
+  const orbit = parked(s); for (const k of LOCAL_KEYS) delete orbit[k]; // what other orbit tabs keep stays here: a shared file has no hidden TLE or r, v
+  const format = orbit.schedule && orbit.schedule.length ? FORMAT_SCHEDULE : 1;
   return copy({ atttool: format, kind: 'scenario', name: activeScenario(s).name, orbit, spacecraft: activeSC(s).name });
 }
 
@@ -147,7 +150,7 @@ const FIELD_NAME = {
  */
 export function sanitizeScenario(orbit, defaults, report = null, info = null) {
   const src = orbit && typeof orbit === 'object' ? orbit : {}, note = m => { if (report) report.push(m); };
-  const bad = SCENARIO_KEYS.filter(k => Object.hasOwn(src, k) && !VALID[k](src[k])), missing = SCENARIO_KEYS.filter(k => !Object.hasOwn(src, k));
+  const bad = SCENARIO_KEYS.filter(k => Object.hasOwn(src, k) && !VALID[k](src[k])), missing = SCENARIO_KEYS.filter(k => !Object.hasOwn(src, k) && !LOCAL_KEYS.includes(k));
   const o = Object.fromEntries(SCENARIO_KEYS.map(k => [k, VALID[k](src[k]) ? src[k] : defaults[k]]));
   if (bad.length) note(`Reset to the default (not a valid value): ${bad.map(k => FIELD_NAME[k] || k).join(', ')}.`);
   if (missing.length && info) info.push(`${missing.length} setting${missing.length === 1 ? ' was' : 's were'} not in the file (made by an older version) and took the default.`);
@@ -160,10 +163,11 @@ export function sanitizeScenario(orbit, defaults, report = null, info = null) {
   const tabs = {}, droppedTabs = [];
   for (const [d, x] of Object.entries(o.defs || {})) {
     if (!Object.hasOwn(DEF_FIELDS, d) || d === o.def) continue;
-    if (x && typeof x === 'object' && DEF_FIELDS[d].every(k => VALID[k](x[k]))) tabs[d] = Object.fromEntries(DEF_FIELDS[d].map(k => [k, x[k]])); else droppedTabs.push(DEF_NAMES[d]);
+    if (x && typeof x === 'object' && DEF_FIELDS[d].every(k => VALID[k](x[k]))) tabs[d] = { ...Object.fromEntries(DEF_FIELDS[d].map(k => [k, x[k]])), ...(isNum(x.at) ? { at: x.at } : {}) }; else droppedTabs.push(DEF_NAMES[d]);
   }
   o.defs = tabs; if (o.defFrom && !tabs[o.defFrom]) o.defFrom = '';
   if (droppedTabs.length) note(`What the ${droppedTabs.join(', ')} tab${droppedTabs.length > 1 ? 's' : ''} kept was not valid, so ${droppedTabs.length > 1 ? 'they start' : 'it starts'} from the current orbit.`);
+  o.t = clampTime(o, o.t); // the current date within 1900–2200 for this file's epoch (t alone is only limited to the widest span)
   return o;
 }
 

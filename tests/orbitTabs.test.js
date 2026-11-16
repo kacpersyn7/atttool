@@ -52,14 +52,14 @@ test('orbit tabs: "use the orbit from" brings the orbit of the tab before over, 
   switchDefinition(o, 'tle'); assert.equal(previousOrbit(o), null);
 });
 
-test('orbit tabs: a TLE has its own date; leaving it for a tab used before keeps that tab\'s epoch and the time from it', () => {
+test('orbit tabs: a TLE has its own date; leaving it for a tab used before goes back to that tab\'s epoch and the time it was left at', () => {
   const o = orbitOf(); o.t = 500; const ep = o.epoch;
   o.tle = '1 25544U 98067A   08264.51782528 -.00002182  00000-0 -11606-4 0  2927\n2 25544  51.6416 247.4627 0006703 130.5360 325.0288 15.72125391563537';
   switchDefinition(o, 'tle'); assert.equal(o.t, 0); assert.equal(epochDate(o).getUTCFullYear(), 2008);
-  o.t = 60; switchDefinition(o, 'elements'); assert.equal(o.epoch, ep); assert.equal(o.t, 60, 'not minus 18 years');
-  // the TLE kept its text; its orbit can be brought over (at its epoch, so it is the same orbit)
-  const p = previousOrbit(o); assert.equal(p.def, 'tle'); assert.equal(p.epoch, '2008-09-20T12:25:40.104');
-  usePreviousOrbit(o); assert.equal(epochDate(o).getUTCFullYear(), 2008); close6(orbitElements(o).i * 180 / Math.PI, 51.6416);
+  o.t = 60; switchDefinition(o, 'elements'); assert.equal(o.epoch, ep); assert.equal(o.t, 500, 'back where it was left, not 18 years away');
+  // the TLE kept its text; its orbit can be brought over (at its epoch, so it is the same orbit); the current UTC stays
+  const p = previousOrbit(o), u = currentDate(o).getTime(); assert.equal(p.def, 'tle'); assert.equal(p.inputs.epoch, '2008-09-20T12:25:40.104');
+  usePreviousOrbit(o); assert.equal(epochDate(o).getUTCFullYear(), 2008); close6(orbitElements(o).i * 180 / Math.PI, 51.6416); assert.equal(currentDate(o).getTime(), u);
 });
 const close6 = (a, b) => assert.ok(Math.abs(a - b) < 1e-6, `${a} vs ${b}`);
 
@@ -71,20 +71,48 @@ test('orbit tabs: an r, v never filled in starts from the current orbit; restart
   assert.equal(x.defFrom, ''); assert.equal(previousOrbit(x), null, 'restart re-dated the orbit: no "use the orbit from Elements"');
 });
 
-test('orbit tabs: what the tabs keep goes with the scenario (export, import, parked); invalid kept inputs are dropped with a note', () => {
+test('orbit tabs: what the tabs keep stays with the scenario in the library (parked, duplicated) but is not exported', () => {
   const s = fresh(), o = s.orbit; o.j2 = true; switchDefinition(o, 'rv'); o.r = [...MY_R]; o.v = [...MY_V]; switchDefinition(o, 'ssrgt');
   const json = JSON.parse(JSON.stringify(exportScenario(s)));
-  assert.deepEqual(json.orbit.defs.rv, { r: MY_R, v: MY_V }); assert.equal(json.orbit.defFrom, 'rv');
-  const s2 = fresh(); importScenario(s2, json, newScenarioOrbit(defaultState().orbit));
-  switchDefinition(s2.orbit, 'rv'); assert.deepEqual([s2.orbit.r, s2.orbit.v], [MY_R, MY_V], 'imported with its tabs');
+  assert.ok(!('defs' in json.orbit) && !('defFrom' in json.orbit), 'a shared file holds no hidden TLE or r, v');
+  const pv = previewScenario(fresh(), json, newScenarioOrbit(defaultState().orbit));
+  assert.deepEqual(pv.info, [], 'and that is not reported as settings missing from an older version');
   const first = s.scenarios.active; addScenario(s, newScenarioOrbit(defaultState().orbit), 'Other'); assert.deepEqual(s.orbit.defs, {}, 'another scenario: its own tabs');
-  selectScenario(s, first); assert.deepEqual(s.orbit.defs.rv, { r: MY_R, v: MY_V }, 'parked and back');
-  const bad = { ...json.orbit, defs: { rv: { r: [1, 2], v: MY_V }, elements: { preset: 'custom', hp: 500, ha: 500, i: 10, raan: 0, argp: 0, nu0: 0 }, ssrgt: { rgtR: 1 }, nope: {} } };
+  selectScenario(s, first); assert.deepEqual([s.orbit.defs.rv.r, s.orbit.defs.rv.v], [MY_R, MY_V], 'parked and back');
+  // a file that does carry kept tabs (hand-made): valid ones are kept, with their time; others dropped with a note
+  const ep = '2026-10-05T10:00', bad = { ...json.orbit, def: 'ssrgt', defs: { rv: { r: [1, 2], v: MY_V, epoch: ep }, elements: { preset: 'custom', hp: 500, ha: 500, i: 10, raan: 0, argp: 0, nu0: 0, epoch: ep, at: 5 }, ssrgt: { rgtR: 1 }, nope: {} }, defFrom: 'rv' };
   const report = [], c = sanitizeScenario(bad, newScenarioOrbit(defaultState().orbit), report);
-  assert.deepEqual(Object.keys(c.defs), ['elements'], 'a valid tab is kept; the one in use, an invalid one and an unknown one are not');
+  assert.deepEqual(Object.keys(c.defs), ['elements']); assert.equal(c.defs.elements.at, 5);
   assert.equal(c.defFrom, '', 'the tab before was dropped');
   assert.ok(report.some(r => r.includes('r, v (J2000) tab')), report.join(' | '));
-  const pv = previewScenario(fresh(), { kind: 'scenario', atttool: 1, orbit: { epoch: '2026-01-01T00:00' } }, newScenarioOrbit(defaultState().orbit));
-  assert.deepEqual(pv.orbit.defs, {}, 'an older file: no tabs kept');
-  assert.ok(currentDate(pv.orbit));
+});
+
+test('orbit tabs: the schedule stays at its UTC across a TLE and back; the time stays within the date limits', () => {
+  const s = fresh(), o = s.orbit; o.t = 600; const u = currentDate(o).getTime();
+  o.schedule = [{ id: 'a', start: new Date(u + 60e3).toISOString().slice(0, 19), slew: 30, mode: 'sun' }];
+  o.tle = '1 25544U 98067A   08264.51782528 -.00002182  00000-0 -11606-4 0  2927\n2 25544  51.6416 247.4627 0006703 130.5360 325.0288 15.72125391563537';
+  switchDefinition(o, 'tle'); switchDefinition(o, 'elements');
+  assert.equal(currentDate(o).getTime(), u, 'back at the time it was left: the change is a minute ahead, not years');
+  const x = fresh().orbit; x.epoch = '2199-12-01T00:00'; x.t = 30 * 86400; // the last day of the limits
+  switchDefinition(x, 'rv'); x.epoch = '1990-01-01T00:00'; switchDefinition(x, 'elements'); switchDefinition(x, 'rv');
+  assert.ok(currentDate(x).getTime() <= Date.UTC(2200, 0, 1), 'within 2200');
+});
+
+test('orbit tabs: each tab keeps its epoch, so coming back gives exactly its orbit', () => {
+  const o = orbitOf(); o.preset = 'custom'; const el = pos(o, 0), ep = o.epoch;
+  switchDefinition(o, 'rv'); o.epoch = '2027-03-01T00:00'; o.r = [...MY_R]; o.v = [...MY_V];
+  switchDefinition(o, 'elements'); assert.equal(o.epoch, ep); assert.ok(dist(pos(o, 0), el) < 1e-9, 'the elements at their own epoch');
+  switchDefinition(o, 'rv'); assert.equal(o.epoch, '2027-03-01T00:00');
+  // restart from here re-dates only the r, v: the elements keep their epoch
+  switchDefinition(o, 'elements'); restartFromState(o, 1000); switchDefinition(o, 'elements'); assert.equal(o.epoch, ep); assert.ok(dist(pos(o, 0), el) < 1e-9);
+});
+
+test('orbit tabs: a repeat track can take the LTAN of the tab before; J2 decides whether it can', () => {
+  const o = orbitOf(); o.preset = 'custom'; o.raan = 200; const want = Math.round(ltanOf(o) * 60) / 60;
+  switchDefinition(o, 'ssrgt'); o.rgtLtan = 6; switchDefinition(o, 'elements'); switchDefinition(o, 'ssrgt');
+  assert.equal(o.rgtLtan, 6, 'its own LTAN back'); const p = previousOrbit(o); assert.ok(p, 'the LTAN differs');
+  assert.equal(p.inputs.rgtLtan, want); usePreviousOrbit(o); assert.equal(o.rgtLtan, want); assert.equal(previousOrbit(o), null);
+  const q = orbitOf(); q.j2 = false; q.def = 'ssrgt'; switchDefinition(q, 'rv'); q.r = [...MY_R]; q.v = [...MY_V]; // a typed r, v
+  assert.equal(previousOrbit(q), null, 'a repeat track without J2 is not valid: nothing to bring over');
+  q.j2 = true; const r = previousOrbit(q); assert.ok(r && r.def === 'ssrgt', 'with J2 it is: its orbit can be brought over');
 });

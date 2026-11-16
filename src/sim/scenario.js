@@ -8,8 +8,8 @@
  *   'tle'       a two-line element set (o.tle); the epoch comes from the TLE
  *   'ssrgt'     sun-synchronous repeat ground track: o.rgtR orbits in o.rgtD days, LTAN o.rgtLtan (h), orbit no. 1
  *               crossing the equator northbound at longitude o.rgtLon (deg); solved by ssrgtSolution
- * Switching between elements, r,v and TLE keeps the current orbit (see switchDefinition); switching to a repeat
- * track keeps the LTAN and solves the rest.
+ * Each definition keeps its own inputs and epoch when another is chosen (switchDefinition, #81). One not used yet
+ * starts from the current orbit: elements and r,v exactly, a repeat track with its LTAN (it solves the rest).
  */
 import { D2R, R2D } from '../core/linalg.js';
 import * as ENV from '../env/index.js';
@@ -223,76 +223,85 @@ export function definitionError(o) {
 export function ltanOf(o) { const r = orbitElements(o).raan * R2D - ENV.sunRA(epochDate(o)) * R2D; return ((12 + r / 15) % 24 + 24) % 24; }
 
 /**
- * The inputs of each orbit definition: what its tab shows. The epoch is shared by the tabs (one field under them;
- * a TLE carries its own), so it is not among them.
+ * The inputs of each orbit definition: what its tab shows, with the epoch they hold at (the epoch belongs to the
+ * definition; a TLE carries its own).
  */
-export const DEF_FIELDS = { elements: ['preset', 'hp', 'ha', 'i', 'raan', 'argp', 'nu0'], rv: ['r', 'v'], tle: ['tle'], ssrgt: ['rgtR', 'rgtD', 'rgtLtan', 'rgtLon'] };
+export const DEF_FIELDS = { elements: ['preset', 'hp', 'ha', 'i', 'raan', 'argp', 'nu0', 'epoch'], rv: ['r', 'v', 'epoch'], tle: ['tle'], ssrgt: ['rgtR', 'rgtD', 'rgtLtan', 'rgtLon', 'epoch'] };
 /** Names of the definitions, as their tabs. */
 export const DEF_NAMES = { elements: 'Elements', rv: 'r, v (J2000)', tle: 'TLE', ssrgt: 'Repeat track' };
 const inputsOf = (o, def) => JSON.parse(JSON.stringify(Object.fromEntries(DEF_FIELDS[def].map(k => [k, o[k] ?? null]))));
+/** What a tab keeps when it is left: its inputs, and `at`, the current UTC then (ms), to come back to from a TLE. */
+const keptOf = (o, def) => ({ ...inputsOf(o, def), at: currentDate(o).getTime() });
 
 /**
  * Fill the inputs of definition `to` from orbit `from` = { E (elements at its epoch), ep (its epoch), ltan, tle (it
  * is a TLE's) }: r,v is the state at the epoch, elements are written as fields, a repeat track takes the LTAN (to the
- * minute; altitude, inclination and phase are solved). A TLE can't be made from an orbit, so it is left as it is.
- * From a TLE the epoch becomes the TLE's, so the orbit is the same one.
+ * minute; altitude, inclination and phase are solved), each at that orbit's epoch, so it is the same orbit (a repeat
+ * track: the same LTAN). A TLE can't be made from an orbit, so it is left as it is.
  */
 function fillDefinition(o, to, from) {
   if (to === 'rv') { const s = ENV.propagate(from.E, 0, false); o.r = s.r.map(x => +x.toFixed(6)); o.v = s.v.map(x => +x.toFixed(9)); }
   if (to === 'elements') { setFieldsFromElements(o, from.E); o.preset = 'custom'; }
   if (to === 'ssrgt') o.rgtLtan = Math.round(from.ltan * 60) / 60;
-  if (from.tle && to !== 'tle') o.epoch = formatEpoch(from.ep);
+  if (to !== 'tle' && (from.tle || from.epoch !== o.epoch)) o.epoch = from.tle ? formatEpoch(from.ep) : from.epoch;
 }
-const orbitOf = o => ({ E: orbitElements(o), ep: epochDate(o), ltan: ltanOf(o), tle: o.def === 'tle' });
+const orbitOf = o => ({ E: orbitElements(o), ep: epochDate(o), epoch: o.epoch, ltan: ltanOf(o), tle: o.def === 'tle' });
 
 /**
- * Switch o.def to `to` (#81). Each tab keeps what was entered in it: the inputs of the tab left are kept in
- * o.defs, and a tab used before gets its own back (that is the orbit that flies). A tab not used yet is filled
- * from the current orbit, so nothing moves (see fillDefinition). The time stays (o.t), except on going to a TLE,
- * which starts at its own date as when one is pasted. o.defFrom remembers the tab left, for usePreviousOrbit.
- * Mutates o.
+ * Switch o.def to `to` (#81). Each tab keeps what was entered in it, with its epoch: the tab left is kept in
+ * o.defs, and a tab used before gets its own back, so its orbit flies again. A tab not used yet is filled from the
+ * current orbit, so nothing moves (fillDefinition). o.defFrom remembers the tab left, for usePreviousOrbit.
+ * The current UTC stays (the mode schedule is in UTC), within the date limits, except: going to a TLE starts at
+ * its date, as when one is pasted; and leaving a TLE for a tab used before goes back to the time that tab was left
+ * at, rather than staying at the TLE's date (often years away). Mutates o.
  */
 export function switchDefinition(o, to) {
   if (to === o.def || !DEF_FIELDS[to]) return;
-  const from = o.def, was = orbitOf(o), k0 = o.defs && o.defs[to], kept = k0 && !(to === 'rv' && !(k0.r && k0.v)) ? k0 : null; // an r,v never filled in counts as unused
-  o.defs = { ...(o.defs || {}), [from]: inputsOf(o, from) }; delete o.defs[to];
+  const from = o.def, was = orbitOf(o), now = currentDate(o).getTime();
+  const k0 = o.defs && o.defs[to], kept = k0 && !(to === 'rv' && !(k0.r && k0.v)) ? JSON.parse(JSON.stringify(k0)) : null; // an r,v never filled in counts as unused
+  o.defs = { ...(o.defs || {}), [from]: keptOf(o, from) }; delete o.defs[to];
   if (kept) {
-    Object.assign(o, JSON.parse(JSON.stringify(kept))); // from a TLE, the shared epoch is still the one this tab had before it
-    // an LTAN preset's RAAN holds at the epoch it was applied at: if the epoch has moved since, the fields stay as they were and are no longer that preset
+    const { at, ...inputs } = kept; Object.assign(o, inputs);
+    // an LTAN preset holds its LTAN at its epoch: fields that no longer match it (an older save) are no longer that preset
     const p = PRESETS[o.preset];
     if (to === 'elements' && p && p.ltan !== undefined) { const x = { ...o }; applyPreset(x, o.preset); if (['hp', 'ha', 'i', 'raan', 'argp', 'nu0'].some(k => x[k] !== o[k])) o.preset = 'custom'; }
   } else fillDefinition(o, to, was);
   o.def = to; o.defFrom = from;
-  if (to === 'tle' && tleOf(o)) o.t = 0;
+  const e = epochDate(o).getTime();
+  let t = (now - e) / 1000;
+  if (to === 'tle' && tleOf(o)) t = 0;
+  else if (from === 'tle' && kept && Number.isFinite(kept.at)) t = (kept.at - e) / 1000;
+  o.t = clampTime(o, t);
 }
 
 /**
- * What "use the orbit from the tab before" would give this tab: its inputs filled from the orbit that o.defFrom's
- * kept inputs define, or null when there is nothing to use (no tab before, this is a TLE, that one is invalid, or
- * it would change nothing).
+ * What "use the orbit from the tab before" would give this tab: its inputs (with the epoch) filled from the orbit
+ * that o.defFrom's kept inputs define, or null when there is nothing to use (no tab before, this is a TLE, that one
+ * is invalid, or it would change nothing).
  */
 export function previousOrbit(o) {
   const from = o.defFrom, kept = from && o.defs && o.defs[from];
   if (!kept || from === o.def || o.def === 'tle' || !DEF_FIELDS[from]) return null;
-  const p = { ...o, ...JSON.parse(JSON.stringify(kept)), def: from }; if (definitionError(p)) return null;
+  const { at, ...inputs } = JSON.parse(JSON.stringify(kept)), p = { ...o, ...inputs, def: from }; if (definitionError(p)) return null;
   const q = { ...o }; fillDefinition(q, o.def, orbitOf(p));
-  const next = inputsOf(q, o.def), epoch = q.epoch;
-  return JSON.stringify(next) === JSON.stringify(inputsOf(o, o.def)) && epoch === o.epoch ? null : { def: from, name: DEF_NAMES[from], inputs: next, epoch };
+  const next = inputsOf(q, o.def);
+  return JSON.stringify(next) === JSON.stringify(inputsOf(o, o.def)) ? null : { def: from, name: DEF_NAMES[from], inputs: next };
 }
 
-/** Replace this tab's inputs with the orbit of the tab before (previousOrbit). The time stays. @returns false if there was none. */
+/** Replace this tab's inputs (and epoch) with the orbit of the tab before (previousOrbit). The current UTC stays. @returns false if there was none. */
 export function usePreviousOrbit(o) {
   const p = previousOrbit(o); if (!p) return false;
-  Object.assign(o, p.inputs); o.epoch = p.epoch; return true;
+  const now = currentDate(o).getTime(); Object.assign(o, p.inputs);
+  o.t = clampTime(o, (now - epochDate(o).getTime()) / 1000); return true;
 }
 
 /**
  * Before setting o.def to `to` directly (a preset, restart from here): the tab left keeps its inputs (#81).
- * remember: it becomes the tab before (usePreviousOrbit); not after a restart, which re-dates every orbit.
+ * remember: it becomes the tab before (usePreviousOrbit); not after a restart.
  */
 function leaveDefinition(o, to, remember = true) {
   if (o.def === to || !DEF_FIELDS[o.def]) return;
-  o.defs = { ...(o.defs || {}), [o.def]: inputsOf(o, o.def) }; delete o.defs[to]; o.defFrom = remember ? o.def : '';
+  o.defs = { ...(o.defs || {}), [o.def]: keptOf(o, o.def) }; delete o.defs[to]; o.defFrom = remember ? o.def : '';
 }
 
 /** Write the altitude/angle fields from elements (km, rad). */
