@@ -223,19 +223,76 @@ export function definitionError(o) {
 export function ltanOf(o) { const r = orbitElements(o).raan * R2D - ENV.sunRA(epochDate(o)) * R2D; return ((12 + r / 15) % 24 + 24) % 24; }
 
 /**
- * Switch o.def to `to`, filling the new definition from the current orbit so nothing moves.
- * Elements → r,v uses the state at the epoch; anything → elements writes the fields from the elements
- * (and, from a TLE, takes over its epoch). The current UTC stays, except on going to a TLE. Mutates o.
+ * The inputs of each orbit definition: what its tab shows. The epoch is shared by the tabs (one field under them;
+ * a TLE carries its own), so it is not among them.
+ */
+export const DEF_FIELDS = { elements: ['preset', 'hp', 'ha', 'i', 'raan', 'argp', 'nu0'], rv: ['r', 'v'], tle: ['tle'], ssrgt: ['rgtR', 'rgtD', 'rgtLtan', 'rgtLon'] };
+/** Names of the definitions, as their tabs. */
+export const DEF_NAMES = { elements: 'Elements', rv: 'r, v (J2000)', tle: 'TLE', ssrgt: 'Repeat track' };
+const inputsOf = (o, def) => JSON.parse(JSON.stringify(Object.fromEntries(DEF_FIELDS[def].map(k => [k, o[k] ?? null]))));
+
+/**
+ * Fill the inputs of definition `to` from orbit `from` = { E (elements at its epoch), ep (its epoch), ltan, tle (it
+ * is a TLE's) }: r,v is the state at the epoch, elements are written as fields, a repeat track takes the LTAN (to the
+ * minute; altitude, inclination and phase are solved). A TLE can't be made from an orbit, so it is left as it is.
+ * From a TLE the epoch becomes the TLE's, so the orbit is the same one.
+ */
+function fillDefinition(o, to, from) {
+  if (to === 'rv') { const s = ENV.propagate(from.E, 0, false); o.r = s.r.map(x => +x.toFixed(6)); o.v = s.v.map(x => +x.toFixed(9)); }
+  if (to === 'elements') { setFieldsFromElements(o, from.E); o.preset = 'custom'; }
+  if (to === 'ssrgt') o.rgtLtan = Math.round(from.ltan * 60) / 60;
+  if (from.tle && to !== 'tle') o.epoch = formatEpoch(from.ep);
+}
+const orbitOf = o => ({ E: orbitElements(o), ep: epochDate(o), ltan: ltanOf(o), tle: o.def === 'tle' });
+
+/**
+ * Switch o.def to `to` (#81). Each tab keeps what was entered in it: the inputs of the tab left are kept in
+ * o.defs, and a tab used before gets its own back (that is the orbit that flies). A tab not used yet is filled
+ * from the current orbit, so nothing moves (see fillDefinition). The time stays (o.t), except on going to a TLE,
+ * which starts at its own date as when one is pasted. o.defFrom remembers the tab left, for usePreviousOrbit.
+ * Mutates o.
  */
 export function switchDefinition(o, to) {
-  if (to === o.def) return;
-  const E = orbitElements(o), ep = epochDate(o);
-  if (to === 'rv') { const s = ENV.propagate(E, 0, false); o.r = s.r.map(x => +x.toFixed(6)); o.v = s.v.map(x => +x.toFixed(9)); }
-  if (to === 'elements') setFieldsFromElements(o, E);
-  if (o.def === 'tle' && to !== 'tle') o.epoch = formatEpoch(ep);
-  if (to === 'tle' && tleOf(o)) o.t = 0; // a TLE has its own date: start there, as when one is pasted
-  if (to === 'ssrgt') o.rgtLtan = Math.round(ltanOf(o) * 60) / 60; // keep the LTAN (to the minute); altitude, inclination and phase are solved
-  o.def = to; o.preset = 'custom';
+  if (to === o.def || !DEF_FIELDS[to]) return;
+  const from = o.def, was = orbitOf(o), k0 = o.defs && o.defs[to], kept = k0 && !(to === 'rv' && !(k0.r && k0.v)) ? k0 : null; // an r,v never filled in counts as unused
+  o.defs = { ...(o.defs || {}), [from]: inputsOf(o, from) }; delete o.defs[to];
+  if (kept) {
+    Object.assign(o, JSON.parse(JSON.stringify(kept))); // from a TLE, the shared epoch is still the one this tab had before it
+    // an LTAN preset's RAAN holds at the epoch it was applied at: if the epoch has moved since, the fields stay as they were and are no longer that preset
+    const p = PRESETS[o.preset];
+    if (to === 'elements' && p && p.ltan !== undefined) { const x = { ...o }; applyPreset(x, o.preset); if (['hp', 'ha', 'i', 'raan', 'argp', 'nu0'].some(k => x[k] !== o[k])) o.preset = 'custom'; }
+  } else fillDefinition(o, to, was);
+  o.def = to; o.defFrom = from;
+  if (to === 'tle' && tleOf(o)) o.t = 0;
+}
+
+/**
+ * What "use the orbit from the tab before" would give this tab: its inputs filled from the orbit that o.defFrom's
+ * kept inputs define, or null when there is nothing to use (no tab before, this is a TLE, that one is invalid, or
+ * it would change nothing).
+ */
+export function previousOrbit(o) {
+  const from = o.defFrom, kept = from && o.defs && o.defs[from];
+  if (!kept || from === o.def || o.def === 'tle' || !DEF_FIELDS[from]) return null;
+  const p = { ...o, ...JSON.parse(JSON.stringify(kept)), def: from }; if (definitionError(p)) return null;
+  const q = { ...o }; fillDefinition(q, o.def, orbitOf(p));
+  const next = inputsOf(q, o.def), epoch = q.epoch;
+  return JSON.stringify(next) === JSON.stringify(inputsOf(o, o.def)) && epoch === o.epoch ? null : { def: from, name: DEF_NAMES[from], inputs: next, epoch };
+}
+
+/** Replace this tab's inputs with the orbit of the tab before (previousOrbit). The time stays. @returns false if there was none. */
+export function usePreviousOrbit(o) {
+  const p = previousOrbit(o); if (!p) return false;
+  Object.assign(o, p.inputs); o.epoch = p.epoch; return true;
+}
+
+/**
+ * Before setting o.def to `to` directly (a preset, restart from here): the tab left keeps its inputs (#81).
+ * remember: it becomes the tab before (usePreviousOrbit); not after a restart, which re-dates every orbit.
+ */
+function leaveDefinition(o, to, remember = true) {
+  if (o.def === to || !DEF_FIELDS[o.def]) return;
+  o.defs = { ...(o.defs || {}), [o.def]: inputsOf(o, o.def) }; delete o.defs[to]; o.defFrom = remember ? o.def : '';
 }
 
 /** Write the altitude/angle fields from elements (km, rad). */
@@ -249,6 +306,7 @@ export function setFieldsFromElements(o, E) {
 /** Make the state at time t (s after epoch) the new initial state: epoch moves to t, r,v definition. */
 export function restartFromState(o, t) {
   t = clampTime(o, t); // the new epoch must be a date that can be read back
+  leaveDefinition(o, 'rv', false); if (o.def === 'rv') o.defFrom = '';
   const E = orbitElements(o), s = ENV.propagate(E, t, o.j2), d = new Date(epochDate(o).getTime() + t * 1000);
   o.r = s.r.map(x => +x.toFixed(6)); o.v = s.v.map(x => +x.toFixed(9));
   o.epoch = formatEpoch(new Date(Math.round(d.getTime()))); o.def = 'rv'; o.preset = 'custom'; o.t = 0;
@@ -275,7 +333,7 @@ export const PRESETS = {
 
 /** Apply preset `k` to orbit settings `o` (mutates). Resets time to 0. Returns false if unknown. */
 export function applyPreset(o, k) {
-  const p = PRESETS[k]; if (!p) return false; o.preset = k; o.def = 'elements';
+  const p = PRESETS[k]; if (!p) return false; leaveDefinition(o, 'elements'); o.preset = k; o.def = 'elements';
   Object.assign(o, { hp: p.hp, ha: p.ha, argp: p.argp, nu0: p.nu0 });
   if (p.ltan !== undefined) {
     const a = ENV.RE + p.hp; o.i = +(ENV.ssoInc(a) * R2D).toFixed(3);

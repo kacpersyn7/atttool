@@ -449,7 +449,11 @@ test('time: a TLE keeps its own epoch; going to it starts there, leaving it keep
   const o = timeState({ t: 500, tle: ISS }).orbit;
   switchDefinition(o, 'tle'); assert.equal(o.t, 0); assert.equal(currentDate(o).toISOString(), '2008-09-20T12:25:40.104Z');
   assert.equal(setEpoch(o, '2027-01-01T00:00'), false); assert.equal(currentDate(o).toISOString(), '2008-09-20T12:25:40.104Z');
-  o.t = 100; const u = currentDate(o).getTime(); switchDefinition(o, 'elements'); assert.equal(currentDate(o).getTime(), u);
+  o.t = 100; const u = currentDate(o).getTime(), x = JSON.parse(JSON.stringify(o));
+  // the elements tab was used before (#81): it gets its own fields and epoch back, and the time from the epoch stays (not the 2008 UTC, years away)
+  switchDefinition(o, 'elements'); assert.equal(o.epoch, timeState({}).orbit.epoch); assert.equal(o.t, 100);
+  // a tab not used yet is filled from the TLE's orbit, at the TLE's epoch: the UTC stays
+  x.defs = {}; switchDefinition(x, 'elements'); assert.equal(currentDate(x).getTime(), u); assert.equal(x.epoch, '2008-09-20T12:25:40.104');
 });
 
 test('time: restarting from a state before the epoch keeps the UTC and the position', () => {

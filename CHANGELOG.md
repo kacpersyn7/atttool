@@ -20,6 +20,9 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 ### Changed
 - **J2 drift of the mean anomaly** (#72): with J2 on, the mean anomaly now drifts at its first-order secular rate too, as the node and perigee did. Along-track timing moves by up to ~30 km per orbit in LEO (28 km, 3.7 s, at SSO 550 km; 5 km for the ISS), so **saved scenarios with J2 on reach their targets at slightly different times**. A TLE is flown at exactly the mean motion it states (its semi-major axis is the first-order Kozai→Brouwer one, within 0.1 m of SGP4's).
 
+### Fixed
+- **Orbit tabs keep what was entered in them** (#81): switching the *Defined by* tab no longer overwrites the other tabs. Going r, v → Repeat track → r, v gives back the r, v you typed (and its orbit), and the same for elements, a TLE and a repeat track. A tab not used yet still starts from the current orbit. *Use the orbit from …*, under the tabs, brings the previous tab's orbit over when you want it. The time stays when switching (a TLE still starts at its own date). Scenarios keep and export what their tabs hold.
+
 ## [0.9.0] - 2026-11-08
 
 ### Added

@@ -17,14 +17,14 @@ import * as ENV from '../env/index.js';
 import { newId } from '../spacecraft/component.js';
 import { activeItem as activeSC, selectSpacecraft, uniqueName, validateAxes } from '../spacecraft/library.js';
 import * as AM from '../core/attitude.js';
-import { DATE_MAX, DATE_MIN, PRESETS, T_MAX, applyPreset, parseEpoch, validDate } from './scenario.js';
+import { DATE_MAX, DATE_MIN, DEF_FIELDS, DEF_NAMES, PRESETS, T_MAX, applyPreset, parseEpoch, validDate } from './scenario.js';
 import { SEGMENT_KEYS } from './guidance.js';
 import { cleanOn } from './events.js';
 
 /** The fields of state.orbit that make up a scenario. refFrame only picks the frame shown, but it goes with the mode's offsets. */
 export const SCENARIO_KEYS = ['preset', 'def', 'r', 'v', 'tle', 'epoch', 'hp', 'ha', 'i', 'raan', 'argp', 'nu0', 'j2', 't',
   'mode', 'refFrame', 'roll', 'pitch', 'yaw', 'sunAxis', 'sunSec', 'sunSecAxis', 'tgtLat', 'tgtLon', 'tgtAlt', 'tgtComp', 'tgtSlew', 'schedule', 'end',
-  'rgtR', 'rgtD', 'rgtLtan', 'rgtLon'];
+  'rgtR', 'rgtD', 'rgtLtan', 'rgtLon', 'defs', 'defFrom'];
 /** Those that name parts of a spacecraft: only valid on the spacecraft they were saved with. */
 const PART_KEYS = ['tgtComp', 'sunAxis', 'sunSecAxis'];
 
@@ -127,6 +127,8 @@ const VALID = {
   schedule: Array.isArray, // and then cleaned change by change (cleanSchedule)
   end: x => x === '' || (isStr(x) && validDate(x)), // '' = automatic
   rgtR: x => Number.isInteger(x) && x >= 1 && x <= 1000, rgtD: x => Number.isInteger(x) && x >= 1 && x <= 1000, rgtLtan: inRange(0, 24), rgtLon: inRange(-180, 180),
+  defs: x => !!x && typeof x === 'object' && !Array.isArray(x), // and then cleaned tab by tab (sanitizeScenario)
+  defFrom: x => x === '' || Object.hasOwn(DEF_FIELDS, x),
 };
 /** Names of the scenario fields for the import report. */
 const FIELD_NAME = {
@@ -135,6 +137,7 @@ const FIELD_NAME = {
   roll: 'roll', pitch: 'pitch', yaw: 'yaw', sunAxis: 'Sun axis', sunSec: 'secondary direction', sunSecAxis: 'secondary axis', tgtLat: 'target latitude',
   tgtLon: 'target longitude', tgtAlt: 'target height', tgtComp: 'pointing axis', tgtSlew: 'slew to/from target', schedule: 'mode schedule', end: 'scenario end',
   rgtR: 'repeat orbits', rgtD: 'repeat days', rgtLtan: 'repeat-track LTAN', rgtLon: 'reference track longitude',
+  defs: 'inputs kept by the other orbit tabs', defFrom: 'orbit tab used before',
 };
 
 /**
@@ -153,6 +156,14 @@ export function sanitizeScenario(orbit, defaults, report = null, info = null) {
   if (q && [q.w, q.x, q.y, q.z].every(isNum) && AM.q.norm(q) > 1e-9) o.inertialQ = AM.q.unit({ w: q.w, x: q.x, y: q.y, z: q.z });
   else if (q !== undefined) note('The inertial attitude was not a valid quaternion: Rotation Lab keeps its own.');
   o.schedule = cleanSchedule(o.schedule, o, o.inertialQ, report);
+  // the inputs other orbit tabs keep (#81): a tab's are kept only if every one is valid, and not for the tab in use
+  const tabs = {}, droppedTabs = [];
+  for (const [d, x] of Object.entries(o.defs || {})) {
+    if (!Object.hasOwn(DEF_FIELDS, d) || d === o.def) continue;
+    if (x && typeof x === 'object' && DEF_FIELDS[d].every(k => VALID[k](x[k]))) tabs[d] = Object.fromEntries(DEF_FIELDS[d].map(k => [k, x[k]])); else droppedTabs.push(DEF_NAMES[d]);
+  }
+  o.defs = tabs; if (o.defFrom && !tabs[o.defFrom]) o.defFrom = '';
+  if (droppedTabs.length) note(`What the ${droppedTabs.join(', ')} tab${droppedTabs.length > 1 ? 's' : ''} kept was not valid, so ${droppedTabs.length > 1 ? 'they start' : 'it starts'} from the current orbit.`);
   return o;
 }
 
