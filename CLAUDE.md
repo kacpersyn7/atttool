@@ -28,10 +28,10 @@ Read `docs/CONVENTIONS.md` before touching the math. Key points:
 - Units are km and s in orbit and environment code, m in the spacecraft layout, rad in code, and degrees in the UI and state.
 - If you change a convention or model, update both `docs/CONVENTIONS.md` and `src/ui/conventions.js`.
 
-## Module syntax (required by scripts/build.mjs)
+## Module syntax (required by the bundler, scripts/bundle.mjs)
 
 - Use named exports only: `export function`, `export class`, `export const`, `export { a }` and `export * from`.
-- Don't use default exports, dynamic `import()`, import cycles or side-effect-only imports.
+- Don't use default exports, dynamic `import()`, import cycles, side-effect-only imports or destructuring exports (`export const { a } = …`).
 - Don't reassign an exported `let`, because the bundle has no live bindings.
 - Import three as `import * as THREE from 'three'`.
 

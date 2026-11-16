@@ -22,6 +22,7 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 
 ### Fixed
 - **Editing a schedule change keeps the time** (#80): clicking a row of the Mode schedule to edit it no longer moves the current time to the change's start (which lost the moment being looked at, and could put the time before the epoch). *Go to start* in the change's editor jumps there. The Attitude guidance card says *Not flying now* in every mode (it did only for target tracking) when the settings being edited, a change's or the initial ones, are not what flies at the current time.
+- **Scenario import in the single-file AttTool.html** (#79): importing any scenario (and a schedule CSV) failed there with "Cannot read properties of undefined", and event starts, the target height and the max slew rate were broken too. The bundler saw only the first name of a declaration like `export const DATE_MIN = …, DATE_MAX = …`, so the others were undefined in the built file (the dev server was fine). It now reads every name, and the build fails if a module imports a name the bundler doesn't find exported.
 
 ## [0.9.0] - 2026-11-08
 
