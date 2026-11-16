@@ -209,7 +209,7 @@ function scheduleCard(ctx, o) {
     liveText(() => {
       const cur = ctx.cur(), now = cur && cur.seg ? cur.seg.id : '';
       const notes = withRates(scheduleNotes(o));
-      const row = (id, start, mode, slew, warn = '', info = '', name = '') => `<button type="button" class="srow${(selChange || '') === id ? ' on' : ''}" data-id="${esc(id)}" title="${warn ? esc(warn) + '. ' : ''}${info ? esc(info) + '. ' : ''}${id ? 'Edit this change and go to its start' : 'Edit the initial settings'}"><span class="dot${now === id ? ' now' : ''}"></span><span class="st">${start}${warn ? ' <span class="warn">⚠</span>' : ''}</span><span>${MODE_SHORT[mode] || ''}</span><span class="sl">${slew}</span>${name ? `<span class="nm">${esc(name)}</span>` : ''}</button>`;
+      const row = (id, start, mode, slew, warn = '', info = '', name = '') => `<button type="button" class="srow${(selChange || '') === id ? ' on' : ''}" data-id="${esc(id)}" title="${warn ? esc(warn) + '. ' : ''}${info ? esc(info) + '. ' : ''}${id ? 'Edit this change (the time stays)' : 'Edit the initial settings'}"><span class="dot${now === id ? ' now' : ''}"></span><span class="st">${start}${warn ? ' <span class="warn">⚠</span>' : ''}</span><span>${MODE_SHORT[mode] || ''}</span><span class="sl">${slew}</span>${name ? `<span class="nm">${esc(name)}</span>` : ''}</button>`;
       const first = scheduleOrder(sched)[0], until = first ? showUTC(sched[first.i].start) : '';
       const today = until && cur && cur.date.toISOString().slice(0, 10) === until.slice(0, 10); // the date only when it isn't the current one
       return row('', until ? 'Initial · until ' + (today ? until.slice(11) : until.slice(0, 16)) : 'Initial', o.mode, '', '', until ? 'Flies before the first change, until ' + until : '') + scheduleOrder(sched).map(({ i }) => { const c = sched[i]; return row(c.id, esc(showUTC(c.start)), c.mode, (c.autoSlew ? 'auto ' : '') + (c.slew ? c.slew + ' s' : 'jump'), noteText(notes[c.id]), '', [c.name, c.on ? '⚡ ' + eventLabel(c, changeName) : ''].filter(Boolean).join(' · ')); }).join('');
@@ -252,19 +252,22 @@ function scheduleCard(ctx, o) {
     kids.push(h('div', { class: 'btns' },
       h('button', { class: 'btn', title: 'Start one minute earlier', onclick: () => { if (edit(() => nudgeChange(o, sel.id, -60), false) === false) refused(); } }, '−1 min'),
       h('button', { class: 'btn', title: 'Start one minute later', onclick: () => { if (edit(() => nudgeChange(o, sel.id, 60), false) === false) refused(); } }, '+1 min'),
+      h('button', { class: 'btn', title: 'Move the current time to the start of this change', onclick: () => { if (setCurrentDate(o, sel.start)) { save(); syncAll(); } } }, 'Go to start'),
       h('button', { class: 'btn', title: 'A copy of this change, starting at the current time', onclick: () => { const c = history.record(o, () => duplicateChange(o, sel.id)); if (!c) { toast(`The schedule holds up to ${MAX_CHANGES} changes, within ${DATE_MIN.slice(0, 4)} to ${DATE_MAX.slice(0, 4)}`); return; } selChange = c.id; save(); ctx.renderRail(); } }, 'Duplicate')));
     kids.push(eventRow(o, sel, edit), h('div', { class: 'row two' }, h('label', { for: 'chStart', title: sel.on && sel.on.kind !== 'after' ? 'The event is looked for from this time on' : '' }, sel.on ? (sel.on.kind === 'after' ? 'Starts (UTC)' : 'Look from (UTC)') : 'Starts (UTC)'), start),
       h('div', { style: 'display:flex;justify-content:space-between;gap:8px' }, pending, h('span', { class: 'lbl', style: 'margin-left:auto' }, liveText(() => { const d = parseEpoch(pending.hidden ? fieldValue() : start.value); return d ? tPlus((d.getTime() - epochDate(o).getTime()) / 1000) + ' from the epoch' : ''; }))),
       h('div', { class: 'row two' }, h('label', { for: 'chSlew', title: 'From the attitude before it, 0 to 3600 s (0: a jump)' }, 'Slew (s)'),
         h('div', { style: 'display:flex;gap:8px;align-items:center' }, slew, h('label', { class: 'chk', title: 'The turn at its start ÷ the max slew rate of the spacecraft', style: 'flex:none' }, auto, 'auto'))),
       h('div', { class: 'status' }, liveText(() => {
-        const tr = changeTurn(S, sel.id), n = noteText(withRates(scheduleNotes(o))[sel.id]); if (!tr) return '';
-        if (tr.overridden) return `<span class="chip warn">${esc(n)}</span>`;
+        // the 3D view shows the current time, not the change picked: say so, as editing one that isn't flying shows nothing there
+        const cur = ctx.cur(), away = cur && !(cur.seg && cur.seg.id === sel.id) ? '<span class="chip dim" title="The 3D view shows the current time: Go to start to see this change">Not flying now</span> ' : '';
+        const tr = changeTurn(S, sel.id), n = noteText(withRates(scheduleNotes(o))[sel.id]); if (!tr) return away;
+        if (tr.overridden) return away + `<span class="chip warn">${esc(n)}</span>`;
         const turn = tr.rate === null ? `Jumps ${tr.angle.toFixed(1)}°` : `Turns ${tr.angle.toFixed(1)}° in ${sel.slew} s · ${tr.rate.toFixed(2)}°/s on average`;
-        return `<span class="chip dim" title="At its start, from the attitude before it. Kinematics only: real wheels may not turn this fast.">${turn}</span>${n ? ` <span class="chip warn">${esc(n)}</span>` : ''}`;
+        return away + `<span class="chip dim" title="At its start, from the attitude before it. Kinematics only: real wheels may not turn this fast.">${turn}</span>${n ? ` <span class="chip warn">${esc(n)}</span>` : ''}`;
       })));
   }
-  kids.push(tip('Each change slews from the attitude before it to its own over the slew time; both are worked out at every moment, so scrubbing works. Kinematics only: no wheels or torque limits. Times are UTC, so they stay put when the epoch moves. Click a row to edit it in <b>Attitude guidance</b>; a typed start applies on Enter. On the timeline Mode band: click a block to pick its change, drag its left edge to move it, double-click to add a change there.'));
+  kids.push(tip('Each change slews from the attitude before it to its own over the slew time; both are worked out at every moment, so scrubbing works. Kinematics only: no wheels or torque limits. Times are UTC, so they stay put when the epoch moves. Click a row to edit it in <b>Attitude guidance</b> (the time stays; <b>Go to start</b> jumps to it); a typed start applies on Enter. On the timeline Mode band: click a block to pick its change, drag its left edge to move it, double-click to add a change there.'));
   return card('Mode schedule', sched.length ? sched.length + (sched.length === 1 ? ' change' : ' changes') : 'none', ...kids);
 }
 
@@ -297,12 +300,11 @@ function csvDialog(o, ctx, text = '') {
 }
 
 /**
- * Select change `id` ('' or null: the initial settings) for editing; with seek (the rows) also go to its start. The
- * timeline band picks without seeking: the time under the pointer stays, and the band does not page away.
+ * Select change `id` ('' or null: the initial settings) for editing. The time stays where it is (#80): editing a
+ * change must not lose the moment being looked at; Go to start in its editor jumps there.
  */
-export function pickChange(id, ctx, seek = true) {
+export function pickChange(id, ctx) {
   selChange = id || null;
-  const c = (S.orbit.schedule || []).find(c => c.id === id); if (c && seek) setCurrentDate(S.orbit, c.start);
   save(); ctx.renderRail();
 }
 

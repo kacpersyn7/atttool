@@ -20,6 +20,9 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 ### Changed
 - **J2 drift of the mean anomaly** (#72): with J2 on, the mean anomaly now drifts at its first-order secular rate too, as the node and perigee did. Along-track timing moves by up to ~30 km per orbit in LEO (28 km, 3.7 s, at SSO 550 km; 5 km for the ISS), so **saved scenarios with J2 on reach their targets at slightly different times**. A TLE is flown at exactly the mean motion it states (its semi-major axis is the first-order Kozai→Brouwer one, within 0.1 m of SGP4's).
 
+### Fixed
+- **Editing a schedule change keeps the time** (#80): clicking a row of the Mode schedule to edit it no longer moves the current time to the change's start (which lost the moment being looked at, and could put the time before the epoch). *Go to start* in the change's editor jumps there, and a *Not flying now* chip says when the 3D view isn't showing the change being edited.
+
 ## [0.9.0] - 2026-11-08
 
 ### Added
