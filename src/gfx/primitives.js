@@ -75,5 +75,31 @@ const _ws = new THREE.Vector3();
 /** Undo parent scaling on label sprites so they keep a constant on-screen size. */
 export function fixLabels(root) { root.traverse(o => { if (o.isSprite && o.userData.base && o.parent) { o.parent.getWorldScale(_ws); const s = _ws.x || 1; o.scale.set(o.userData.base[0] / s, o.userData.base[1] / s, 1); } }); }
 
+const _lp = new THREE.Vector3(), _lsc = new THREE.Vector3();
+/**
+ * Keep labels from piling up (#90): labels (makeLabel sprites) of `roots`, in order, are hidden while they overlap
+ * one already drawn; zooming in separates them, and they come back. A label is a screen-size sprite, so its box is
+ * its world scale × the projection's focal factor, in pixels of a w × h view. Uses material.visible, so the
+ * objects' own visibility (the Display toggles) is left alone. Call after fixLabels and updateMatrixWorld.
+ */
+export function declutterLabels(roots, camera, w, h, gap = 2) {
+  const kept = [], P = camera.projectionMatrix.elements, fx = P[0] * w / 2, fy = P[5] * h / 2;
+  const shown = o => { for (let x = o; x; x = x.parent) if (!x.visible) return false; return true; };
+  for (const root of roots) {
+    if (!root) continue;
+    root.traverse(o => {
+      if (!o.isSprite || !o.userData.base) return;
+      if (!shown(o)) return;
+      o.getWorldPosition(_lp); _lp.project(camera);
+      if (_lp.z > 1 || _lp.z < -1) { o.material.visible = false; return; } // behind the camera
+      o.getWorldScale(_lsc);
+      const x = (_lp.x + 1) / 2 * w, y = (1 - _lp.y) / 2 * h, bw = _lsc.x * fx, bh = _lsc.y * fy;
+      const box = [x - gap, y - bh / 2 - gap, x + bw + gap, y + bh / 2 + gap]; // anchored at its left middle (center 0, 0.5)
+      const hit = kept.some(k => box[0] < k[2] && k[0] < box[2] && box[1] < k[3] && k[1] < box[3]);
+      o.material.visible = !hit; if (!hit) kept.push(box);
+    });
+  }
+}
+
 /** Free GPU resources of a subtree. */
 export function disposeTree(o) { o.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) { (Array.isArray(c.material) ? c.material : [c.material]).forEach(m => { if (m.map) m.map.dispose(); m.dispose(); }); } }); }
