@@ -259,12 +259,30 @@ test('J2 short-period a: the textbook circular value, and a − δa stays put al
   close(ENV.j2ShortPeriodA({ a, e: 0, i, argp: 0, nu0: Math.PI / 2 }), -1.5 * J2_ * RE_ * RE_ / a * Math.sin(i) ** 2, 1e-12, 'u = 90°');
   close(ENV.j2ShortPeriodA({ a, e: 0, i, argp: 0, nu0: 0 }), 9.37, 0.01, 'about 9.4 km at 550 km SSO');
   // along an integrated trajectory the osculating a swings; a − δa must not (first order: what is left is J2²)
+  // limits: the second-order (J2²) remainder, measured 27.6 m on SSO and 499 m on Molniya (≈ J2 × the swing)
   for (const [name, el, swing, left] of [['SSO 550', { a, e: 0.001, i, raan: 0.7, argp: 1.1, nu0: 0.3 }, 18, 0.035], ['Molniya', { a: 26578, e: 0.7372, i: 63.4 * D2R_, raan: 0.7, argp: 1.1, nu0: 0.3 }, 160, 0.6]]) {
     const s = ENV.propagate(el, 0, false), P = 2 * Math.PI * Math.sqrt(el.a ** 3 / MU_); let a0 = [Infinity, -Infinity], a1 = [Infinity, -Infinity];
     j2Motion([...s.r, ...s.v], 2 * P, Math.min(10, P / 3000), (t, y) => { const c = ENV.rv2coe(y.slice(0, 3), y.slice(3)), m = ENV.meanFromOsculating(c).a; a0 = [Math.min(a0[0], c.a), Math.max(a0[1], c.a)]; a1 = [Math.min(a1[0], m), Math.max(a1[1], m)]; }, K);
     assert.ok(a0[1] - a0[0] > swing, `${name}: osculating a swings ${(a0[1] - a0[0]).toFixed(2)} km`);
     assert.ok(a1[1] - a1[0] < left, `${name}: mean a swings ${((a1[1] - a1[0]) * 1000).toFixed(1)} m`);
   }
+});
+
+test('J2 short-period a averages to zero over the orbit, at any eccentricity (the (1−e²)^−3/2 term)', () => {
+  // the swing test above can't see a constant offset: e.g. (1−e²)^−1 for ^−3/2 gives 0.54 km at e = 0.7
+  for (const e of [0.01, 0.3, 0.7, 0.9]) {
+    const el = { a: 24396, e, i: 40 * D2R_, argp: 1.1 }; let sum = 0; const N = 20000;
+    for (let k = 0; k < N; k++) { const M = 2 * Math.PI * (k + 0.5) / N, E = ENV.kepler(M, e), nu = 2 * Math.atan2(Math.sqrt(1 + e) * Math.sin(E / 2), Math.sqrt(1 - e) * Math.cos(E / 2)); sum += ENV.j2ShortPeriodA({ ...el, nu0: nu }); }
+    assert.ok(Math.abs(sum / N) < 1e-9, `e = ${e}: mean δa ${(sum / N).toExponential(2)} km`);
+  }
+});
+
+test('a GTO state vector from perigee stays with real J2 motion over 3 days (#85)', () => {
+  // measured 27 km after a day (65 km with the (1−e²)^−1 mutant); the limits leave ~20% margin
+  const el = { a: 24396, e: 0.7278, i: 28.5 * D2R_, raan: 0.7, argp: 1.1, nu0: 0 }, s = ENV.propagate(el, 0, false), mean = ENV.meanFromOsculating(ENV.rv2coe(s.r, s.v));
+  const P = 2 * Math.PI * Math.sqrt(el.a ** 3 / MU_); let worst = 0, day1 = null;
+  j2Motion([...s.r, ...s.v], 3 * 86400, P / 4000, (t, y) => { worst = Math.max(worst, dist(ENV.propagate(mean, t, true).r, y.slice(0, 3))); if (day1 === null && t >= 86400) day1 = worst; }, K);
+  assert.ok(day1 < 35, `after a day: ${day1.toFixed(1)} km`); assert.ok(worst < 90, `after 3 days: ${worst.toFixed(1)} km`);
 });
 
 test('the reference J2 integrator keeps energy and h_z', () => {
@@ -276,7 +294,8 @@ test('the reference J2 integrator keeps energy and h_z', () => {
 });
 
 test('a state vector flown by the model stays with real J2 motion, wherever on the orbit it was taken (#85)', () => {
-  for (const [name, el, tol] of [['SSO 550', { a: 6928.137, e: 0.001, i: 97.59 * D2R_, raan: 0.7, argp: 1.1 }, 30], ['ISS 420', { a: 6798, e: 0.0003, i: 51.64 * D2R_, raan: 0.7, argp: 1.1 }, 15]]) {
+  // limits: the uncorrected short-period terms of the other elements, measured up to 29 km (SSO) and 12.8 km (ISS) after a day
+  for (const [name, el, tol] of [['SSO 550', { a: 6928.137, e: 0.001, i: 97.59 * D2R_, raan: 0.7, argp: 1.1 }, 33], ['ISS 420', { a: 6798, e: 0.0003, i: 51.64 * D2R_, raan: 0.7, argp: 1.1 }, 15]]) {
     for (const u of [0, 45, 90, 135]) {
       const s = ENV.propagate({ ...el, nu0: u * D2R_ - el.argp }, 0, false), c = ENV.rv2coe(s.r, s.v), mean = ENV.meanFromOsculating(c);
       let before = 0, after = 0;

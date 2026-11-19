@@ -159,8 +159,8 @@ function fieldElements(o) {
  */
 export function orbitElements(o) {
   if (o.def === 'ssrgt') { const r = ssrgtSolution(o); if (r) return r.E; }
-  if (o.def === 'rv' && o.r && o.v) { // an osculating state: with J2, flown with its mean a (#85)
-    const c = ENV.rv2coe(o.r, o.v); if (!c.error) { const E = { a: c.a, e: c.e, i: c.i, raan: c.raan, argp: c.argp, nu0: c.nu0 }; return o.j2 ? ENV.meanFromOsculating(E) : E; }
+  if (o.def === 'rv' && o.r && o.v) { // an osculating state: with J2, flown with its mean a (#85); one saved before that (rvOsc false) as it was
+    const c = ENV.rv2coe(o.r, o.v); if (!c.error) { const E = { a: c.a, e: c.e, i: c.i, raan: c.raan, argp: c.argp, nu0: c.nu0 }; return o.j2 && o.rvOsc !== false ? ENV.meanFromOsculating(E) : E; }
   }
   if (o.def === 'tle') { // its mean motion is the mean anomaly's rate: with J2 on, the semi-major axis is the one that flies at it
     const t = tleOf(o); if (t) return { a: o.j2 ? ENV.smaForMeanMotion(t.n * 2 * Math.PI / 86400, t.e, t.i * D2R) : t.a, e: t.e, i: t.i * D2R, raan: t.raan * D2R, argp: t.argp * D2R, nu0: ENV.meanToTrue(t.M * D2R, t.e) };
@@ -228,7 +228,7 @@ export function ltanOf(o) { const r = orbitElements(o).raan * R2D - ENV.sunRA(ep
  * The inputs of each orbit definition: what its tab shows, with the epoch they hold at (the epoch belongs to the
  * definition; a TLE carries its own).
  */
-export const DEF_FIELDS = { elements: ['preset', 'hp', 'ha', 'i', 'raan', 'argp', 'nu0', 'epoch'], rv: ['r', 'v', 'epoch'], tle: ['tle'], ssrgt: ['rgtR', 'rgtD', 'rgtLtan', 'rgtLon', 'epoch'] };
+export const DEF_FIELDS = { elements: ['preset', 'hp', 'ha', 'i', 'raan', 'argp', 'nu0', 'epoch'], rv: ['r', 'v', 'epoch', 'rvOsc'], tle: ['tle'], ssrgt: ['rgtR', 'rgtD', 'rgtLtan', 'rgtLon', 'epoch'] };
 /** Names of the definitions, as their tabs. */
 export const DEF_NAMES = { elements: 'Elements', rv: 'r, v (J2000)', tle: 'TLE', ssrgt: 'Repeat track' };
 const inputsOf = (o, def) => JSON.parse(JSON.stringify(Object.fromEntries(DEF_FIELDS[def].map(k => [k, o[k] ?? null]))));
@@ -242,7 +242,7 @@ const keptOf = (o, def) => ({ ...inputsOf(o, def), at: currentDate(o).getTime() 
  * track: the same LTAN). A TLE can't be made from an orbit, so it is left as it is.
  */
 function fillDefinition(o, to, from) {
-  if (to === 'rv') { const s = ENV.osculatingState(from.E, 0, o.j2); o.r = s.r.map(x => +x.toFixed(6)); o.v = s.v.map(x => +x.toFixed(9)); } // the osculating state: it flies the same orbit
+  if (to === 'rv') { const s = ENV.osculatingState(from.E, 0, o.j2); o.r = s.r.map(x => +x.toFixed(6)); o.v = s.v.map(x => +x.toFixed(9)); o.rvOsc = true; } // the osculating state: it flies the same orbit
   if (to === 'elements') { setFieldsFromElements(o, from.E); o.preset = 'custom'; }
   if (to === 'ssrgt') o.rgtLtan = Math.round(from.ltan * 60) / 60;
   if (to !== 'tle' && (from.tle || from.epoch !== o.epoch)) o.epoch = from.tle ? formatEpoch(from.ep) : from.epoch;
@@ -264,6 +264,7 @@ export function switchDefinition(o, to) {
   o.defs = { ...(o.defs || {}), [from]: keptOf(o, from) }; delete o.defs[to];
   if (kept) {
     const { at, ...inputs } = kept; Object.assign(o, inputs);
+    if (to === 'rv' && inputs.rvOsc === undefined) o.rvOsc = false; // kept before #85: a mean state
     // an LTAN preset holds its LTAN at its epoch: fields that no longer match it (an older save) are no longer that preset
     const p = PRESETS[o.preset];
     if (to === 'elements' && p && p.ltan !== undefined) { const x = { ...o }; applyPreset(x, o.preset); if (['hp', 'ha', 'i', 'raan', 'argp', 'nu0'].some(k => x[k] !== o[k])) o.preset = 'custom'; }
@@ -306,6 +307,13 @@ function leaveDefinition(o, to, remember = true) {
   o.defs = { ...(o.defs || {}), [o.def]: keptOf(o, o.def) }; delete o.defs[to]; o.defFrom = remember ? o.def : '';
 }
 
+/**
+ * The state vector to start a full propagator from, t s after the epoch (#85): ENV.osculatingState of the orbit
+ * flown, so the J2 mean motion is right. Its position is the drawn one moved radially by the J2 short-period term of
+ * a (up to ~9 km in LEO, more on eccentric orbits): only a is corrected.
+ */
+export function stateForPropagator(o, t) { return ENV.osculatingState(orbitElements(o), t, o.j2); }
+
 /** Write the altitude/angle fields from elements (km, rad). */
 export function setFieldsFromElements(o, E) {
   // to the mm and 1e-8°: a repeat ground track switched to elements must still close (1 m in a moves it ~0.4 km a cycle)
@@ -320,7 +328,7 @@ export function restartFromState(o, t) {
   leaveDefinition(o, 'rv', false); if (o.def === 'rv') o.defFrom = '';
   const E = orbitElements(o), s = ENV.osculatingState(E, t, o.j2), d = new Date(epochDate(o).getTime() + t * 1000); // osculating: as r, v are read (#85)
   o.r = s.r.map(x => +x.toFixed(6)); o.v = s.v.map(x => +x.toFixed(9));
-  o.epoch = formatEpoch(new Date(Math.round(d.getTime()))); o.def = 'rv'; o.preset = 'custom'; o.t = 0;
+  o.epoch = formatEpoch(new Date(Math.round(d.getTime()))); o.def = 'rv'; o.rvOsc = true; o.preset = 'custom'; o.t = 0;
 }
 
 /** Orbit presets. `ltan` presets get a sun-synchronous inclination and RAAN computed at the epoch. */

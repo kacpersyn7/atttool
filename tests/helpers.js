@@ -13,7 +13,8 @@ export function rng(seed = 1) { let s = seed >>> 0; return () => ((s = (s * 1664
 
 /**
  * Reference J2-only motion for tests: RK4 on two-body + J2 gravity (constants of src/env), step h s, from state
- * y0 = [r (km), v (km/s)] for T s. Calls visit(t, y) at every step. Energy and h_z stay constant to ~1e-11 (tested).
+ * y0 = [r (km), v (km/s)] for T s. Calls visit(t, y) at every step. At h = 10 s on LEO, energy and h_z stay constant
+ * to ~4e-10 and ~2e-10 over a day (asserted below 1e-9 in environment.test.js).
  */
 export function j2Motion(y0, T, h, visit, { MU, RE, J2 }) {
   const norm = a => Math.hypot(a[0], a[1], a[2]), add = (a, b, k) => a.map((x, i) => x + k * b[i]);
