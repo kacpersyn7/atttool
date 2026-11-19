@@ -26,9 +26,9 @@ test('SGP4: the reference verification set, to within a centimetre of its publis
     const b = blocks[k]; assert.equal(+b.num, +t.num, 'the results in the same order');
     const s = tleSatrec(t.l1, t.l2);
     if (t.num === '33334') {
-      // n = 0.00001 rev/day: the lunar–solar terms make the eccentricity leave 0..1 at once. The 2021 C++ code this is
-      // ported from calls dpper with 'n' in sgp4(), so the first call at t = 0 fails with error 3; the published row is the
-      // state of the older code's initialisation call (init 'y', without those terms).
+      // n = 0.00001 rev/day: the lunar–solar terms make the eccentricity leave 0..1 at once, so SGP4 fails with error 3.
+      // The published row for it is not a state of this TLE: the reference's drivers print r and v without checking the
+      // error, and the row repeats the last state of the case before (33333 at 20 min).
       assert.equal(sgp4At(s, 0), null); assert.equal(s.error, 3); return;
     }
     for (const [tm, x, y, z, vx, vy, vz] of b.rows) {
@@ -70,7 +70,9 @@ test('SGP4 in the app: a TLE scenario\'s spacecraft is where SGP4 puts it, J2 op
   assert.ok(Math.abs(E.sgp4.offMin) < 1e-5, 'the epoch it counts from is the TLE\'s, to the millisecond');
   s.orbit.j2 = false; const r0 = attitudeAt(s, 3600).st.r; s.orbit.j2 = true; const r1 = attitudeAt(s, 3600).st.r;
   assert.deepEqual(r0, r1, 'SGP4 has its own perturbations');
-  assert.equal(JSON.stringify(E).includes('"sgp4":"sgp4"'), true, 'keys made of the elements stay short');
+  // keys made of the elements (timeline, event searches, the orbit line) change with any change of the TLE: B* alone moves it ~29 km a day
+  const b2 = tleState(ISS.replace('-11606-4', ' 50000-3')), k1 = JSON.stringify(orbitElements(s.orbit)), k2 = JSON.stringify(orbitElements(b2.orbit));
+  assert.notEqual(k1, k2, 'a new B* changes the key'); assert.ok(!k1.includes('"tumin"'), 'the record itself is not in it');
 });
 
 test('SGP4 in the app: r, v filled from a TLE is SGP4\'s state at the epoch; a decayed TLE says why and falls back', () => {
@@ -82,6 +84,19 @@ test('SGP4 in the app: r, v filled from a TLE is SGP4\'s state at the epoch; a d
   const k = tles.findIndex(t => t.num === '28872'), d = tleState(tles[k].l1 + '\n' + tles[k].l2);
   assert.equal(sgp4Problem(d.orbit, 0), null);
   let tStop = null; for (let m = 50; m <= 60 && tStop === null; m += 0.1) if (sgp4Problem(d.orbit, m * 60)) tStop = m * 60; // the reference stops between 50 and 60 min
-  assert.ok(tStop !== null); assert.match(sgp4Problem(d.orbit, tStop), /decayed|range|rectum|eccentricity/);
+  assert.ok(tStop !== null); assert.match(sgp4Problem(d.orbit, tStop), /decayed/);
   assert.ok(attitudeAt(d, tStop).st.r.every(Number.isFinite), 'the mean-element model then');
+  // SGP4 gives states again later (its drag polynomial turns round: 5 km up at 70 min): a re-entry stays one
+  for (const m of [70, 120, 1440, 30 * 1440]) assert.match(sgp4Problem(d.orbit, m * 60) || '', /decayed/, `still decayed at ${m} min`);
+  // jumping straight there, without passing the stop, says so too
+  const d2 = tleState(tles[k].l1 + '\n' + tles[k].l2); d2.orbit.tle += ' '; assert.match(sgp4Problem(d2.orbit, 1440 * 60) || '', /decayed/);
+});
+
+test('SGP4 in the app: a B* that can\'t be read is refused (it would give NaN); the tool\'s GMST is the reference\'s', () => {
+  assert.throws(() => ENV.parseTLE(ISS.replace('-11606-4', ' -.1-4  ')), /B\*/);
+  // TEME is turned into the Earth-fixed frame by GMST: the tool's (env/time.js) against the reference's gstime, 1900–2200
+  let worst = 0;
+  for (let y = 1900; y <= 2200; y += 7.3) { const d = new Date(Date.UTC(Math.floor(y), 0, 1) + (y % 1) * 3.15e10); const jd = d.getTime() / 86400000 + 2440587.5;
+    const dg = Math.abs(((ENV.gmst(d) - ENV.gstime_SGP4(jd) + 3 * Math.PI) % (2 * Math.PI)) - Math.PI); worst = Math.max(worst, dg); }
+  assert.ok(worst < 1e-8, `GMST differs by ${(worst * 206265e3).toFixed(2)} mas at most (~5 cm at the equator)`);
 });

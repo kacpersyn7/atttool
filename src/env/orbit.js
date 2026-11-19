@@ -39,6 +39,7 @@ export function smaForMeanMotion(nTot, e, i) {
  *   two-body one.
  */
 export function propagate(el, t, j2) {
+  if (el.sgp4) j2 = true; // a TLE: SGP4, and when it has stopped its mean elements with J2, whatever the J2 option
   const { a, e } = el;
   const n = Math.sqrt(MU / (a * a * a));
   const p = a * (1 - e * e);

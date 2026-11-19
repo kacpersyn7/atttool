@@ -16,7 +16,7 @@ const pi = Math.PI;
 const fmod = (a, b) => a % b; // C fmod: the sign of the dividend, as JS %
 
 /** Greenwich mean sidereal time (rad) at UT1 Julian date jdut1, as the reference computes it. */
-function gstime_SGP4(jdut1) {
+export function gstime_SGP4(jdut1) {
   const twopi = 2.0 * pi, deg2rad = pi / 180.0;
   const tut1 = (jdut1 - 2451545.0) / 36525.0;
   let temp = -6.2e-6 * tut1 * tut1 * tut1 + 0.093104 * tut1 * tut1 + (876600.0 * 3600 + 8640184.812866) * tut1 + 67310.54841;
@@ -944,7 +944,7 @@ const temp4 = 1.5e-12;
 
 /** SGP4 error codes (s.error after sgp4), as the reference sets them. */
 export const SGP4_ERRORS = {
-  1: 'mean elements out of range (e ≥ 1 or e < −0.001, or a < 0.95 Earth radii)', 2: 'mean motion below zero',
+  1: 'mean elements out of range (e ≥ 1 or e < −0.001, or a < 0.95 Earth radii)', 2: 'mean motion below zero', 99: 'its output is not a number',
   3: 'the perturbed eccentricity left 0..1', 4: 'the semi-latus rectum went below zero', 6: 'the satellite has decayed (below the Earth\'s surface)',
 };
 
@@ -969,8 +969,39 @@ export function tleSatrec(line1, line2, { opsmode = 'a', whichconst = 'wgs72' } 
   return s;
 }
 
-/** Position (km) and velocity (km/s) in TEME, tsince minutes after the TLE epoch; null with s.error set if SGP4 stops. */
+const fine = (s, t, r, v) => sgp4(s, t, r, v) && r.every(Number.isFinite) && v.every(Number.isFinite);
+/**
+ * Where a TLE with drag (B* ≠ 0) re-enters, in the direction of tsince (minutes; s.stopF ahead, s.stopB back), scanned
+ * once as far as asked, in sixteenths of a period, then to 1e-4 min: { to (min scanned), at (min, or null), error }.
+ * After such a decay SGP4 can give states again (its drag polynomial turns round, e.g. 5 km up 18 min later), so
+ * what lies beyond it counts as decayed. Other stops are per call, as in the reference: without drag a perigee that
+ * dips below the surface (lunar–solar terms) can come up again, and the reference's results go on there.
+ */
+function firstStop(s, tsince) {
+  const dir = tsince < 0 ? -1 : 1, key = dir > 0 ? 'stopF' : 'stopB', sc = s[key] || (s[key] = { to: 0, at: null, error: 0 });
+  const target = Math.abs(tsince); if (sc.at !== null || target <= sc.to) return sc;
+  const step = 2 * pi / s.no_unkozai / 16, r = [0, 0, 0], v = [0, 0, 0], ok = t => fine(s, dir * t, r, v);
+  if (!s.bstar) { sc.to = Infinity; return sc; } // no drag: no re-entry to look for
+  const reentry = t => !ok(t) && s.error === 6;
+  for (let a = sc.to; a < target;) {
+    const b = Math.min(target, a + step);
+    if (reentry(b)) {
+      let lo = a, hi = b; for (let k = 0; k < 60 && hi - lo > 1e-4; k++) { const m = (lo + hi) / 2; if (reentry(m)) hi = m; else lo = m; }
+      sc.at = dir * hi; sc.error = 6; sc.to = hi; return sc;
+    }
+    a = b;
+  }
+  sc.to = target; return sc;
+}
+
+/**
+ * Position (km) and velocity (km/s) in TEME, tsince minutes after the TLE epoch; null, with s.error set, where SGP4
+ * stops, after a re-entry (firstStop), or if its output isn't finite (error 99).
+ */
 export function sgp4At(s, tsince) {
+  const st = firstStop(s, tsince);
+  if (st.at !== null && Math.abs(tsince) >= Math.abs(st.at)) { s.error = st.error; return null; }
   const r = [0, 0, 0], v = [0, 0, 0];
-  return sgp4(s, tsince, r, v) ? { r, v } : null;
+  if (fine(s, tsince, r, v)) return { r, v };
+  if (!s.error) s.error = 99; return null;
 }

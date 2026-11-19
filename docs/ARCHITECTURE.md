@@ -98,4 +98,3 @@ If the project outgrows it, for example when moving to TypeScript or npm package
 - Attitude dynamics: integrate Euler's equations with the inertia from the Layout workspace, plus wheel and magnetorquer torques and a simple controller.
 - Disturbance torques: gravity gradient, aerodynamic, SRP, residual dipole.
 - Ground stations and contact windows on the timeline.
-- SGP4 for TLEs (they are flown with Keplerian + J2 today).

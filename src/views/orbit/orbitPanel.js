@@ -472,7 +472,7 @@ function orbitCard(ctx, o, sl) {
     h('div', { class: 'kv' },
       h('dt', null, 'a · e'), h('dd', null, liveText(() => { const E = orbitElements(o); return E.a.toFixed(1) + ' km · ' + E.e.toFixed(5); })),
       ...(o.def === 'ssrgt' ? [] : [ // a repeat track shows its node-to-node period above
-      h('dt', null, 'Period', h('span', { class: 'lbl', title: 'Perigee to perigee, as flown: with J2, 2π / (n + Ṁ_J2)' }, ' (anomalistic)')), h('dd', null, liveText(() => { const E = orbitElements(o), r = ENV.j2Rates(E.a, E.e, E.i); return (2 * Math.PI / (r.n + (o.j2 ? r.M : 0)) / 60).toFixed(2) + ' min'; })),]),
+      h('dt', null, 'Period', h('span', { class: 'lbl', title: 'Perigee to perigee, as flown: with J2, 2π / (n + Ṁ_J2)' }, ' (anomalistic)')), h('dd', null, liveText(() => { const E = orbitElements(o), r = ENV.j2Rates(E.a, E.e, E.i); return (2 * Math.PI / (r.n + (o.j2 || o.def === 'tle' ? r.M : 0)) / 60).toFixed(2) + ' min'; })),]), // a TLE: its own mean motion
       h('dt', null, 'LTAN (at epoch)'), h('dd', null, liveText(() => hhmm(ltanOf(o)))),
       h('dt', null, 'SSO inclination for this a'), h('dd', null, liveText(() => { const E = orbitElements(o); return deg(ENV.ssoInc(E.a, E.e)).toFixed(2) + '°'; }))),
     o.def === 'tle' ? h('p', { class: 'tip', style: 'margin:0', html: 'Perturbations: SGP4\'s own (J2–J4, drag, and the Sun and Moon in deep space). The J2 option is for the other definitions.' })
@@ -521,7 +521,7 @@ function orbitCard(ctx, o, sl) {
         + t.warnings.map(w => `<p class="tip" style="color:var(--warn)">${w}</p>`).join(''); }),
       derived(),
       liveText(() => { const c = ctx.cur(), why = c && sgp4Problem(o, c.t); return why ? `<span class="chip warn" title="SGP4 gives no state here; the orbit drawn is the mean-element model of the TLE">SGP4 stops here: ${esc(why)}</span>` : ''; }),
-      tip('Flown with <b>SGP4</b> (SDP4 for periods over 225 min), the model TLEs are made for: J2, J3 and J4, drag through B*, and for deep space the Sun, the Moon and resonances (a port of the reference code of Vallado et al., <i>Revisiting Spacetrack Report #3</i>, 2006, verified against its test set). Its frame, TEME, is taken as the tool\'s ECI, which ignores precession and nutation, and turned by GMST into the Earth-fixed frame, as SGP4 defines it. As accurate as the TLE itself: best near its epoch. The epoch comes from the TLE; the elements shown are its mean ones.')];
+      tip('Flown with <b>SGP4</b> (SDP4 for periods over 225 min), the model TLEs are made for: J2, J3 and J4, drag through B*, and for deep space the Sun, the Moon and resonances (a port of the reference code of Vallado et al., <i>Revisiting Spacetrack Report #3</i>, 2006, verified against its test set to 4 mm). Its frame, TEME, is taken as the tool\'s ECI, which ignores precession and nutation, and turned by GMST into the Earth-fixed frame, as SGP4 defines it. As accurate as the TLE itself: best near its epoch. The epoch comes from the TLE; the elements shown are its mean ones.')];
   }
   const epochInput = dateInput('epoch'); epochInput.disabled = o.def === 'tle';
   epochInput.title = o.def === 'tle' ? 'Set by the TLE' : 'The date this orbit definition holds at. Moving it re-dates the orbit, keeping the current time.';
@@ -559,11 +559,13 @@ function orbitCard(ctx, o, sl) {
     h('div', { class: 'btns' }, usePrev),
     h('div', { class: 'row two' }, h('label', { for: 'epoch' }, 'Epoch (UTC)'), epochInput),
     ...body, ...common,
-    h('div', { class: 'lbl', title: 'The state to start a full propagator (or the r, v tab) from to fly this orbit: with J2, its semi-major axis is the osculating one, so the mean motion is right. Its position is the drawn one moved radially by the J2 short-period term: up to ~9 km in LEO, more on eccentric orbits.' }, 'State now (ECI ≈ J2000, for a propagator)'),
+    o.def === 'tle'
+      ? h('div', { class: 'lbl', title: 'SGP4\'s state, the one drawn, in its frame TEME (true equator, mean equinox of date): it differs from J2000 by the precession since 2000, about 0.014° a year (≈ 0.1° for a 2008 TLE, ≈ 0.4° for a 2026 one).' }, 'State now (TEME of date, SGP4)')
+      : h('div', { class: 'lbl', title: 'The state to start a full propagator (or the r, v tab) from to fly this orbit: with J2, its semi-major axis is the osculating one, so the mean motion is right. Its position is the drawn one moved radially by the J2 short-period term: up to ~9 km in LEO, more on eccentric orbits.' }, 'State now (ECI ≈ J2000, for a propagator)'),
     h('div', { class: 'kv' },
       h('dt', null, 'r (km)'), h('dd', null, liveText(() => { const n = nowState(); return n ? '[' + n.r.map(x => fmt(x, 3)).join(', ') + ']' : ''; })),
       h('dt', null, 'v (km/s)'), h('dd', null, liveText(() => { const n = nowState(); return n ? '[' + n.v.map(x => fmt(x, 6)).join(', ') + ']' : ''; }))),
     h('div', { class: 'btns' },
       h('button', { class: 'btn', title: 'Moves the epoch to the current time and defines the orbit by this r, v', onclick: () => { restartFromState(o, o.t); save(); syncAll(); ctx.renderRail(); } }, 'Make this the initial state'),
-      h('button', { class: 'btn', onclick: () => { const n = nowState(); if (n) copyText(`% J2000/GCRF state at ${n.d.toISOString()}\nr0 = [${n.r.map(x => +x.toFixed(6)).join(' ')}];  % km\nv0 = [${n.v.map(x => +x.toFixed(9)).join(' ')}];  % km/s`, 'State vector'); } }, 'Copy r, v (MATLAB)')));
+      h('button', { class: 'btn', onclick: () => { const n = nowState(); if (n) copyText(`% ${o.def === 'tle' ? 'TEME (SGP4)' : 'J2000/GCRF'} state at ${n.d.toISOString()}\nr0 = [${n.r.map(x => +x.toFixed(6)).join(' ')}];  % km\nv0 = [${n.v.map(x => +x.toFixed(9)).join(' ')}];  % km/s`, 'State vector'); } }, 'Copy r, v (MATLAB)')));
 }

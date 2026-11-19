@@ -238,7 +238,7 @@ test('J2: a TLE flies at its stated mean motion (ISS, 15.72125391 rev/day): one 
   const aK = Math.cbrt(ENV.MU / (nRev * 2 * Math.PI / 86400) ** 2); assert.ok(E.a - aK > 0.4 && E.a - aK < 0.6, `+0.5 km at 51.6° (${(E.a - aK).toFixed(3)})`);
   const n98 = 14.57 * 2 * Math.PI / 86400, d98 = smaForMeanMotion(n98, 0.001, 98 * Math.PI / 180) - Math.cbrt(ENV.MU / n98 ** 2);
   assert.ok(d98 > -3.0 && d98 < -2.8, `−2.9 km at 98° (${d98.toFixed(3)})`);
-  s.orbit.j2 = false; assert.ok(Math.abs(orbitElements(s.orbit).a - Math.cbrt(ENV.MU / (nRev * 2 * Math.PI / 86400) ** 2)) < 1e-9, 'J2 off: two-body');
+  s.orbit.j2 = false; assert.equal(orbitElements(s.orbit).a, E.a, 'the J2 option does not apply to a TLE (#91): SGP4 has its own model');
 });
 
 test('repeat orbit solver: R orbits node to node while the Earth turns D times under the plane; no LEO root gives null', () => {

@@ -1,11 +1,6 @@
 /**
- * Two-line element sets (TLE). Parsing, checksum, epoch, and conversion of the mean elements
- * to the classical elements used by the Keplerian + J2 propagator.
- *
- * Note: a TLE is meant for the SGP4 model. Using its mean elements with Keplerian + J2 secular
- * drift is an approximation: good at the epoch, drifting by kilometres per day (no drag, no SGP4
- * periodic terms; with J2 on, only the first-order Kozai→Brouwer recovery of a, see
- * sim/scenario.js orbitElements; TEME treated as ECI). Fine for visualising geometry.
+ * Two-line element sets (TLE): parsing, checksum, epoch, and the mean elements. A TLE is flown with SGP4 (sgp4.js,
+ * #91); its mean elements are shown, and flown with Keplerian + J2 where SGP4 stops (sim/scenario.js orbitElements).
  */
 import { MU } from './constants.js';
 
@@ -49,6 +44,7 @@ export function parseTLE(text) {
     bstar: expField(l1.slice(53, 61)), warnings, l1, l2, // the lines, for SGP4 (sgp4.js tleSatrec)
   };
   for (const k of ['i', 'raan', 'e', 'argp', 'M', 'n']) if (!Number.isFinite(out[k])) throw new Error(`Could not read ${k} from line 2.`);
+  if (!Number.isFinite(out.bstar)) throw new Error('Could not read B* (columns 54–61 of line 1).'); // SGP4 would give NaN
   if (isNaN(out.epoch.getTime())) throw new Error('Could not read the epoch from line 1.');
   if (!(out.n > 0)) throw new Error('Mean motion must be positive.');
   const nRad = out.n * 2 * Math.PI / 86400;
