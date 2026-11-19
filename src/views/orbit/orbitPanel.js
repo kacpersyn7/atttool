@@ -76,8 +76,10 @@ export function orbitPanel(ctx) {
     tip('Two-vector (TRIAD) pointing: the primary axis is aligned exactly, the secondary only as close as possible. Typical safe mode: array normal on the Sun.'));
   const altCell = (id, label) => numCell(id, label, () => targetHeight(g) * 1000, x => { g.tgtAlt = Math.max(TGT_ALT_MIN, Math.min(TGT_ALT_MAX, x)); save(); }, 100, 0);
   if (g.mode === 'target') modeCtl.push(
-    h('div', { class: 'grid2' }, numCell('tlat', 'Latitude °', () => g.tgtLat, x => { g.tgtLat = x; save(); }, .1, 2), numCell('tlon', 'Longitude °', () => g.tgtLon, x => { g.tgtLon = x; save(); }, .1, 2), altCell('talt', 'Height m')),
-    selectRow({ id: 'tgtComp', label: 'Pointing axis', options: S.sc.comps.filter(c => TYPES[c.type].cone).map(c => [c.id, c.name]), get: () => (payloadComp(S, g) || {}).id, set: v => { g.tgtComp = v; save(); ctx.renderRail(); } }),
+    // the target and the pointing axis are set in Target & payload, in every mode (#88)
+    h('div', { class: 'kv' }, h('dt', null, 'Target'), h('dd', null, liveText(() => `${fmt(g.tgtLat, 2)}°, ${fmt(g.tgtLon, 2)}° · ${fmt(targetHeight(g) * 1000, 0)} m`)),
+      h('dt', null, 'Pointing axis'), h('dd', null, liveText(() => { const pc = payloadComp(S, g); return pc ? esc(pc.name) : 'body +Z'; }))),
+    h('p', { class: 'tip', style: 'margin:0' }, 'Set them in <b>Target &amp; payload</b>, below.'),
     h('div', { class: 'status' }, liveText(() => { const cur = ctx.cur(), away = notFlying(); if (away) return away; if (cur && cur.seg && cur.seg.slew !== null) return `<span class="chip warn">Slewing into this change (Mode schedule) · ${(100 * cur.seg.slew).toFixed(0)} %</span>`; return !cur || !cur.flag ? '' : cur.flag.slew ? (cur.flag.slew.rising ? `<span class="chip warn">Slewing to the target · ${(100 * cur.flag.slew.w).toFixed(0)} % · rises in ${cur.flag.slew.dt.toFixed(0)} s</span>` : `<span class="chip warn">Target set ${cur.flag.slew.dt.toFixed(0)} s ago · slewing back · ${(100 * (1 - cur.flag.slew.w)).toFixed(0)} %</span>`) : cur.flag.below ? `<span class="chip dim">Target below horizon · holding the nominal attitude</span>` : `<span class="chip ok">Tracking · elevation ${deg(cur.flag.elev).toFixed(1)}°</span>`; })),
     tgtSlewRow(g),
     tip('Boresight → line of sight to the ground point, body +X kept toward velocity. Below the horizon it holds the nominal attitude, and it slews to the target that many seconds before the target rises (so tracking starts at the rise) and back after it sets; 0 jumps. Watch the body rate rise near closest approach.'));
@@ -89,11 +91,13 @@ export function orbitPanel(ctx) {
   out.push(card('Attitude guidance', g === o ? null : liveText(() => 'change at ' + esc(showUTC(g.start))),
     sched.length ? h('p', { class: 'tip', style: 'margin:0' }, g === o ? 'Editing the initial settings, flown before the first change.' : 'Editing the change selected in Mode schedule.') : null,
     selectRow({ id: 'mode', label: 'Mode', options: [['offsets', 'Nominal attitude + offsets'], ['target', 'Ground target tracking'], ['sun', 'Sun pointing'], ['inertial', 'Inertial (from Rotation Lab)']], get: () => g.mode, set: v => { if (g === o) o.mode = v; else if (g.mode !== v) history.record(o, () => setChangeMode(g, v, S.rot.q)); save(); ctx.renderRail(); } }),
-    selectRow({ id: 'refFrame', label: 'Shown orbital frame', options: Object.entries(ENV.ORBIT_FRAMES).map(([k, f]) => [k, f.label]), get: () => o.refFrame, set: v => { o.refFrame = v; save(); ctx.renderRail(); } }),
     ...modeCtl));
 
-  if (payloadComp(S, g)) out.push(card('Payload pointing', payloadComp(S, g).name + ' vs ground target',
-    g.mode === 'target' ? null : h('div', { class: 'grid2' }, numCell('ptlat', 'Target lat °', () => g.tgtLat, x => { g.tgtLat = x; save(); }, .1, 2), numCell('ptlon', 'Target lon °', () => g.tgtLon, x => { g.tgtLon = x; save(); }, .1, 2), altCell('ptalt', 'Target height m')),
+  const cones = S.sc.comps.filter(c => TYPES[c.type].cone), pc = payloadComp(S, g);
+  out.push(card('Target & payload', pc ? pc.name + ' vs ground target' : 'ground target',
+    h('div', { class: 'grid2' }, numCell('tlat', 'Target lat °', () => g.tgtLat, x => { g.tgtLat = x; save(); }, .1, 2), numCell('tlon', 'Target lon °', () => g.tgtLon, x => { g.tgtLon = x; save(); }, .1, 2), altCell('talt', 'Target height m')),
+    cones.length ? selectRow({ id: 'tgtComp', label: 'Pointing axis', options: cones.map(c => [c.id, c.name]), get: () => (payloadComp(S, g) || {}).id, set: v => { g.tgtComp = v; save(); ctx.renderRail(); } }) : null,
+    sched.length ? h('p', { class: 'tip', style: 'margin:0' }, g === o ? 'For the initial settings: each schedule change has its own target and payload.' : 'For the change selected in Mode schedule.') : null,
     liveText(() => {
       const cur = ctx.cur(); if (!cur) return ''; const p = pointing(S, cur); if (!p) return '';
       const note = sched.length && cur.g !== g ? `<p class="tip" style="margin:0 0 4px">Now flying: ${cur.seg ? 'the change at ' + esc(showUTC(cur.g.start)) : 'the initial settings'}. The numbers are for its payload and target.</p>` : '';
@@ -119,6 +123,7 @@ export function orbitPanel(ctx) {
     tip('Star tracker is blinded if the Sun is inside its exclusion angle, the Earth limb is closer than its Earth exclusion, or the Moon (when not behind the Earth) is inside its Moon exclusion. ☾ – = Moon behind the Earth. Edit the angles in <b>Spacecraft Layout</b>.')));
 
   out.push(card('Display', null,
+    selectRow({ id: 'refFrame', label: 'Orbital frame shown', options: Object.entries(ENV.ORBIT_FRAMES).map(([k, f]) => [k, f.label]), get: () => o.refFrame, set: v => { o.refFrame = v; save(); ctx.renderRail(); } }),
     h('div', { class: 'checks' },
       check('s-eci', 'ECI frame', () => o.show.eci, v => { o.show.eci = v; save(); }), check('s-orb', 'Orbital frame + v', () => o.show.orbFrame, v => { o.show.orbFrame = v; save(); }),
       check('s-track', 'Ground track', () => o.show.track, v => { o.show.track = v; save(); }), check('s-sun', 'Sun vector', () => o.show.sunv, v => { o.show.sunv = v; save(); }), check('s-moon', 'Moon + vector', () => o.show.moonv, v => { o.show.moonv = v; save(); }),
