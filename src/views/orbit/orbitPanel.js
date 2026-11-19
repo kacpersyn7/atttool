@@ -6,15 +6,17 @@ import { deg, esc, fmt, hhmm, tPlus } from '../../ui/format.js';
 import { TYPES } from '../../spacecraft/componentTypes.js';
 import { activeItem, selectSpacecraft, validateAxes } from '../../spacecraft/library.js';
 import { MAX_CHANGES, activeScenario, addScenario, deleteScenario, duplicateScenario, exportScenario, importScenario, newScenarioOrbit, previewScenario, renameScenario, selectScenario } from '../../sim/scenarioLibrary.js';
-import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, DATE_MAX, DATE_MIN, DEF_FIELDS, DEF_NAMES, PRESETS, previousOrbit, usePreviousOrbit, SCRUB_SPANS, clampTime, currentDate, epochDate, farFromEpoch, formatEpoch, ltanOf, orbitElements, ssrgtClosure, ssrgtSolution, scrubCancelResume, scrubEnd, scrubHold, scrubKey, scrubPress, scrubSpan, scrubWindowAt, setCurrentDate, setEpoch, switchDefinition, restartFromState, definitionError, tleOf, parseEpoch, validDate } from '../../sim/scenario.js';
+import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, DATE_MAX, DATE_MIN, DEF_FIELDS, DEF_NAMES, PRESETS, previousOrbit, usePreviousOrbit, SCRUB_SPANS, clampTime, currentDate, epochDate, farFromEpoch, formatEpoch, ltanOf, orbitElements, ssrgtClosure, ssrgtSolution, scrubCancelResume, scrubEnd, scrubKey, scrubPress, scrubSpan, scrubWindowAt, setCurrentDate, setEpoch, switchDefinition, restartFromState, definitionError, tleOf, parseEpoch, validDate } from '../../sim/scenario.js';
 import { copyText, showModal, closeModal, toast } from '../../ui/overlay.js';
 import { downloadText, fileName, onFileDrop, openFileButton } from '../../ui/files.js';
 import { exampleScheduleCSV, forAdding, scheduleFromCSV, scheduleToCSV } from '../../sim/scheduleCsv.js';
 import { TARGET_SLEW, TARGET_SLEW_MAX, changeTurn, payloadComp, scheduleOrder, tooFast } from '../../sim/guidance.js';
 import { ELEV_MAX, EVENT_KINDS, EVENT_WINDOW, OFFSET_MAX, afterCandidates, eventLabel } from '../../sim/events.js';
 import { timelineKey } from '../../sim/timeline.js';
-import { NAME_MAX, addChange, adjacentChange, cleanName, deleteChange, duplicateChange, nudgeChange, renameChange, runProgress, scheduleHistory, scenarioSpan, scheduleNotes, setChangeMode, setChangeStart, startRun, takeRotation } from '../../sim/schedule.js';
+import { NAME_MAX, addChange, cleanName, deleteChange, duplicateChange, nudgeChange, renameChange, runProgress, scheduleHistory, scenarioSpan, scheduleNotes, setChangeMode, setChangeStart, takeRotation } from '../../sim/schedule.js';
 import { sensorEval } from '../../sim/sensors.js';
+// the slider's hold, shared with Play in the transport strip
+import { hold } from './transport.js';
 import { pointing } from '../../sim/payload.js';
 
 /** Body-axis choices for pointing modes; optionally include component boresights / normals. */
@@ -34,8 +36,6 @@ export function orbitPanel(ctx) {
   out.push(scenarioCard(ctx));
   out.push(orbitCard(ctx, o, sl));
 
-  const playBtn = h('button', { class: 'btn primary', style: 'min-width:84px', onclick: () => { scrubCancelResume(hold); o.playing = !o.playing; save(); syncAll(); } });
-  onSync(() => playBtn.textContent = o.playing ? '❚❚ Pause' : '▶ Play');
   const nowInput = dateInput('now');
   const showNow = () => nowInput.value = formatEpoch(new Date(Math.floor(currentDate(o).getTime() / 1000) * 1000));
   // typing a time while the clock runs would edit a stale value: pause first
@@ -44,16 +44,12 @@ export function orbitPanel(ctx) {
   nowInput.addEventListener('blur', () => syncAll());
   onSync(() => { if (document.activeElement !== nowInput) showNow(); });
   out.push(card('Time', null,
-    h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, playBtn,
-      ...((o.schedule || []).length ? [-1, 1].map(dir => h('button', { class: 'btn', title: dir < 0 ? 'Go to the start of the previous change' : 'Go to the start of the next change', 'aria-label': dir < 0 ? 'Previous change' : 'Next change',
-        onclick: () => { const t = adjacentChange(o, dir); if (t === null) { toast(dir < 0 ? 'No earlier change' : 'No later change'); return; } o.t = t; save(); syncAll(); } }, dir < 0 ? '⏮' : '⏭')) : []),
-      seg([[1, '1×'], [10, '10×'], [30, '30×'], [60, '60×'], [300, '300×'], [1000, '1000×']], () => o.speed, v => { o.speed = v; save(); })),
     ...scenarioRun(o),
     h('div', { class: 'row two' }, h('label', { for: 'now' }, 'Current time (UTC)'), nowInput),
     timeScrubber(o),
     h('div', { class: 'kv' }, h('dt', null, 'From the epoch'), h('dd', null, liveText(() => tPlus(o.t)))),
     liveText(() => { const d = farFromEpoch(o); return d === null ? '' : `<p class="tip" style="color:var(--warn)">${d.toFixed(0)} days from the epoch: the Sun geometry and the plane drift still hold, the position along the orbit does not (no drag).</p>`; }),
-    tip('Moving the time keeps the orbit. The slider shows one page at a time, counted from the epoch; release it at either end to turn the page, or type a date.')));
+    tip('<b>Play</b>, ⏮ / ⏭, the speed and <b>▶ Scenario</b> are in the strip above the plots; Space plays and pauses. Moving the time keeps the orbit. The slider shows one page at a time, counted from the epoch; release it at either end to turn the page, or type a date.')));
 
   const sched = o.schedule || [];
   if (selChange && !sched.some(c => c.id === selChange)) selChange = null; // gone: deleted, another scenario
@@ -135,9 +131,8 @@ export function orbitPanel(ctx) {
   return out;
 }
 
-/** Playing the whole scenario: the ▶ Scenario button, Loop, the progress, and the scenario end (UTC, or automatic). */
+/** Playing the whole scenario: Loop, the progress, and the scenario end (UTC, or automatic); ▶ Scenario is in the transport strip. */
 function scenarioRun(o) {
-  const runBtn = h('button', { class: 'btn', title: 'Play the scenario from its start to its end at the chosen speed, then pause', onclick: () => { scrubCancelResume(hold); startRun(o); save(); syncAll(); } }, '▶ Scenario');
   const end = dateInput('scEnd'), pending = h('span', { class: 'lbl', hidden: true }, 'Enter to apply · Esc to undo');
   const shown = () => { end.value = formatEpoch(new Date(Math.floor(epochDate(o).getTime() / 1000 + scenarioSpan(o).end) * 1000)); pending.hidden = true; };
   // like a change's start: a typed end applies on Enter or on leaving the field
@@ -155,7 +150,7 @@ function scenarioRun(o) {
   onSync(() => { if (document.activeElement !== end) shown(); });
   const autoBtn = h('button', { class: 'btn', title: 'End when the last change has finished its slew, plus 5 min (one orbit without a schedule)', onclick: () => { o.end = ''; save(); syncAll(); } }, 'Auto');
   return [
-    h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, runBtn,
+    h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, h('span', { class: 'lbl', title: '▶ Scenario is in the strip above the plots' }, 'Scenario run'),
       check('runLoop', 'Loop', () => !!o.runLoop, v => { o.runLoop = v; save(); }),
       liveText(() => { const p = runProgress(o); return p === null ? '' : `<span class="lbl">Scenario · ${(100 * p).toFixed(0)} %</span>`; })),
     liveText(() => { const p = runProgress(o); return p === null ? '' : `<div class="runbar"><span style="width:${(100 * p).toFixed(1)}%"></span></div>`; }),
@@ -365,7 +360,6 @@ function eventRow(o, sel, edit) {
 
 /* ---------------- Time slider: a window that follows the current time ---------------- */
 let scrubW0 = NaN, scrubSpanW = NaN; // the window and the span it was made for, kept here so that a rail rebuild doesn't move it
-const hold = scrubHold(); // shared with the Play button, which cancels a pending resume
 
 function timeScrubber(o) {
   const keys = 'Arrow keys: 1 min (with Shift: 1 s). Page Up / Down: a tenth of the span.';

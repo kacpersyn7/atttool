@@ -121,6 +121,13 @@ details.more[open] summary{margin-bottom:6px}
 .dockbtn{min-width:26px}
 #hudTL{max-height:calc(100% - var(--dock, 0px) - 24px);overflow:auto}
 #timeline canvas{width:100%;display:block;cursor:crosshair}
+.transport{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;padding-bottom:6px;margin-bottom:6px;border-bottom:1px solid var(--line)}
+.transport .btn{padding:3px 10px}
+.transport .sp{flex:1}
+.transport .clock{font-size:12px;white-space:nowrap}
+.transport .clock .mono{font-family:var(--f-mono)}
+.transport .clock .lbl{margin-left:6px;color:var(--muted)}
+.runbar.mini{display:inline-block;width:72px;vertical-align:middle}
 .plotbar{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:6px;font-size:12px;min-height:26px}
 #timeline.collapsed .plotbar{margin-bottom:0;flex-wrap:nowrap}
 .plotbar .lbl{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-right:4px}
