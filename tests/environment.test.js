@@ -246,3 +246,57 @@ test('repeat orbit solver: R orbits node to node while the Earth turns D times u
   assert.ok(Math.abs(143 * 2 * Math.PI / (r.n + r.M + r.argp) - 10 * 2 * Math.PI / (ENV.WE - ENV.SUN_RATE)) < 1e-6, 'the two periods of the cycle agree (s)');
   assert.ok(Math.abs(r.raan - ENV.SUN_RATE) < 1e-15, 'sun-synchronous'); assert.equal(ENV.solveRepeatSSO(1, 1), null); assert.equal(ENV.solveRepeatSSO(0, 10), null);
 });
+
+/* ---- #85: a state vector is osculating; the secular model flies mean elements ---- */
+import { j2Motion } from './helpers.js';
+import { MU as MU_, RE as RE_, J2 as J2_ } from '../src/env/constants.js';
+const K = { MU: MU_, RE: RE_, J2: J2_ }, D2R_ = Math.PI / 180, dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+
+test('J2 short-period a: the textbook circular value, and a − δa stays put along real J2 motion (numerical reference)', () => {
+  // circular: δa = 1.5 J2 Rₑ²/a sin²i cos 2u
+  const a = 6928.137, i = 97.59 * D2R_;
+  close(ENV.j2ShortPeriodA({ a, e: 0, i, argp: 0, nu0: 0 }), 1.5 * J2_ * RE_ * RE_ / a * Math.sin(i) ** 2, 1e-12, 'u = 0');
+  close(ENV.j2ShortPeriodA({ a, e: 0, i, argp: 0, nu0: Math.PI / 2 }), -1.5 * J2_ * RE_ * RE_ / a * Math.sin(i) ** 2, 1e-12, 'u = 90°');
+  close(ENV.j2ShortPeriodA({ a, e: 0, i, argp: 0, nu0: 0 }), 9.37, 0.01, 'about 9.4 km at 550 km SSO');
+  // along an integrated trajectory the osculating a swings; a − δa must not (first order: what is left is J2²)
+  for (const [name, el, swing, left] of [['SSO 550', { a, e: 0.001, i, raan: 0.7, argp: 1.1, nu0: 0.3 }, 18, 0.035], ['Molniya', { a: 26578, e: 0.7372, i: 63.4 * D2R_, raan: 0.7, argp: 1.1, nu0: 0.3 }, 160, 0.6]]) {
+    const s = ENV.propagate(el, 0, false), P = 2 * Math.PI * Math.sqrt(el.a ** 3 / MU_); let a0 = [Infinity, -Infinity], a1 = [Infinity, -Infinity];
+    j2Motion([...s.r, ...s.v], 2 * P, Math.min(10, P / 3000), (t, y) => { const c = ENV.rv2coe(y.slice(0, 3), y.slice(3)), m = ENV.meanFromOsculating(c).a; a0 = [Math.min(a0[0], c.a), Math.max(a0[1], c.a)]; a1 = [Math.min(a1[0], m), Math.max(a1[1], m)]; }, K);
+    assert.ok(a0[1] - a0[0] > swing, `${name}: osculating a swings ${(a0[1] - a0[0]).toFixed(2)} km`);
+    assert.ok(a1[1] - a1[0] < left, `${name}: mean a swings ${((a1[1] - a1[0]) * 1000).toFixed(1)} m`);
+  }
+});
+
+test('the reference J2 integrator keeps energy and h_z', () => {
+  const s = ENV.propagate({ a: 6928.137, e: 0.001, i: 97.59 * D2R_, raan: 0.7, argp: 1.1, nu0: 0.3 }, 0, false);
+  const en = y => { const r = Math.hypot(y[0], y[1], y[2]), sp = y[2] / r; return (y[3] ** 2 + y[4] ** 2 + y[5] ** 2) / 2 - MU_ / r * (1 - J2_ * (RE_ / r) ** 2 * (3 * sp * sp - 1) / 2); };
+  let e0 = null, h0 = null, de = 0, dh = 0;
+  j2Motion([...s.r, ...s.v], 86400, 10, (t, y) => { const e = en(y), hz = y[0] * y[4] - y[1] * y[3]; if (e0 === null) { e0 = e; h0 = hz; } de = Math.max(de, Math.abs(e / e0 - 1)); dh = Math.max(dh, Math.abs(hz / h0 - 1)); }, K);
+  assert.ok(de < 1e-9 && dh < 1e-9, `energy ${de}, h_z ${dh}`);
+});
+
+test('a state vector flown by the model stays with real J2 motion, wherever on the orbit it was taken (#85)', () => {
+  for (const [name, el, tol] of [['SSO 550', { a: 6928.137, e: 0.001, i: 97.59 * D2R_, raan: 0.7, argp: 1.1 }, 30], ['ISS 420', { a: 6798, e: 0.0003, i: 51.64 * D2R_, raan: 0.7, argp: 1.1 }, 15]]) {
+    for (const u of [0, 45, 90, 135]) {
+      const s = ENV.propagate({ ...el, nu0: u * D2R_ - el.argp }, 0, false), c = ENV.rv2coe(s.r, s.v), mean = ENV.meanFromOsculating(c);
+      let before = 0, after = 0;
+      j2Motion([...s.r, ...s.v], 86400, 10, (t, y) => { const r = y.slice(0, 3); before = Math.max(before, dist(ENV.propagate(c, t, true).r, r)); after = Math.max(after, dist(ENV.propagate(mean, t, true).r, r)); }, K);
+      assert.ok(after < tol, `${name} at u = ${u}°: ${after.toFixed(1)} km after a day (was ${before.toFixed(0)} km)`);
+      if (u % 90 === 0) assert.ok(before > 800, `${name} at u = ${u}°: osculating a flown as mean is far off (${before.toFixed(0)} km)`);
+    }
+  }
+});
+
+test('osculating ↔ mean: the round trip is exact, and the osculating state flies the same orbit in a full J2 propagator', () => {
+  const el = { a: 6928.137, e: 0.001, i: 97.59 * D2R_, raan: 0.7, argp: 1.1, nu0: 0.3 };
+  const back = ENV.meanFromOsculating(ENV.osculatingFromMean(el)); close(back.a, el.a, 1e-9, 'a');
+  // the state of the mean-element orbit at t, as osculating: rv2coe + meanFromOsculating give back its mean elements at t
+  const t = 4321, s = ENV.propagate(el, t, true), o = ENV.osculatingState(el, t, true), m = ENV.meanFromOsculating(ENV.rv2coe(o.r, o.v));
+  close(m.a, el.a, 1e-6, 'a at t'); close(m.e, el.e, 1e-9, 'e'); close(m.i, el.i, 1e-12, 'i');
+  assert.ok(dist(o.r, s.r) > 5 && dist(o.r, s.r) < 12, `the osculating position differs by the short-period term: ${dist(o.r, s.r).toFixed(2)} km`);
+  closeArr(ENV.osculatingState(el, t, false).r, ENV.propagate(el, t, false).r, 1e-9, 'two-body: the same');
+  // the copied state, flown by a full J2 propagator, stays with the model's orbit (it was ~1300 km a day off)
+  const z = ENV.osculatingState(el, 0, true); let worst = 0;
+  j2Motion([...z.r, ...z.v], 86400, 10, (tt, y) => { worst = Math.max(worst, dist(ENV.propagate(el, tt, true).r, y.slice(0, 3))); }, K);
+  assert.ok(worst < 35, `full J2 from the copied state vs the model: ${worst.toFixed(1)} km after a day`); // u ≈ 80°: near the worst case of the uncorrected terms
+});

@@ -159,7 +159,9 @@ function fieldElements(o) {
  */
 export function orbitElements(o) {
   if (o.def === 'ssrgt') { const r = ssrgtSolution(o); if (r) return r.E; }
-  if (o.def === 'rv' && o.r && o.v) { const c = ENV.rv2coe(o.r, o.v); if (!c.error) return { a: c.a, e: c.e, i: c.i, raan: c.raan, argp: c.argp, nu0: c.nu0 }; }
+  if (o.def === 'rv' && o.r && o.v) { // an osculating state: with J2, flown with its mean a (#85)
+    const c = ENV.rv2coe(o.r, o.v); if (!c.error) { const E = { a: c.a, e: c.e, i: c.i, raan: c.raan, argp: c.argp, nu0: c.nu0 }; return o.j2 ? ENV.meanFromOsculating(E) : E; }
+  }
   if (o.def === 'tle') { // its mean motion is the mean anomaly's rate: with J2 on, the semi-major axis is the one that flies at it
     const t = tleOf(o); if (t) return { a: o.j2 ? ENV.smaForMeanMotion(t.n * 2 * Math.PI / 86400, t.e, t.i * D2R) : t.a, e: t.e, i: t.i * D2R, raan: t.raan * D2R, argp: t.argp * D2R, nu0: ENV.meanToTrue(t.M * D2R, t.e) };
   }
@@ -240,7 +242,7 @@ const keptOf = (o, def) => ({ ...inputsOf(o, def), at: currentDate(o).getTime() 
  * track: the same LTAN). A TLE can't be made from an orbit, so it is left as it is.
  */
 function fillDefinition(o, to, from) {
-  if (to === 'rv') { const s = ENV.propagate(from.E, 0, false); o.r = s.r.map(x => +x.toFixed(6)); o.v = s.v.map(x => +x.toFixed(9)); }
+  if (to === 'rv') { const s = ENV.osculatingState(from.E, 0, o.j2); o.r = s.r.map(x => +x.toFixed(6)); o.v = s.v.map(x => +x.toFixed(9)); } // the osculating state: it flies the same orbit
   if (to === 'elements') { setFieldsFromElements(o, from.E); o.preset = 'custom'; }
   if (to === 'ssrgt') o.rgtLtan = Math.round(from.ltan * 60) / 60;
   if (to !== 'tle' && (from.tle || from.epoch !== o.epoch)) o.epoch = from.tle ? formatEpoch(from.ep) : from.epoch;
@@ -316,7 +318,7 @@ export function setFieldsFromElements(o, E) {
 export function restartFromState(o, t) {
   t = clampTime(o, t); // the new epoch must be a date that can be read back
   leaveDefinition(o, 'rv', false); if (o.def === 'rv') o.defFrom = '';
-  const E = orbitElements(o), s = ENV.propagate(E, t, o.j2), d = new Date(epochDate(o).getTime() + t * 1000);
+  const E = orbitElements(o), s = ENV.osculatingState(E, t, o.j2), d = new Date(epochDate(o).getTime() + t * 1000); // osculating: as r, v are read (#85)
   o.r = s.r.map(x => +x.toFixed(6)); o.v = s.v.map(x => +x.toFixed(9));
   o.epoch = formatEpoch(new Date(Math.round(d.getTime()))); o.def = 'rv'; o.preset = 'custom'; o.t = 0;
 }

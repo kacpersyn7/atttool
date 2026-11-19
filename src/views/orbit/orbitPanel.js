@@ -504,7 +504,7 @@ function orbitCard(ctx, o, sl) {
       h('div', { class: 'grid3' }, [0, 1, 2].map(k => cell('v', k, 'v' + 'xyz'[k], .001, 6))),
       h('div', { style: 'display:grid;grid-template-columns:1fr auto;gap:6px' }, paste, h('button', { class: 'btn', onclick: applyPaste }, 'Use')),
       status(), derived(),
-      tip('Converted exactly to osculating elements at the epoch. With J2 on, these feed a mean-element secular model, so long runs drift slightly from a full propagator. The tool\'s ECI ignores precession (≈ J2000).')];
+      tip('An osculating state at the epoch, as a full propagator gives it. With J2 on, the model flies mean elements: the semi-major axis less its J2 short-period term (up to ±1.5·J2·Rₑ²/a·sin²i, about 9 km in LEO), which sets the along-track rate. The other elements\' short-period terms are not modelled, so against a full J2 propagator expect some 10 to 35 km over a few days in LEO, more on very eccentric orbits. The tool\'s ECI ignores precession (≈ J2000).')];
   }
   if (o.def === 'tle') {
     const ta = h('textarea', { id: 'tle', rows: 3, spellcheck: 'false', class: 'dcm', placeholder: 'NAME (optional)\n1 25544U 98067A   …\n2 25544  51.6416 …' });
@@ -547,13 +547,14 @@ function orbitCard(ctx, o, sl) {
       derived(),
       tip('Altitude and inclination are solved so the orbit is sun-synchronous and repeats its ground track after the given orbits and days, with the J2 secular drift of Ω, ω and M. The altitude is a − Rₑ: Sentinel-2 (786 km) and Sentinel-1 (693 km) quote it so; Landsat and Sentinel-3 quote another reference, so theirs differ by several km. RAAN comes from the LTAN at the epoch; orbit 1 crosses the equator northbound at the reference longitude. Circular. The model has no drag, so the track holds forever; a real one needs regular manoeuvres to stay on it.')];
   }
-  const nowState = () => { const c = ctx.cur(); return c ? { r: c.st.r, v: c.st.v, d: c.date } : null; };
+  // the osculating state now (#85): what a full propagator, or the r, v tab, takes for this orbit; the drawn position is the mean-element one, within the J2 short-period term
+  const nowState = () => { const c = ctx.cur(); if (!c) return null; const s = ENV.osculatingState(orbitElements(o), c.t, o.j2); return { r: s.r, v: s.v, d: c.date }; };
   return card('Orbit', 'Keplerian + J2',
     h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, h('span', { class: 'lbl' }, 'Defined by'), defSeg),
     h('div', { class: 'btns' }, usePrev),
     h('div', { class: 'row two' }, h('label', { for: 'epoch' }, 'Epoch (UTC)'), epochInput),
     ...body, ...common,
-    h('div', { class: 'lbl' }, 'State now (ECI ≈ J2000)'),
+    h('div', { class: 'lbl', title: 'Osculating: what a full propagator, or the r, v tab, takes for this orbit. With J2 on it differs from the drawn position by the short-period term, a few km' }, 'State now (ECI ≈ J2000, osculating)'),
     h('div', { class: 'kv' },
       h('dt', null, 'r (km)'), h('dd', null, liveText(() => { const n = nowState(); return n ? '[' + n.r.map(x => fmt(x, 3)).join(', ') + ']' : ''; })),
       h('dt', null, 'v (km/s)'), h('dd', null, liveText(() => { const n = nowState(); return n ? '[' + n.v.map(x => fmt(x, 6)).join(', ') + ']' : ''; }))),
