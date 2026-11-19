@@ -51,3 +51,37 @@ test('SGP4: a TLE stops where the reference stops (decayed, or the elements leav
     assert.ok(stopped, `${num} stops between ${last} and ${last + tles[k].step} min (error ${stopped})`);
   }
 });
+
+/* ---- in the app: a TLE scenario flies SGP4 ---- */
+import * as ENV from '../src/env/index.js';
+import { orbitElements, sgp4Problem, switchDefinition, epochDate } from '../src/sim/scenario.js';
+import { attitudeAt } from '../src/sim/guidance.js';
+import { defaultState, migrate } from '../src/state/store.js';
+const ISS = 'ISS (ZARYA)\n1 25544U 98067A   08264.51782528 -.00002182  00000-0 -11606-4 0  2927\n2 25544  51.6416 247.4627 0006703 130.5360 325.0288 15.72125391563537';
+const tleState = text => { const s = defaultState(); migrate(s); s.orbit.def = 'tle'; s.orbit.tle = text; s.orbit.t = 0; return s; };
+
+test('SGP4 in the app: a TLE scenario\'s spacecraft is where SGP4 puts it, J2 option or not', () => {
+  const s = tleState(ISS), E = orbitElements(s.orbit); assert.ok(E.sgp4, 'the elements carry the SGP4 record');
+  const ref = ENV.tleSatrec(...ISS.split('\n').slice(1));
+  for (const t of [0, 3600, 86400]) {
+    const r = attitudeAt(s, t).st.r, p = ENV.sgp4At(ref, t / 60 + E.sgp4.offMin).r;
+    assert.ok(Math.hypot(r[0] - p[0], r[1] - p[1], r[2] - p[2]) < 1e-9, `t = ${t} s`);
+  }
+  assert.ok(Math.abs(E.sgp4.offMin) < 1e-5, 'the epoch it counts from is the TLE\'s, to the millisecond');
+  s.orbit.j2 = false; const r0 = attitudeAt(s, 3600).st.r; s.orbit.j2 = true; const r1 = attitudeAt(s, 3600).st.r;
+  assert.deepEqual(r0, r1, 'SGP4 has its own perturbations');
+  assert.equal(JSON.stringify(E).includes('"sgp4":"sgp4"'), true, 'keys made of the elements stay short');
+});
+
+test('SGP4 in the app: r, v filled from a TLE is SGP4\'s state at the epoch; a decayed TLE says why and falls back', () => {
+  const s = tleState(ISS), st = ENV.propagate(orbitElements(s.orbit), 0, true);
+  switchDefinition(s.orbit, 'rv'); assert.equal(s.orbit.rvOsc, true);
+  assert.ok(Math.hypot(...s.orbit.r.map((x, i) => x - st.r[i])) < 1e-5, 'the TEME state, as osculating');
+  assert.equal(epochDate(s.orbit).toISOString().slice(0, 19), '2008-09-20T12:25:40');
+  // 28872 of the verification set decays within an hour
+  const k = tles.findIndex(t => t.num === '28872'), d = tleState(tles[k].l1 + '\n' + tles[k].l2);
+  assert.equal(sgp4Problem(d.orbit, 0), null);
+  let tStop = null; for (let m = 50; m <= 60 && tStop === null; m += 0.1) if (sgp4Problem(d.orbit, m * 60)) tStop = m * 60; // the reference stops between 50 and 60 min
+  assert.ok(tStop !== null); assert.match(sgp4Problem(d.orbit, tStop), /decayed|range|rectum|eccentricity/);
+  assert.ok(attitudeAt(d, tStop).st.r.every(Number.isFinite), 'the mean-element model then');
+});

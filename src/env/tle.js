@@ -46,7 +46,7 @@ export function parseTLE(text) {
   const out = {
     name, satnum: l1.slice(2, 7).trim(), epoch: tleEpoch(l1.slice(18, 32)),
     i: f(l2, 8, 16), raan: f(l2, 17, 25), e: parseFloat('0.' + l2.slice(26, 33).trim()), argp: f(l2, 34, 42), M: f(l2, 43, 51), n: f(l2, 52, 63),
-    bstar: expField(l1.slice(53, 61)), warnings,
+    bstar: expField(l1.slice(53, 61)), warnings, l1, l2, // the lines, for SGP4 (sgp4.js tleSatrec)
   };
   for (const k of ['i', 'raan', 'e', 'argp', 'M', 'n']) if (!Number.isFinite(out[k])) throw new Error(`Could not read ${k} from line 2.`);
   if (isNaN(out.epoch.getTime())) throw new Error('Could not read the epoch from line 1.');

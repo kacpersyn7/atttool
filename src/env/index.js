@@ -10,3 +10,4 @@ export * from './orbit.js';
 export * from './frames.js';
 export * from './magfield.js';
 export * from './tle.js';
+export * from './sgp4.js';

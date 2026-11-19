@@ -6,7 +6,7 @@ import { deg, esc, fmt, hhmm, tPlus } from '../../ui/format.js';
 import { TYPES } from '../../spacecraft/componentTypes.js';
 import { activeItem, selectSpacecraft, validateAxes } from '../../spacecraft/library.js';
 import { MAX_CHANGES, activeScenario, addScenario, deleteScenario, duplicateScenario, exportScenario, importScenario, newScenarioOrbit, previewScenario, renameScenario, selectScenario } from '../../sim/scenarioLibrary.js';
-import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, DATE_MAX, DATE_MIN, DEF_FIELDS, DEF_NAMES, PRESETS, previousOrbit, usePreviousOrbit, SCRUB_SPANS, clampTime, currentDate, epochDate, farFromEpoch, formatEpoch, ltanOf, orbitElements, ssrgtClosure, ssrgtSolution, scrubCancelResume, scrubEnd, scrubHold, scrubKey, scrubPress, scrubSpan, scrubWindowAt, setCurrentDate, setEpoch, switchDefinition, restartFromState, definitionError, tleOf, parseEpoch, validDate, stateForPropagator } from '../../sim/scenario.js';
+import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, DATE_MAX, DATE_MIN, DEF_FIELDS, DEF_NAMES, PRESETS, previousOrbit, usePreviousOrbit, SCRUB_SPANS, clampTime, currentDate, epochDate, farFromEpoch, formatEpoch, ltanOf, orbitElements, ssrgtClosure, ssrgtSolution, scrubCancelResume, scrubEnd, scrubHold, scrubKey, scrubPress, scrubSpan, scrubWindowAt, setCurrentDate, setEpoch, switchDefinition, restartFromState, definitionError, tleOf, parseEpoch, validDate, stateForPropagator, sgp4Problem } from '../../sim/scenario.js';
 import { copyText, showModal, closeModal, toast } from '../../ui/overlay.js';
 import { downloadText, fileName, onFileDrop, openFileButton } from '../../ui/files.js';
 import { exampleScheduleCSV, forAdding, scheduleFromCSV, scheduleToCSV } from '../../sim/scheduleCsv.js';
@@ -52,7 +52,7 @@ export function orbitPanel(ctx) {
     h('div', { class: 'row two' }, h('label', { for: 'now' }, 'Current time (UTC)'), nowInput),
     timeScrubber(o),
     h('div', { class: 'kv' }, h('dt', null, 'From the epoch'), h('dd', null, liveText(() => tPlus(o.t)))),
-    liveText(() => { const d = farFromEpoch(o); return d === null ? '' : `<p class="tip" style="color:var(--warn)">${d.toFixed(0)} days from the epoch: the Sun geometry and the plane drift still hold, the position along the orbit does not (no drag).</p>`; }),
+    liveText(() => { const d = farFromEpoch(o); return d === null ? '' : `<p class="tip" style="color:var(--warn)">${d.toFixed(0)} days from the epoch: ${o.def === 'tle' ? 'SGP4 is only as good as the TLE, and far from its epoch the position along the orbit is not reliable.' : 'the Sun geometry and the plane drift still hold, the position along the orbit does not (no drag).'}</p>`; }),
     tip('Moving the time keeps the orbit. The slider shows one page at a time, counted from the epoch; release it at either end to turn the page, or type a date.')));
 
   const sched = o.schedule || [];
@@ -475,7 +475,8 @@ function orbitCard(ctx, o, sl) {
       h('dt', null, 'Period', h('span', { class: 'lbl', title: 'Perigee to perigee, as flown: with J2, 2π / (n + Ṁ_J2)' }, ' (anomalistic)')), h('dd', null, liveText(() => { const E = orbitElements(o), r = ENV.j2Rates(E.a, E.e, E.i); return (2 * Math.PI / (r.n + (o.j2 ? r.M : 0)) / 60).toFixed(2) + ' min'; })),]),
       h('dt', null, 'LTAN (at epoch)'), h('dd', null, liveText(() => hhmm(ltanOf(o)))),
       h('dt', null, 'SSO inclination for this a'), h('dd', null, liveText(() => { const E = orbitElements(o); return deg(ENV.ssoInc(E.a, E.e)).toFixed(2) + '°'; }))),
-    check('j2', 'J2 secular drift of Ω, ω and M (makes SSO work)', () => o.j2, v => { o.j2 = v; save(); syncAll(); }),
+    o.def === 'tle' ? h('p', { class: 'tip', style: 'margin:0', html: 'Perturbations: SGP4\'s own (J2–J4, drag, and the Sun and Moon in deep space). The J2 option is for the other definitions.' })
+      : check('j2', 'J2 secular drift of Ω, ω and M (makes SSO work)', () => o.j2, v => { o.j2 = v; save(); syncAll(); }),
   ];
   const defSeg = seg(Object.entries(DEF_NAMES), () => o.def, v => { switchDefinition(o, v); save(); ctx.renderRail(); });
   // each tab keeps what was entered in it (#81); this brings the orbit of the tab before over, on request
@@ -519,7 +520,8 @@ function orbitCard(ctx, o, sl) {
       liveText(() => { const t = tleOf(o); if (!t) return ''; return `<div class="kv"><dt>Satellite</dt><dd>${esc(t.name || '—')} · ${esc(t.satnum)}</dd><dt>Epoch</dt><dd>${t.epoch.toISOString().replace('T', ' ').slice(0, 23)}</dd><dt>Mean motion</dt><dd>${t.n.toFixed(8)} rev/day</dd></div>`
         + t.warnings.map(w => `<p class="tip" style="color:var(--warn)">${w}</p>`).join(''); }),
       derived(),
-      tip('<b>Approximation:</b> the TLE\'s mean elements are flown with Keplerian + J2 secular drift, not SGP4. Good near the TLE epoch; drifts by kilometres per day (no drag). The epoch comes from the TLE.')];
+      liveText(() => { const c = ctx.cur(), why = c && sgp4Problem(o, c.t); return why ? `<span class="chip warn" title="SGP4 gives no state here; the orbit drawn is the mean-element model of the TLE">SGP4 stops here: ${esc(why)}</span>` : ''; }),
+      tip('Flown with <b>SGP4</b> (SDP4 for periods over 225 min), the model TLEs are made for: J2, J3 and J4, drag through B*, and for deep space the Sun, the Moon and resonances (a port of the reference code of Vallado et al., <i>Revisiting Spacetrack Report #3</i>, 2006, verified against its test set). Its frame, TEME, is taken as the tool\'s ECI, which ignores precession and nutation, and turned by GMST into the Earth-fixed frame, as SGP4 defines it. As accurate as the TLE itself: best near its epoch. The epoch comes from the TLE; the elements shown are its mean ones.')];
   }
   const epochInput = dateInput('epoch'); epochInput.disabled = o.def === 'tle';
   epochInput.title = o.def === 'tle' ? 'Set by the TLE' : 'The date this orbit definition holds at. Moving it re-dates the orbit, keeping the current time.';
@@ -552,7 +554,7 @@ function orbitCard(ctx, o, sl) {
   }
   // the state to start a full propagator from (#85, sim/scenario.js stateForPropagator)
   const nowState = () => { const c = ctx.cur(); if (!c) return null; const s = stateForPropagator(o, c.t); return { r: s.r, v: s.v, d: c.date }; };
-  return card('Orbit', 'Keplerian + J2',
+  return card('Orbit', o.def === 'tle' ? 'SGP4' : o.j2 ? 'Keplerian + J2' : 'Keplerian',
     h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, h('span', { class: 'lbl' }, 'Defined by'), defSeg),
     h('div', { class: 'btns' }, usePrev),
     h('div', { class: 'row two' }, h('label', { for: 'epoch' }, 'Epoch (UTC)'), epochInput),

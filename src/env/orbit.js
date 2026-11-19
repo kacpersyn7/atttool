@@ -5,6 +5,7 @@
 import { v, m } from '../core/linalg.js';
 import { Ra } from '../core/attitude.js';
 import { MU, RE, J2, WE } from './constants.js';
+import { sgp4At } from './sgp4.js';
 
 /** Solve Kepler's equation M = E - e sin E (Newton). */
 export function kepler(M, e) {
@@ -31,7 +32,9 @@ export function smaForMeanMotion(nTot, e, i) {
 
 /**
  * Propagate elements to t seconds after epoch. With j2, the node, the argument of perigee and the mean anomaly
- * drift at their first-order J2 secular rates (j2Rates).
+ * drift at their first-order J2 secular rates (j2Rates). Elements of a TLE that carry its SGP4 record (el.sgp4, from
+ * sim/scenario.js orbitElements) give SGP4's r and v instead, whatever j2 is (#91); nu, raan, argp and period stay
+ * the mean-element ones.
  * @returns {{r:number[], v:number[], nu:number, raan:number, argp:number, period:number}} ECI km, km/s; period is the
  *   two-body one.
  */
@@ -50,6 +53,9 @@ export function propagate(el, t, j2) {
   const rp = [r * Math.cos(nu), r * Math.sin(nu), 0];
   const vp = [-Math.sqrt(MU / p) * Math.sin(nu), Math.sqrt(MU / p) * (e + Math.cos(nu)), 0];
   const R = m.mul(Ra(3, raan), m.mul(Ra(1, el.i), Ra(3, argp)));
+  if (el.sgp4) { // a TLE (#91): SGP4's state (TEME, taken as this ECI); if SGP4 stops (decay, …), the mean-element model's
+    const p = sgp4At(el.sgp4, t / 60 + (el.sgp4.offMin || 0)); if (p) return { r: p.r, v: p.v, nu, raan, argp, period: 2 * Math.PI / n };
+  }
   return { r: m.mulv(R, rp), v: m.mulv(R, vp), nu, raan, argp, period: 2 * Math.PI / n };
 }
 
@@ -85,7 +91,7 @@ export function osculatingFromMean(el) {
  * two-body state, as propagate gives. Its position differs from propagate's by the short-period term (~δa radially).
  */
 export function osculatingState(el, t, j2) {
-  const s = propagate(el, t, j2); if (!j2) return { r: s.r, v: s.v };
+  const s = propagate(el, t, j2); if (!j2 || el.sgp4) return { r: s.r, v: s.v }; // SGP4's state is osculating already
   const o = propagate(osculatingFromMean({ a: el.a, e: el.e, i: el.i, raan: s.raan, argp: s.argp, nu0: s.nu }), 0, false);
   return { r: o.r, v: o.v };
 }
