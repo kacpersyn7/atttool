@@ -27,7 +27,7 @@ export function makeLabel(text, color = '#d9e2ee', px = 26, opts = {}) {
   ctx.fillStyle = color; ctx.fillText(text, 8, hh / 2 + 1);
   const tex = new THREE.CanvasTexture(c); tex.minFilter = THREE.LinearFilter;
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, depthWrite: false, transparent: true, sizeAttenuation: false }));
-  const k = (opts.scale || 1) * 0.00062; sp.scale.set(w * k, hh * k, 1); sp.renderOrder = 999; sp.center.set(0, 0.5); sp.userData.base = [w * k, hh * k];
+  const k = (opts.scale || 1) * 0.00062; sp.scale.set(w * k, hh * k, 1); sp.renderOrder = 999; sp.center.set(0, 0.5); sp.userData.base = [w * k, hh * k]; sp.userData.pad = [8 / w, 6 / hh]; // the text inside the canvas, for declutterLabels
   return sp;
 }
 
@@ -79,10 +79,12 @@ const _lp = new THREE.Vector3(), _lsc = new THREE.Vector3();
 /**
  * Keep labels from piling up (#90): labels (makeLabel sprites) of `roots`, in order, are hidden while they overlap
  * one already drawn; zooming in separates them, and they come back. A label is a screen-size sprite, so its box is
- * its world scale × the projection's focal factor, in pixels of a w × h view. Uses material.visible, so the
- * objects' own visibility (the Display toggles) is left alone. Call after fixLabels and updateMatrixWorld.
+ * its world scale × the projection's focal factor, in pixels of a w × h view; its text, without the canvas padding,
+ * counts. A label hidden last frame needs `again` px more to come back, so one at the edge doesn't blink while the
+ * scene moves. Uses material.visible, so the objects' own visibility (the Display toggles) is left alone. Call
+ * with the camera's matrices up to date.
  */
-export function declutterLabels(roots, camera, w, h, gap = 2) {
+export function declutterLabels(roots, camera, w, h, gap = 2, again = 4) {
   const kept = [], P = camera.projectionMatrix.elements, fx = P[0] * w / 2, fy = P[5] * h / 2;
   const shown = o => { for (let x = o; x; x = x.parent) if (!x.visible) return false; return true; };
   for (const root of roots) {
@@ -93,8 +95,9 @@ export function declutterLabels(roots, camera, w, h, gap = 2) {
       o.getWorldPosition(_lp); _lp.project(camera);
       if (_lp.z > 1 || _lp.z < -1) { o.material.visible = false; return; } // behind the camera
       o.getWorldScale(_lsc);
-      const x = (_lp.x + 1) / 2 * w, y = (1 - _lp.y) / 2 * h, bw = _lsc.x * fx, bh = _lsc.y * fy;
-      const box = [x - gap, y - bh / 2 - gap, x + bw + gap, y + bh / 2 + gap]; // anchored at its left middle (center 0, 0.5)
+      const x = (_lp.x + 1) / 2 * w, y = (1 - _lp.y) / 2 * h, bw = Math.abs(_lsc.x) * fx, bh = Math.abs(_lsc.y) * fy; // abs: a mirrored parent
+      const [px, py] = o.userData.pad || [0, 0], m = gap + (o.material.visible ? 0 : again);
+      const box = [x + bw * px - m, y - bh * (0.5 - py) - m, x + bw * (1 - px) + m, y + bh * (0.5 - py) + m]; // anchored at its left middle (center 0, 0.5)
       const hit = kept.some(k => box[0] < k[2] && k[0] < box[2] && box[1] < k[3] && k[1] < box[3]);
       o.material.visible = !hit; if (!hit) kept.push(box);
     });
