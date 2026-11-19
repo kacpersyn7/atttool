@@ -64,6 +64,8 @@ export function card(title, tag, ...kids) {
 }
 /** A note: in a card, behind its ⓘ (card()); anywhere else (a dialog), shown. */
 export function tip(html) { return h('p', { class: 'tip help', html }); }
+/** A note that always shows, even in a card: a caveat or a pointer the user needs (e.g. where a control went). */
+export function note(html) { return h('p', { class: 'tip', html }); }
 
 /** Range slider + number box. `label` may be a string or a DOM node. */
 export function slider({ id, label, min, max, step = 0.1, get, set, dec = 1 }) {

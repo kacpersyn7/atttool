@@ -247,3 +247,9 @@ test('import report: invalid attitudes, parts the spacecraft does not have, long
   const old = { ...j, orbit: { ...j.orbit } }; delete old.orbit.tgtSlew; delete old.orbit.end; delete old.orbit.schedule;
   const p = previewScenario(s, old, D()); assert.deepEqual(p.report, [], 'an export from 0.8 resets nothing'); assert.equal(p.info.length, 1);
 });
+
+test('a save from before #87 (no ui, or a broken one) gets empty fold and note memory; what is there is kept', () => {
+  for (const ui of [undefined, null, 7]) { const s = defaultState(); if (ui === undefined) delete s.ui; else s.ui = ui; migrate(s); assert.deepEqual(s.ui, { folded: {}, tips: {} }); }
+  const s = defaultState(); s.ui = { folded: { 'orbit:Scenario': true }, tips: { 'rot:Quaternion': true } }; migrate(s);
+  assert.deepEqual(s.ui, { folded: { 'orbit:Scenario': true }, tips: { 'rot:Quaternion': true } });
+});
