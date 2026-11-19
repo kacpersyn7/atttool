@@ -1,7 +1,7 @@
 /** Control rail for the Orbit & Frames workspace. */
 import * as ENV from '../../env/index.js';
 import { S, save, scChanged, scVersion, defaultState } from '../../state/store.js';
-import { h, card, tip, slider, numCell, selectRow, check, seg, liveText, syncAll, onSync, confirmButton } from '../../ui/dom.js';
+import { h, card, tip, slider, numCell, selectRow, check, seg, liveText, syncAll, onSync, confirmButton, note } from '../../ui/dom.js';
 import { deg, esc, fmt, hhmm, tPlus } from '../../ui/format.js';
 import { TYPES } from '../../spacecraft/componentTypes.js';
 import { activeItem, selectSpacecraft, validateAxes } from '../../spacecraft/library.js';
@@ -47,7 +47,8 @@ export function orbitPanel(ctx) {
     timeScrubber(o),
     h('div', { class: 'kv' }, h('dt', null, 'From the epoch'), h('dd', null, liveText(() => tPlus(o.t)))),
     liveText(() => { const d = farFromEpoch(o); return d === null ? '' : `<p class="tip" style="color:var(--warn)">${d.toFixed(0)} days from the epoch: the Sun geometry and the plane drift still hold, the position along the orbit does not (no drag).</p>`; }),
-    tip('<b>Play</b>, ⏮ / ⏭, the speed and <b>▶ Scenario</b> are in the strip above the plots; Space plays and pauses. Moving the time keeps the orbit. The slider shows one page at a time, counted from the epoch; release it at either end to turn the page, or type a date.')));
+    note('<b>Play</b>, ⏮ / ⏭, the speed and <b>▶ Scenario</b> are in the strip above the plots; Space plays and pauses.'),
+    tip('Moving the time keeps the orbit. The slider shows one page at a time, counted from the epoch; release it at either end to turn the page, or type a date.')));
 
   const sched = o.schedule || [];
   if (selChange && !sched.some(c => c.id === selChange)) selChange = null; // gone: deleted, another scenario
@@ -77,13 +78,13 @@ export function orbitPanel(ctx) {
     // the target and the pointing axis are set in Target & payload, in every mode (#88)
     h('div', { class: 'kv' }, h('dt', null, 'Target'), h('dd', null, liveText(() => `${fmt(g.tgtLat, 2)}°, ${fmt(g.tgtLon, 2)}° · ${fmt(targetHeight(g) * 1000, 0)} m`)),
       h('dt', null, 'Pointing axis'), h('dd', null, liveText(() => { const pc = payloadComp(S, g); return pc ? esc(pc.name) : 'body +Z'; }))),
-    h('p', { class: 'tip', style: 'margin:0' }, 'Set them in <b>Target &amp; payload</b>, below.'),
+    h('p', { class: 'tip', style: 'margin:0', html: 'Set them in <b>Target &amp; payload</b>, below.' }),
     h('div', { class: 'status' }, liveText(() => { const cur = ctx.cur(), away = notFlying(); if (away) return away; if (cur && cur.seg && cur.seg.slew !== null) return `<span class="chip warn">Slewing into this change (Mode schedule) · ${(100 * cur.seg.slew).toFixed(0)} %</span>`; return !cur || !cur.flag ? '' : cur.flag.slew ? (cur.flag.slew.rising ? `<span class="chip warn">Slewing to the target · ${(100 * cur.flag.slew.w).toFixed(0)} % · rises in ${cur.flag.slew.dt.toFixed(0)} s</span>` : `<span class="chip warn">Target set ${cur.flag.slew.dt.toFixed(0)} s ago · slewing back · ${(100 * (1 - cur.flag.slew.w)).toFixed(0)} %</span>`) : cur.flag.below ? `<span class="chip dim">Target below horizon · holding the nominal attitude</span>` : `<span class="chip ok">Tracking · elevation ${deg(cur.flag.elev).toFixed(1)}°</span>`; })),
     tgtSlewRow(g),
     tip('Boresight → line of sight to the ground point, body +X kept toward velocity. Below the horizon it holds the nominal attitude, and it slews to the target that many seconds before the target rises (so tracking starts at the rise) and back after it sets; 0 jumps. Watch the body rate rise near closest approach.'));
   if (g.mode === 'inertial' && g === o) modeCtl.push(tip('Body frame fixed in ECI using the attitude from <b>Rotation Lab</b> (reference R = ECI). Watch the Sun and Earth sweep around the spacecraft once per orbit.'));
   if (g.mode === 'inertial' && g !== o) modeCtl.push(
-    tip('This change keeps the attitude Rotation Lab had when it was made inertial (reference R = ECI). Set another one there, then take it here.'),
+    note('This change keeps the attitude Rotation Lab had when it was made inertial (reference R = ECI). Set another one there, then take it here.'),
     h('div', { class: 'btns' }, h('button', { class: 'btn', onclick: () => { takeRotation(g, S.rot.q); save(); toast('Rotation Lab attitude taken'); } }, 'Take the Rotation Lab attitude')));
   out.push(scheduleCard(ctx, o));
   out.push(card('Attitude guidance', g === o ? null : liveText(() => 'change at ' + esc(showUTC(g.start))),
@@ -96,10 +97,12 @@ export function orbitPanel(ctx) {
     h('div', { class: 'grid2' }, numCell('tlat', 'Target lat °', () => g.tgtLat, x => { g.tgtLat = x; save(); }, .1, 2), numCell('tlon', 'Target lon °', () => g.tgtLon, x => { g.tgtLon = x; save(); }, .1, 2), altCell('talt', 'Target height m')),
     cones.length ? selectRow({ id: 'tgtComp', label: 'Pointing axis', options: cones.map(c => [c.id, c.name]), get: () => (payloadComp(S, g) || {}).id, set: v => { g.tgtComp = v; save(); ctx.renderRail(); } }) : null,
     sched.length ? h('p', { class: 'tip', style: 'margin:0' }, g === o ? 'For the initial settings: each schedule change has its own target and payload.' : 'For the change selected in Mode schedule.') : null,
-    tip('The pointing error is in the <b>Pointing</b> box of the view, for what flies now. Boresight minus target. <b>along</b> > 0: looking ahead of the target along the ground track; <b>cross</b> > 0: looking to the right of it. Ground error is measured from the target to where the boresight hits the Earth (at the height of the target). In <b>Ground target tracking</b> mode it is zero by construction (no attitude errors yet). A target with a height is seen shifted from the point under it (hollow marker in the payload view): that shift is the relief displacement.')));
+    h('div', { class: 'status' }, liveText(notFlying)),
+    note('The pointing error is in the <b>Pointing</b> box of the view, for what flies now.'),
+    tip('Boresight minus target. <b>along</b> > 0: looking ahead of the target along the ground track; <b>cross</b> > 0: looking to the right of it. Ground error is measured from the target to where the boresight hits the Earth (at the height of the target). In <b>Ground target tracking</b> mode it is zero by construction (no attitude errors yet). A target with a height is seen shifted from the point under it (hollow marker in the payload view): that shift is the relief displacement.')));
 
   out.push(card('Display', null,
-    selectRow({ id: 'refFrame', label: 'Orbital frame shown', options: Object.entries(ENV.ORBIT_FRAMES).map(([k, f]) => [k, f.label]), get: () => o.refFrame, set: v => { o.refFrame = v; save(); ctx.renderRail(); } }),
+    selectRow({ id: 'refFrame', label: 'Orbital frame shown (per scenario)', options: Object.entries(ENV.ORBIT_FRAMES).map(([k, f]) => [k, f.label]), get: () => o.refFrame, set: v => { o.refFrame = v; save(); ctx.renderRail(); } }),
     h('div', { class: 'lbl' }, 'Scene'),
     h('div', { class: 'checks' },
       check('s-eci', 'ECI frame', () => o.show.eci, v => { o.show.eci = v; save(); }),
@@ -441,7 +444,7 @@ function scenarioCard(ctx) {
       h('button', { class: 'btn', onclick: () => copyText(JSON.stringify(exportScenario(S), null, 1), 'Scenario JSON') }, 'Copy JSON'),
       h('button', { class: 'btn', title: 'Save this scenario as a .json file', onclick: () => downloadText(fileName(activeScenario(S).name, 'scenario'), JSON.stringify(exportScenario(S), null, 1)) }, 'Download'),
       h('button', { class: 'btn', title: 'Paste, open or drop a scenario JSON', onclick: () => importDlg() }, 'Import…')),
-    tip('A scenario keeps the orbit, its epoch, the current time, guidance and target, and which spacecraft flies it. Display options are shared. <b>Copy JSON</b> and <b>Download</b> hold the scenario (its orbit as now defined, not what the other orbit tabs keep) and the name of its spacecraft (the spacecraft itself is in <b>Spacecraft Layout</b>). To import, paste, open or drop a file on this card.')), t => importDlg(t)); // drop a scenario file on the card to import it
+    tip('A scenario keeps the orbit, its epoch, the current time, guidance and target, and which spacecraft flies it. Display options are shared, except the orbital frame shown. <b>Copy JSON</b> and <b>Download</b> hold the scenario (its orbit as now defined, not what the other orbit tabs keep) and the name of its spacecraft (the spacecraft itself is in <b>Spacecraft Layout</b>). To import, paste, open or drop a file on this card.')), t => importDlg(t)); // drop a scenario file on the card to import it
 }
 
 /* ---------------- Orbit card: elements / r,v / TLE ---------------- */
@@ -502,7 +505,7 @@ function orbitCard(ctx, o, sl) {
       liveText(() => { const t = tleOf(o); if (!t) return ''; return `<div class="kv"><dt>Satellite</dt><dd>${esc(t.name || '—')} · ${esc(t.satnum)}</dd><dt>Epoch</dt><dd>${t.epoch.toISOString().replace('T', ' ').slice(0, 23)}</dd><dt>Mean motion</dt><dd>${t.n.toFixed(8)} rev/day</dd></div>`
         + t.warnings.map(w => `<p class="tip" style="color:var(--warn)">${w}</p>`).join(''); }),
       derived(),
-      tip('<b>Approximation:</b> the TLE\'s mean elements are flown with Keplerian + J2 secular drift, not SGP4. Good near the TLE epoch; drifts by kilometres per day (no drag). The epoch comes from the TLE.')];
+      note('<b>Approximation:</b> the TLE\'s mean elements are flown with Keplerian + J2 secular drift, not SGP4. Good near the TLE epoch; drifts by kilometres per day (no drag). The epoch comes from the TLE.')];
   }
   const epochInput = dateInput('epoch'); epochInput.disabled = o.def === 'tle';
   epochInput.title = o.def === 'tle' ? 'Set by the TLE' : 'The date this orbit definition holds at. Moving it re-dates the orbit, keeping the current time.';

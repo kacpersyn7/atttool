@@ -10,6 +10,7 @@ import { deg, esc, fmt } from '../../ui/format.js';
 import { payloadComp } from '../../sim/guidance.js';
 import { pointing } from '../../sim/payload.js';
 import { sensorEval } from '../../sim/sensors.js';
+import { parseEpoch } from '../../sim/scenario.js';
 
 /** A section of the box: its title button (with `summary()` shown while folded) and its body; folded at first if `folded0`. */
 export function hudSection(key, title, summary, folded0, ...body) {
@@ -26,22 +27,27 @@ const kmT = x => x === null ? '—' : Math.abs(x) < 1 ? fmt(x * 1000, 0) + ' m' 
 const row = (k, val) => `<dt>${k}</dt><dd>${val}</dd>`;
 
 /** The payload's pointing error against the target of the settings flying now (sim/payload.js pointing); null without a payload. */
+const anyPayload = () => [S.orbit, ...(S.orbit.schedule || [])].some(g => payloadComp(S, g));
+/** What flies now, for a readout: the initial settings or the change at hh:mm:ss (only with a schedule). */
+const flying = c => !(S.orbit.schedule || []).length ? '' : c.seg ? 'the change at ' + (parseEpoch(c.g.start) || new Date(0)).toISOString().slice(11, 19) + (c.g.name ? ' (' + esc(c.g.name) + ')' : '') : 'the initial settings';
+
 export function pointingSection(cur) {
-  if (![S.orbit, ...(S.orbit.schedule || [])].some(g => payloadComp(S, g))) return null;
+  if (!anyPayload()) return null;
   const p = () => { const c = cur(); return c ? pointing(S, c) : null; };
   return hudSection('pointing', 'Pointing', () => { const x = p(); return !x ? '' : !x.tgtUp ? 'target below horizon' : `${fmt(x.ang, 3)}° · ${kmT(x.gnd)}`; }, true,
     liveText(() => {
       const x = p(); if (!x) return '';
-      const name = esc(x.c.name);
-      if (!x.tgtUp) return `<dl class="kv">${row(name + ' · target', `below the horizon · ${deg(x.elev).toFixed(1)}°`)}</dl>`;
-      return `<dl class="kv">${row(name + ' angle error', fmt(x.ang, 3) + '°')}${row('along · cross', fmt(x.along, 3) + '° · ' + fmt(x.cross, 3) + '°')}${row('Ground error', kmT(x.gnd))}${row('along · cross', kmT(x.gAlong) + ' · ' + kmT(x.gCross))}${row('Target elevation', deg(x.elev).toFixed(1) + '°')}${x.h !== 0 && x.relief !== null ? row('Relief displacement', kmT(x.relief)) : ''}</dl>`;
+      const name = esc(x.c.name), c = cur(), g = c.g, by = flying(c);
+      const head = `<dl class="kv">${row('Target', `${fmt(g.tgtLat, 2)}°, ${fmt(g.tgtLon, 2)}°${by ? ' · ' + by : ''}`)}</dl>`; // what the numbers are for (#89): the payload and target of what flies
+      if (!x.tgtUp) return head + `<dl class="kv">${row(name + ' · target', `below the horizon · ${deg(x.elev).toFixed(1)}°`)}</dl>`;
+      return head + `<dl class="kv">${row(name + ' angle error', fmt(x.ang, 3) + '°')}${row('along · cross', fmt(x.along, 3) + '° · ' + fmt(x.cross, 3) + '°')}${row('Ground error', kmT(x.gnd))}${row('along · cross', kmT(x.gAlong) + ' · ' + kmT(x.gCross))}${row('Target elevation', deg(x.elev).toFixed(1) + '°')}${x.h !== 0 && x.relief !== null ? row('Relief displacement', kmT(x.relief)) : ''}</dl>`;
     }));
 }
 
 /** Star trackers (Sun, Moon, limb and their state), Sun sensors seeing the Sun, and the payload's off-nadir angle. */
 export function sensorsSection(cur) {
   const strs = () => S.sc.comps.filter(c => c.type === 'str'), css = () => S.sc.comps.filter(c => c.type === 'css');
-  if (!strs().length && !css().length && !payloadComp(S, S.orbit)) return null;
+  if (!strs().length && !css().length && !anyPayload()) return null;
   const state = s => s.ok ? '<span class="chip ok">Tracking</span>' : s.sunBlind ? '<span class="chip warn">Sun-blinded</span>' : s.earthBlind ? '<span class="chip bad">Earth in FOV</span>' : '<span class="chip moon">Moon-blinded</span>';
   return hudSection('sensors', 'Sensors', () => {
     const c = cur(); if (!c) return ''; const st = strs(), n = st.filter(x => sensorEval(x, c).ok).length, cs = css(), m = cs.filter(x => sensorEval(x, c).sees).length;
