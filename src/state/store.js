@@ -51,7 +51,6 @@ function load() {
   for (const k of ['rot', 'orbit', 'layout']) s[k] = Object.assign({}, d[k], s[k]);
   s.orbit.show = Object.assign({}, d.orbit.show, s.orbit.show);
   s.layout.show = Object.assign({}, d.layout.show, s.layout.show);
-  s.ui = { folded: { ...(s.ui && s.ui.folded) }, tips: { ...(s.ui && s.ui.tips) } }; // #87: saves from before it have none
   migrate(s);
   return s;
 }
@@ -78,6 +77,8 @@ export function migrate(s) {
   for (const it of s.scenarios.items) if (it.data) it.data = { ...JSON.parse(d), ...it.data }; // a fresh copy each: no shared arrays
   // v0.9: the pointing payload became a setting of each schedule change; older changes flew the scenario's
   fillChanges(s.orbit); for (const it of s.scenarios.items) fillChanges(it.data);
+  // #87: cards folded and showing their notes; saves from before have none
+  s.ui = { folded: { ...(s.ui && s.ui.folded) }, tips: { ...(s.ui && s.ui.tips) } };
   if ('lvlh' in s.orbit.show) { s.orbit.show.orbFrame = s.orbit.show.lvlh; delete s.orbit.show.lvlh; }
 }
 

@@ -1,7 +1,7 @@
 /** Control rail for the Orbit & Frames workspace. */
 import * as ENV from '../../env/index.js';
 import { S, save, scChanged, scVersion, defaultState } from '../../state/store.js';
-import { h, card, tip, slider, numCell, selectRow, check, seg, liveText, syncAll, onSync, confirmButton } from '../../ui/dom.js';
+import { h, card, tip, slider, numCell, selectRow, check, seg, liveText, syncAll, onSync, confirmButton, note } from '../../ui/dom.js';
 import { deg, esc, fmt, hhmm, tPlus } from '../../ui/format.js';
 import { TYPES } from '../../spacecraft/componentTypes.js';
 import { activeItem, selectSpacecraft, validateAxes } from '../../spacecraft/library.js';
@@ -49,7 +49,8 @@ export function orbitPanel(ctx) {
     timeScrubber(o),
     h('div', { class: 'kv' }, h('dt', null, 'From the epoch'), h('dd', null, liveText(() => tPlus(o.t)))),
     liveText(() => { const d = farFromEpoch(o); return d === null ? '' : `<p class="tip" style="color:var(--warn)">${d.toFixed(0)} days from the epoch: the Sun geometry and the plane drift still hold, the position along the orbit does not (no drag).</p>`; }),
-    tip('<b>Play</b>, ⏮ / ⏭, the speed and <b>▶ Scenario</b> are in the strip above the plots; Space plays and pauses. Moving the time keeps the orbit. The slider shows one page at a time, counted from the epoch; release it at either end to turn the page, or type a date.')));
+    note('<b>Play</b>, ⏮ / ⏭, the speed and <b>▶ Scenario</b> are in the strip above the plots; Space plays and pauses.'),
+    tip('Moving the time keeps the orbit. The slider shows one page at a time, counted from the epoch; release it at either end to turn the page, or type a date.')));
 
   const sched = o.schedule || [];
   if (selChange && !sched.some(c => c.id === selChange)) selChange = null; // gone: deleted, another scenario
@@ -83,7 +84,7 @@ export function orbitPanel(ctx) {
     tip('Boresight → line of sight to the ground point, body +X kept toward velocity. Below the horizon it holds the nominal attitude, and it slews to the target that many seconds before the target rises (so tracking starts at the rise) and back after it sets; 0 jumps. Watch the body rate rise near closest approach.'));
   if (g.mode === 'inertial' && g === o) modeCtl.push(tip('Body frame fixed in ECI using the attitude from <b>Rotation Lab</b> (reference R = ECI). Watch the Sun and Earth sweep around the spacecraft once per orbit.'));
   if (g.mode === 'inertial' && g !== o) modeCtl.push(
-    tip('This change keeps the attitude Rotation Lab had when it was made inertial (reference R = ECI). Set another one there, then take it here.'),
+    note('This change keeps the attitude Rotation Lab had when it was made inertial (reference R = ECI). Set another one there, then take it here.'),
     h('div', { class: 'btns' }, h('button', { class: 'btn', onclick: () => { takeRotation(g, S.rot.q); save(); toast('Rotation Lab attitude taken'); } }, 'Take the Rotation Lab attitude')));
   out.push(scheduleCard(ctx, o));
   out.push(card('Attitude guidance', g === o ? null : liveText(() => 'change at ' + esc(showUTC(g.start))),
@@ -510,7 +511,7 @@ function orbitCard(ctx, o, sl) {
       liveText(() => { const t = tleOf(o); if (!t) return ''; return `<div class="kv"><dt>Satellite</dt><dd>${esc(t.name || '—')} · ${esc(t.satnum)}</dd><dt>Epoch</dt><dd>${t.epoch.toISOString().replace('T', ' ').slice(0, 23)}</dd><dt>Mean motion</dt><dd>${t.n.toFixed(8)} rev/day</dd></div>`
         + t.warnings.map(w => `<p class="tip" style="color:var(--warn)">${w}</p>`).join(''); }),
       derived(),
-      tip('<b>Approximation:</b> the TLE\'s mean elements are flown with Keplerian + J2 secular drift, not SGP4. Good near the TLE epoch; drifts by kilometres per day (no drag). The epoch comes from the TLE.')];
+      note('<b>Approximation:</b> the TLE\'s mean elements are flown with Keplerian + J2 secular drift, not SGP4. Good near the TLE epoch; drifts by kilometres per day (no drag). The epoch comes from the TLE.')];
   }
   const epochInput = dateInput('epoch'); epochInput.disabled = o.def === 'tle';
   epochInput.title = o.def === 'tle' ? 'Set by the TLE' : 'The date this orbit definition holds at. Moving it re-dates the orbit, keeping the current time.';
