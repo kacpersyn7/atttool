@@ -34,8 +34,36 @@ export function syncAll() { for (const f of syncs) f(); }
 export function tickLive() { for (const f of live) f(); }
 
 /* ---------- widgets ---------- */
-export function card(title, tag, ...kids) { return h('section', { class: 'card' }, h('h3', null, title, h('span', { class: 'sp' }), tag ? h('span', { class: 'tag' }, tag) : null), ...kids); }
-export function tip(html) { return h('p', { class: 'tip', html }); }
+/**
+ * Where cards remember being folded and showing their tips (#87): set once by app.js, so this toolkit stays free of
+ * the state. { scope() (the tab), folded(key), setFolded(key, on), tips(key), setTips(key, on) }; key = scope:title.
+ */
+let cardMem = null;
+export function setCardMemory(m) { cardMem = m; }
+
+/**
+ * A rail card. Its title folds it (the tag stays as a summary); when it holds tips (tip()), ⓘ in the header shows
+ * them, hidden by default to keep the rail short. Both are remembered per tab and title.
+ */
+export function card(title, tag, ...kids) {
+  const key = (cardMem ? cardMem.scope() + ':' : '') + title;
+  const fold = h('button', { type: 'button', class: 'fold', title: 'Fold or unfold this card' }, title);
+  const head = h('h3', null, fold, h('span', { class: 'sp' }), tag ? h('span', { class: 'tag' }, tag) : null);
+  const sec = h('section', { class: 'card' }, head, ...kids);
+  const setF = on => { sec.classList.toggle('folded', on); fold.setAttribute('aria-expanded', String(!on)); };
+  setF(!!(cardMem && cardMem.folded(key)));
+  fold.addEventListener('click', () => { const on = !sec.classList.contains('folded'); setF(on); if (cardMem) cardMem.setFolded(key, on); });
+  if (sec.querySelector('.help')) {
+    const info = h('button', { type: 'button', class: 'info', title: 'Show or hide the notes on this card', 'aria-label': 'Notes' }, 'ⓘ');
+    const setT = on => { sec.classList.toggle('tips', on); info.setAttribute('aria-pressed', String(on)); };
+    setT(!!(cardMem && cardMem.tips(key)));
+    info.addEventListener('click', () => { const on = !sec.classList.contains('tips'); setT(on); if (cardMem) cardMem.setTips(key, on); if (on && sec.classList.contains('folded')) { setF(false); if (cardMem) cardMem.setFolded(key, false); } });
+    head.append(info);
+  }
+  return sec;
+}
+/** A note: in a card, behind its ⓘ (card()); anywhere else (a dialog), shown. */
+export function tip(html) { return h('p', { class: 'tip help', html }); }
 
 /** Range slider + number box. `label` may be a string or a DOM node. */
 export function slider({ id, label, min, max, step = 0.1, get, set, dec = 1 }) {

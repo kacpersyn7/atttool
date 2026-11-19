@@ -36,6 +36,7 @@ export function defaultState() {
     },
     layout: { sel: null, gizmo: 'translate', oriTab: 'ypr', dcmDir: 0, alignDcmDir: 0, imp: { dir: 'CS', order: 'first', fix: true }, view: '3d', table: { sort: '', dir: 1, type: 'all', q: '', comma: null }, show: { cones: true, excl: false, labels: true, bus: 0.55, principal: false, com: true, orbitDirs: true } },
     sc: defaultSC(),
+    ui: { folded: {}, tips: {} }, // rail cards folded, and showing their notes (#87): 'tab:title' → true
   };
   ensureFleet(s); ensureScenarios(s);
   return s;
@@ -50,6 +51,7 @@ function load() {
   for (const k of ['rot', 'orbit', 'layout']) s[k] = Object.assign({}, d[k], s[k]);
   s.orbit.show = Object.assign({}, d.orbit.show, s.orbit.show);
   s.layout.show = Object.assign({}, d.layout.show, s.layout.show);
+  s.ui = { folded: { ...(s.ui && s.ui.folded) }, tips: { ...(s.ui && s.ui.tips) } }; // #87: saves from before it have none
   migrate(s);
   return s;
 }
