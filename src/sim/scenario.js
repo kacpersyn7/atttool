@@ -128,6 +128,13 @@ export function scrubEnd(h, o) {
 }
 
 /**
+ * The page (window start) of the time t = o.t for a slider span, the same in the slider, the timeline and the plots
+ * (#100): o.page = { w, span } is the page the slider shows, kept while it holds t, so a time on a page boundary stays
+ * on the page shown (the end of one, not the start of the next). Without one for this span: the page of t.
+ */
+export function pageAt(o, span) { const p = o.page; return scrubWindow(o.t, p && p.span === span ? p.w : NaN, span); }
+
+/**
  * ‹ / › (#100): the time and the slider window one page (span) back (dir −1) or on (+1), so the thumb stays where it
  * is: with the Orbit span, the same point of the orbit one orbit later. Near a date limit the time goes as far as it
  * can and the window is the page of it (w NaN: scrubWindowAt works it out). @returns { t, w }
