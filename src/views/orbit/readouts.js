@@ -77,7 +77,8 @@ export function sarSection(cur) {
       // near and far are taken across the antenna (Y_C): turned from the track, they are not the true near and far range
       const skew = x.skew * 180 / Math.PI > 10 ? `<div class="lbl">Its long side is ${d(x.skew)}° from the track: the swath is worked out across the antenna, not the track.</div>` : '';
       return `<dl class="kv">${row(esc(k.name) + ' looks', `${x.side} · ${d(x.look)}° from nadir`)}`
-        + (x.ok ? `${row('Swath incidence', `${d(x.incNear)}° – ${d(x.incFar)}°`)}${row('Swath width', x.width.toFixed(1) + ' km')}` : '')
+        // across the ground track near and far tie (straight down): no incidence range then
+        + (x.ok ? `${x.straddles ? '' : row('Swath incidence', `${d(x.incNear)}° – ${d(x.incFar)}°`)}${row('Swath width', x.width.toFixed(1) + ' km')}` : '')
         + `${row('Imaging range', `${k.incMin}° – ${k.incMax}°`)}</dl>${chip}${skew}`;
     }));
 }
