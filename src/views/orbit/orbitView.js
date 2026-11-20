@@ -26,6 +26,7 @@ import { createBodyInset } from './bodyInset.js';
 import { createPayloadInset } from './payloadInset.js';
 import { createTimelineView } from './timelineView.js';
 import { createPlotView } from './plotView.js';
+import { transportStrip } from './transport.js';
 import { editSchedule, orbitPanel, pickChange } from './orbitPanel.js';
 import { toast } from '../../ui/overlay.js';
 
@@ -90,6 +91,7 @@ export function createOrbitView({ renderRail }) {
       if (c) pickChange(c.id, panelCtx); else toast(`The schedule holds up to ${MAX_CHANGES} changes, from ${DATE_MIN.slice(0, 4)} to ${DATE_MAX.slice(0, 4)}`); },
   });
   const plots = createPlotView($('#timeline'));
+  const strip = h('div', { class: 'transport-row' }); $('#timeline .dockbody').prepend(strip); // Play, speed, time (#86): filled by hud()
 
   /* ---------- geometry refresh (cached) ---------- */
   let lastOrbitKey = '', lastOrbitT = 0, lastTrackT = -1e9, lastTrackKey = '';
@@ -201,6 +203,7 @@ export function createOrbitView({ renderRail }) {
   function panel() { return orbitPanel(panelCtx); }
 
   function hud() {
+    strip.replaceChildren(transportStrip());
     $('#hudTL').append(h('div', { class: 'hud' }, h('h4', null, 'State'),
       h('dl', { class: 'kv' },
         h('dt', null, 'Altitude · speed'), h('dd', null, liveText(() => cur ? (AM.v.norm(cur.st.r) - ENV.RE).toFixed(1) + ' km · ' + AM.v.norm(cur.st.v).toFixed(3) + ' km/s' : '')),
