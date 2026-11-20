@@ -148,15 +148,15 @@ export function nudgeChange(o, id, dt) {
 
 /**
  * The start (s from the epoch) of the next change after the current time (dir +1), or of the previous one
- * before it (dir -1). Going back, a change that started within the last second of real time (scaled by the
- * playback speed) counts as the one just jumped to, so pressing again goes further back, also while playing.
- * Null if none.
+ * before it (dir -1). A change just passed in the direction of play (within the last second of real time, scaled by
+ * the speed; one second when paused, going back) counts as the one just jumped to, so pressing again goes further,
+ * also while playing: behind t when playing forwards, ahead of it when playing backwards (#101). Null if none.
  */
 export function adjacentChange(o, dir) {
   const e0 = epochDate(o).getTime(), ts = [...new Set(scheduleOrder(o.schedule).map(x => (x.ms - e0) / 1000))];
-  if (dir > 0) { const t = ts.find(x => x > o.t + 1e-6); return t === undefined ? null : t; }
-  const grace = Math.max(1, o.playing ? +o.speed || 1 : 1);
-  const back = ts.filter(x => x < o.t - grace); return back.length ? back[back.length - 1] : null;
+  const backwards = o.playing && o.dir < 0, grace = Math.max(1, o.playing ? +o.speed || 1 : 1);
+  if (dir > 0) { const t = ts.find(x => x > o.t + (backwards ? grace : 1e-6)); return t === undefined ? null : t; }
+  const back = ts.filter(x => x < o.t - (backwards ? 1e-6 : grace)); return back.length ? back[back.length - 1] : null;
 }
 
 /** What undo restores of a change; its other settings (roll, axes, target, its attitude q, …) keep their current values. */

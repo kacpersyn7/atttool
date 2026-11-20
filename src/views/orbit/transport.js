@@ -27,6 +27,7 @@ export function transportStrip() {
   onSync(() => {
     play.textContent = going(1) ? '❚❚ Pause' : '▶ Play'; play.title = going(1) ? 'Pause (Space)' : 'Play forwards (Space plays and pauses)';
     back.textContent = going(-1) ? '❚❚' : '◀'; back.title = going(-1) ? 'Pause (Space)' : 'Play backwards, at the same speed (Space then pauses and resumes backwards)';
+    back.setAttribute('aria-label', going(-1) ? 'Pause' : 'Play backwards');
     back.classList.toggle('on', going(-1));
   });
   const jump = dir => h('button', {
