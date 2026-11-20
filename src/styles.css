@@ -46,6 +46,17 @@ aside{min-width:0;background:var(--ink1);border-right:1px solid var(--line);over
 .card{background:var(--ink2);border:1px solid var(--line);border-radius:8px;padding:10px 12px 12px;display:flex;flex-direction:column;gap:8px}
 .card h3{margin:0;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:8px}
 .card h3 .sp{flex:1}
+.card h3 .fold{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:6px;font:inherit;letter-spacing:inherit;text-transform:inherit;color:inherit}
+.card h3 .fold::before{content:"▼";font-size:8px;color:var(--muted);transition:transform .15s}
+.card.folded h3 .fold::before{transform:rotate(-90deg)}
+.card h3 .fold:hover,.card h3 .fold:focus-visible{color:var(--text)}
+.card h3 .info{all:unset;cursor:pointer;font-size:13px;line-height:1;color:var(--faint);padding:0 2px;letter-spacing:0}
+.card h3 .info:hover,.card h3 .info:focus-visible,.card.tips h3 .info{color:var(--sun)}
+.card.folded>:not(h3){display:none!important} /* over the inline display of a card's rows */
+.card .help{display:none!important}
+.card.tips .help{display:block!important}
+.card details .help{display:block!important} /* a note inside a disclosure shows when it is opened */
+.card.folded.tips .help{display:none!important}
 .card h3 .tag{font-family:var(--f-mono);letter-spacing:0;text-transform:none;font-size:11px;color:var(--faint);font-weight:400}
 .tip{font-size:13px;color:var(--muted);line-height:1.4;margin:0}
 .tip b{color:var(--text);font-weight:600}

@@ -36,6 +36,7 @@ export function defaultState() {
     },
     layout: { sel: null, gizmo: 'translate', oriTab: 'ypr', dcmDir: 0, alignDcmDir: 0, imp: { dir: 'CS', order: 'first', fix: true }, view: '3d', table: { sort: '', dir: 1, type: 'all', q: '', comma: null }, show: { cones: true, excl: false, labels: true, bus: 0.55, principal: false, com: true, orbitDirs: true } },
     sc: defaultSC(),
+    ui: { folded: {}, tips: {} }, // rail cards folded, and showing their notes (#87): 'tab:title' → true
   };
   ensureFleet(s); ensureScenarios(s);
   return s;
@@ -78,6 +79,8 @@ export function migrate(s) {
   for (const it of s.scenarios.items) if (it.data) it.data = { ...JSON.parse(d), ...(('rvOsc' in it.data) ? {} : { rvOsc: false }), ...it.data }; // a fresh copy each: no shared arrays; #85: an older r, v flies as it did
   // v0.9: the pointing payload became a setting of each schedule change; older changes flew the scenario's
   fillChanges(s.orbit); for (const it of s.scenarios.items) fillChanges(it.data);
+  // #87: cards folded and showing their notes; saves from before have none
+  s.ui = { folded: { ...(s.ui && s.ui.folded) }, tips: { ...(s.ui && s.ui.tips) } };
   if ('lvlh' in s.orbit.show) { s.orbit.show.orbFrame = s.orbit.show.lvlh; delete s.orbit.show.lvlh; }
 }
 
