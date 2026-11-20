@@ -1,21 +1,21 @@
 /** Control rail for the Orbit & Frames workspace. */
 import * as ENV from '../../env/index.js';
 import { S, save, scChanged, scVersion, defaultState } from '../../state/store.js';
-import { h, card, tip, slider, numCell, selectRow, check, seg, liveText, syncAll, onSync, confirmButton } from '../../ui/dom.js';
+import { h, card, tip, slider, numCell, selectRow, check, seg, liveText, syncAll, onSync, confirmButton, note } from '../../ui/dom.js';
 import { deg, esc, fmt, hhmm, tPlus } from '../../ui/format.js';
 import { TYPES } from '../../spacecraft/componentTypes.js';
 import { activeItem, selectSpacecraft, validateAxes } from '../../spacecraft/library.js';
 import { MAX_CHANGES, activeScenario, addScenario, deleteScenario, duplicateScenario, exportScenario, importScenario, newScenarioOrbit, previewScenario, renameScenario, selectScenario } from '../../sim/scenarioLibrary.js';
-import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, DATE_MAX, DATE_MIN, DEF_FIELDS, DEF_NAMES, PRESETS, previousOrbit, usePreviousOrbit, SCRUB_SPANS, clampTime, currentDate, epochDate, farFromEpoch, formatEpoch, ltanOf, orbitElements, ssrgtClosure, ssrgtSolution, scrubCancelResume, scrubEnd, scrubHold, scrubKey, scrubPress, scrubSpan, scrubWindowAt, setCurrentDate, setEpoch, switchDefinition, restartFromState, definitionError, tleOf, parseEpoch, validDate, stateForPropagator, sgp4Problem } from '../../sim/scenario.js';
+import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, DATE_MAX, DATE_MIN, DEF_FIELDS, DEF_NAMES, PRESETS, previousOrbit, usePreviousOrbit, SCRUB_SPANS, clampTime, currentDate, epochDate, farFromEpoch, formatEpoch, ltanOf, orbitElements, ssrgtClosure, ssrgtSolution, scrubCancelResume, scrubEnd, scrubKey, scrubPress, scrubSpan, scrubWindowAt, setCurrentDate, setEpoch, switchDefinition, restartFromState, definitionError, tleOf, parseEpoch, validDate, stateForPropagator, sgp4Problem, scrubTurn } from '../../sim/scenario.js';
 import { copyText, showModal, closeModal, toast } from '../../ui/overlay.js';
 import { downloadText, fileName, onFileDrop, openFileButton } from '../../ui/files.js';
 import { exampleScheduleCSV, forAdding, scheduleFromCSV, scheduleToCSV } from '../../sim/scheduleCsv.js';
 import { TARGET_SLEW, TARGET_SLEW_MAX, changeTurn, payloadComp, scheduleOrder, tooFast } from '../../sim/guidance.js';
 import { ELEV_MAX, EVENT_KINDS, EVENT_WINDOW, OFFSET_MAX, afterCandidates, eventLabel } from '../../sim/events.js';
 import { timelineKey } from '../../sim/timeline.js';
-import { NAME_MAX, addChange, adjacentChange, cleanName, deleteChange, duplicateChange, nudgeChange, renameChange, runProgress, scheduleHistory, scenarioSpan, scheduleNotes, setChangeMode, setChangeStart, startRun, takeRotation } from '../../sim/schedule.js';
-import { sensorEval } from '../../sim/sensors.js';
-import { pointing } from '../../sim/payload.js';
+import { NAME_MAX, addChange, cleanName, deleteChange, duplicateChange, nudgeChange, renameChange, runProgress, scheduleHistory, scenarioSpan, scheduleNotes, setChangeMode, setChangeStart, takeRotation } from '../../sim/schedule.js';
+// the slider's hold, shared with Play in the transport strip
+import { hold } from './transport.js';
 
 /** Body-axis choices for pointing modes; optionally include component boresights / normals. */
 function axisOptions(withComps = true) {
@@ -34,8 +34,6 @@ export function orbitPanel(ctx) {
   out.push(scenarioCard(ctx));
   out.push(orbitCard(ctx, o, sl));
 
-  const playBtn = h('button', { class: 'btn primary', style: 'min-width:84px', onclick: () => { scrubCancelResume(hold); o.playing = !o.playing; save(); syncAll(); } });
-  onSync(() => playBtn.textContent = o.playing ? '❚❚ Pause' : '▶ Play');
   const nowInput = dateInput('now');
   const showNow = () => nowInput.value = formatEpoch(new Date(Math.floor(currentDate(o).getTime() / 1000) * 1000));
   // typing a time while the clock runs would edit a stale value: pause first
@@ -44,16 +42,13 @@ export function orbitPanel(ctx) {
   nowInput.addEventListener('blur', () => syncAll());
   onSync(() => { if (document.activeElement !== nowInput) showNow(); });
   out.push(card('Time', null,
-    h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, playBtn,
-      ...((o.schedule || []).length ? [-1, 1].map(dir => h('button', { class: 'btn', title: dir < 0 ? 'Go to the start of the previous change' : 'Go to the start of the next change', 'aria-label': dir < 0 ? 'Previous change' : 'Next change',
-        onclick: () => { const t = adjacentChange(o, dir); if (t === null) { toast(dir < 0 ? 'No earlier change' : 'No later change'); return; } o.t = t; save(); syncAll(); } }, dir < 0 ? '⏮' : '⏭')) : []),
-      seg([[1, '1×'], [10, '10×'], [30, '30×'], [60, '60×'], [300, '300×'], [1000, '1000×']], () => o.speed, v => { o.speed = v; save(); })),
     ...scenarioRun(o),
     h('div', { class: 'row two' }, h('label', { for: 'now' }, 'Current time (UTC)'), nowInput),
     timeScrubber(o),
     h('div', { class: 'kv' }, h('dt', null, 'From the epoch'), h('dd', null, liveText(() => tPlus(o.t)))),
     liveText(() => { const d = farFromEpoch(o); return d === null ? '' : `<p class="tip" style="color:var(--warn)">${d.toFixed(0)} days from the epoch: ${o.def === 'tle' ? 'SGP4 is only as good as the TLE, and far from its epoch the position along the orbit is not reliable.' : 'the Sun geometry and the plane drift still hold, the position along the orbit does not (no drag).'}</p>`; }),
-    tip('Moving the time keeps the orbit. The slider shows one page at a time, counted from the epoch; release it at either end to turn the page, or type a date.')));
+    note('<b>◀ / ▶ Play</b> (backwards or forwards), ⏮ / ⏭, the speed and <b>▶ Scenario</b> are in the strip above the plots; Space plays and pauses.'),
+    tip('Moving the time keeps the orbit. The slider shows one page at a time, counted from the epoch; ‹ and › move a page, the time with it, so the thumb stays put (one orbital period, a day or 3 days back or on), or type a date.')));
 
   const sched = o.schedule || [];
   if (selChange && !sched.some(c => c.id === selChange)) selChange = null; // gone: deleted, another scenario
@@ -80,64 +75,59 @@ export function orbitPanel(ctx) {
     tip('Two-vector (TRIAD) pointing: the primary axis is aligned exactly, the secondary only as close as possible. Typical safe mode: array normal on the Sun.'));
   const altCell = (id, label) => numCell(id, label, () => targetHeight(g) * 1000, x => { g.tgtAlt = Math.max(TGT_ALT_MIN, Math.min(TGT_ALT_MAX, x)); save(); }, 100, 0);
   if (g.mode === 'target') modeCtl.push(
-    h('div', { class: 'grid2' }, numCell('tlat', 'Latitude °', () => g.tgtLat, x => { g.tgtLat = x; save(); }, .1, 2), numCell('tlon', 'Longitude °', () => g.tgtLon, x => { g.tgtLon = x; save(); }, .1, 2), altCell('talt', 'Height m')),
-    selectRow({ id: 'tgtComp', label: 'Pointing axis', options: S.sc.comps.filter(c => TYPES[c.type].cone).map(c => [c.id, c.name]), get: () => (payloadComp(S, g) || {}).id, set: v => { g.tgtComp = v; save(); ctx.renderRail(); } }),
+    // the target and the pointing axis are set in Target & payload, in every mode (#88)
+    h('div', { class: 'kv' }, h('dt', null, 'Target'), h('dd', null, liveText(() => `${fmt(g.tgtLat, 2)}°, ${fmt(g.tgtLon, 2)}° · ${fmt(targetHeight(g) * 1000, 0)} m`)),
+      h('dt', null, 'Pointing axis'), h('dd', null, liveText(() => { const pc = payloadComp(S, g); return pc ? esc(pc.name) : 'body +Z'; }))),
+    h('p', { class: 'tip', style: 'margin:0', html: 'Set them in <b>Target &amp; payload</b>, below.' }),
     h('div', { class: 'status' }, liveText(() => { const cur = ctx.cur(), away = notFlying(); if (away) return away; if (cur && cur.seg && cur.seg.slew !== null) return `<span class="chip warn">Slewing into this change (Mode schedule) · ${(100 * cur.seg.slew).toFixed(0)} %</span>`; return !cur || !cur.flag ? '' : cur.flag.slew ? (cur.flag.slew.rising ? `<span class="chip warn">Slewing to the target · ${(100 * cur.flag.slew.w).toFixed(0)} % · rises in ${cur.flag.slew.dt.toFixed(0)} s</span>` : `<span class="chip warn">Target set ${cur.flag.slew.dt.toFixed(0)} s ago · slewing back · ${(100 * (1 - cur.flag.slew.w)).toFixed(0)} %</span>`) : cur.flag.below ? `<span class="chip dim">Target below horizon · holding the nominal attitude</span>` : `<span class="chip ok">Tracking · elevation ${deg(cur.flag.elev).toFixed(1)}°</span>`; })),
     tgtSlewRow(g),
     tip('Boresight → line of sight to the ground point, body +X kept toward velocity. Below the horizon it holds the nominal attitude, and it slews to the target that many seconds before the target rises (so tracking starts at the rise) and back after it sets; 0 jumps. Watch the body rate rise near closest approach.'));
   if (g.mode === 'inertial' && g === o) modeCtl.push(tip('Body frame fixed in ECI using the attitude from <b>Rotation Lab</b> (reference R = ECI). Watch the Sun and Earth sweep around the spacecraft once per orbit.'));
   if (g.mode === 'inertial' && g !== o) modeCtl.push(
-    tip('This change keeps the attitude Rotation Lab had when it was made inertial (reference R = ECI). Set another one there, then take it here.'),
+    note('This change keeps the attitude Rotation Lab had when it was made inertial (reference R = ECI). Set another one there, then take it here.'),
     h('div', { class: 'btns' }, h('button', { class: 'btn', onclick: () => { takeRotation(g, S.rot.q); save(); toast('Rotation Lab attitude taken'); } }, 'Take the Rotation Lab attitude')));
   out.push(scheduleCard(ctx, o));
   out.push(card('Attitude guidance', g === o ? null : liveText(() => 'change at ' + esc(showUTC(g.start))),
     sched.length ? h('p', { class: 'tip', style: 'margin:0' }, g === o ? 'Editing the initial settings, flown before the first change.' : 'Editing the change selected in Mode schedule.') : null,
     selectRow({ id: 'mode', label: 'Mode', options: [['offsets', 'Nominal attitude + offsets'], ['target', 'Ground target tracking'], ['sun', 'Sun pointing'], ['inertial', 'Inertial (from Rotation Lab)']], get: () => g.mode, set: v => { if (g === o) o.mode = v; else if (g.mode !== v) history.record(o, () => setChangeMode(g, v, S.rot.q)); save(); ctx.renderRail(); } }),
-    selectRow({ id: 'refFrame', label: 'Shown orbital frame', options: Object.entries(ENV.ORBIT_FRAMES).map(([k, f]) => [k, f.label]), get: () => o.refFrame, set: v => { o.refFrame = v; save(); ctx.renderRail(); } }),
     ...modeCtl));
 
-  if (payloadComp(S, g)) out.push(card('Payload pointing', payloadComp(S, g).name + ' vs ground target',
-    g.mode === 'target' ? null : h('div', { class: 'grid2' }, numCell('ptlat', 'Target lat °', () => g.tgtLat, x => { g.tgtLat = x; save(); }, .1, 2), numCell('ptlon', 'Target lon °', () => g.tgtLon, x => { g.tgtLon = x; save(); }, .1, 2), altCell('ptalt', 'Target height m')),
-    liveText(() => {
-      const cur = ctx.cur(); if (!cur) return ''; const p = pointing(S, cur); if (!p) return '';
-      const note = sched.length && cur.g !== g ? `<p class="tip" style="margin:0 0 4px">Now flying: ${cur.seg ? 'the change at ' + esc(showUTC(cur.g.start)) : 'the initial settings'}. The numbers are for its payload and target.</p>` : '';
-      if (!p.tgtUp) return note + `<span class="chip dim">Target below horizon · elevation ${deg(p.elev).toFixed(1)}°</span>`;
-      const kmT = x => x === null ? '—' : Math.abs(x) < 1 ? fmt(x * 1000, 0) + ' m' : fmt(x, 2) + ' km';
-      const row = (k, val) => `<div style="display:flex;justify-content:space-between"><span>${k}</span><span style="font-family:var(--f-mono)">${val}</span></div>`;
-      return note + `<div style="display:flex;flex-direction:column;gap:4px">${row('Angle error', fmt(p.ang, 3) + '°')}${row('along · cross', fmt(p.along, 3) + '° · ' + fmt(p.cross, 3) + '°')}${row('Ground error', kmT(p.gnd))}${row('along · cross', kmT(p.gAlong) + ' · ' + kmT(p.gCross))}${row('Target elevation', deg(p.elev).toFixed(1) + '°')}${p.h !== 0 && p.relief !== null ? row('Relief displacement', kmT(p.relief)) : ''}</div>`;
-    }),
+  const cones = S.sc.comps.filter(c => TYPES[c.type].cone), pc = payloadComp(S, g);
+  out.push(card('Target & payload', pc ? pc.name + ' vs ground target' : 'ground target',
+    h('div', { class: 'grid2' }, numCell('tlat', 'Target lat °', () => g.tgtLat, x => { g.tgtLat = x; save(); }, .1, 2), numCell('tlon', 'Target lon °', () => g.tgtLon, x => { g.tgtLon = x; save(); }, .1, 2), altCell('talt', 'Target height m')),
+    cones.length ? selectRow({ id: 'tgtComp', label: 'Pointing axis', options: cones.map(c => [c.id, c.name]), get: () => (payloadComp(S, g) || {}).id, set: v => { g.tgtComp = v; save(); ctx.renderRail(); } }) : null,
+    sched.length ? h('p', { class: 'tip', style: 'margin:0' }, g === o ? 'For the initial settings: each schedule change has its own target and payload.' : 'For the change selected in Mode schedule.') : null,
+    h('div', { class: 'status' }, liveText(notFlying)),
+    note('The pointing error is in the <b>Pointing</b> box of the view, for what flies now.'),
     tip('Boresight minus target. <b>along</b> > 0: looking ahead of the target along the ground track; <b>cross</b> > 0: looking to the right of it. Ground error is measured from the target to where the boresight hits the Earth (at the height of the target). In <b>Ground target tracking</b> mode it is zero by construction (no attitude errors yet). A target with a height is seen shifted from the point under it (hollow marker in the payload view): that shift is the relief displacement.')));
 
-  out.push(card('Sensors now', 'live',
-    liveText(() => {
-      const cur = ctx.cur(); if (!cur) return ''; const rows = [];
-      for (const c of S.sc.comps) {
-        if (c.type !== 'str') continue;
-        const s = sensorEval(c, cur);
-        rows.push(`<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span>${esc(c.name)}</span><span class="lbl" style="font-family:var(--f-mono);font-size:11.5px">☉ ${s.sunAng.toFixed(0)}° · ☾ ${s.moonUp ? s.moonAng.toFixed(0) + '°' : '–'} · limb ${s.limb.toFixed(0)}°</span>${s.ok ? '<span class="chip ok">Tracking</span>' : s.sunBlind ? '<span class="chip warn">Sun-blinded</span>' : s.earthBlind ? '<span class="chip bad">Earth in FOV</span>' : '<span class="chip moon">Moon-blinded</span>'}</div>`);
-      }
-      const css = S.sc.comps.filter(c => c.type === 'css'); if (css.length) { const n = css.filter(c => sensorEval(c, cur).sees).length; rows.push(`<div style="display:flex;justify-content:space-between"><span>Sun sensors seeing Sun</span><span class="chip ${n ? 'ok' : 'dim'}">${n}/${css.length}</span></div>`); }
-      const pc = payloadComp(S, cur.g); if (pc) { const s = sensorEval(pc, cur); rows.push(`<div style="display:flex;justify-content:space-between"><span>${esc(pc.name)} off-nadir</span><span style="font-family:var(--f-mono)">${s.nadAng.toFixed(1)}°</span></div>`); }
-      return `<div style="display:flex;flex-direction:column;gap:6px">${rows.join('')}</div>`;
-    }),
-    tip('Star tracker is blinded if the Sun is inside its exclusion angle, the Earth limb is closer than its Earth exclusion, or the Moon (when not behind the Earth) is inside its Moon exclusion. ☾ – = Moon behind the Earth. Edit the angles in <b>Spacecraft Layout</b>.')));
-
   out.push(card('Display', null,
+    selectRow({ id: 'refFrame', label: 'Orbital frame shown (per scenario)', options: Object.entries(ENV.ORBIT_FRAMES).map(([k, f]) => [k, f.label]), get: () => o.refFrame, set: v => { o.refFrame = v; save(); ctx.renderRail(); } }),
+    h('div', { class: 'lbl' }, 'Scene'),
     h('div', { class: 'checks' },
-      check('s-eci', 'ECI frame', () => o.show.eci, v => { o.show.eci = v; save(); }), check('s-orb', 'Orbital frame + v', () => o.show.orbFrame, v => { o.show.orbFrame = v; save(); }),
-      check('s-track', 'Ground track', () => o.show.track, v => { o.show.track = v; save(); }), check('s-sun', 'Sun vector', () => o.show.sunv, v => { o.show.sunv = v; save(); }), check('s-moon', 'Moon + vector', () => o.show.moonv, v => { o.show.moonv = v; save(); }),
-      check('s-b', 'Magnetic field B', () => o.show.bv, v => { o.show.bv = v; save(); }), check('s-cones', 'Sensor FOV cones', () => o.show.cones, v => { o.show.cones = v; save(); }),
-      check('s-follow', 'Camera follows S/C', () => o.show.follow, v => { o.show.follow = v; if (v) ctx.zoomSC(); save(); }),
-      check('s-inset', 'Body-frame inset', () => !o.hideInset, v => { o.hideInset = !v; ctx.setInset(v); save(); }), check('s-plview', 'Payload view', () => o.show.plView, v => { o.show.plView = v; ctx.setPlView(v); save(); }),
-      check('s-plbord', 'Map borders', () => o.show.plBorders, v => { o.show.plBorders = v; save(); }), check('s-plcity', 'Map cities', () => o.show.plCities, v => { o.show.plCities = v; save(); })),
+      check('s-eci', 'ECI frame', () => o.show.eci, v => { o.show.eci = v; save(); }),
+      check('s-orb', 'Orbital frame + v', () => o.show.orbFrame, v => { o.show.orbFrame = v; save(); }),
+      check('s-track', 'Ground track', () => o.show.track, v => { o.show.track = v; save(); }),
+      check('s-sun', 'Sun vector', () => o.show.sunv, v => { o.show.sunv = v; save(); }),
+      check('s-moon', 'Moon + vector', () => o.show.moonv, v => { o.show.moonv = v; save(); }),
+      check('s-b', 'Magnetic field B', () => o.show.bv, v => { o.show.bv = v; save(); }),
+      check('s-cones', 'Sensor FOV cones', () => o.show.cones, v => { o.show.cones = v; save(); }),
+      check('s-follow', 'Camera follows S/C', () => o.show.follow, v => { o.show.follow = v; if (v) ctx.zoomSC(); save(); })),
+    h('div', { class: 'lbl' }, 'Insets'),
+    h('div', { class: 'checks' },
+      check('s-inset', 'Body-frame inset', () => !o.hideInset, v => { o.hideInset = !v; ctx.setInset(v); save(); }),
+      check('s-plview', 'Payload view', () => o.show.plView, v => { o.show.plView = v; ctx.setPlView(v); save(); })),
+    h('div', { class: 'lbl' }, 'Payload view map'),
+    h('div', { class: 'checks' },
+      check('s-plbord', 'Map borders', () => o.show.plBorders, v => { o.show.plBorders = v; save(); }),
+      check('s-plcity', 'Map cities', () => o.show.plCities, v => { o.show.plCities = v; save(); })),
     slider({ id: 'scscale', label: 'S/C size (×)', min: .1, max: 4, step: .05, dec: 2, get: () => o.scale, set: x => { o.scale = x; save(); } }),
     tip('The spacecraft is drawn hugely oversized (about 130 km per metre at 1×) so you can see it from orbit distance. The map in the payload view and on the Earth is Natural Earth 1:50m (public domain): schematic, good to a few km, so use it for orientation, not to measure pointing errors.')));
   return out;
 }
 
-/** Playing the whole scenario: the ▶ Scenario button, Loop, the progress, and the scenario end (UTC, or automatic). */
+/** Playing the whole scenario: Loop, the progress, and the scenario end (UTC, or automatic); ▶ Scenario is in the transport strip. */
 function scenarioRun(o) {
-  const runBtn = h('button', { class: 'btn', title: 'Play the scenario from its start to its end at the chosen speed, then pause', onclick: () => { scrubCancelResume(hold); startRun(o); save(); syncAll(); } }, '▶ Scenario');
   const end = dateInput('scEnd'), pending = h('span', { class: 'lbl', hidden: true }, 'Enter to apply · Esc to undo');
   const shown = () => { end.value = formatEpoch(new Date(Math.floor(epochDate(o).getTime() / 1000 + scenarioSpan(o).end) * 1000)); pending.hidden = true; };
   // like a change's start: a typed end applies on Enter or on leaving the field
@@ -155,7 +145,7 @@ function scenarioRun(o) {
   onSync(() => { if (document.activeElement !== end) shown(); });
   const autoBtn = h('button', { class: 'btn', title: 'End when the last change has finished its slew, plus 5 min (one orbit without a schedule)', onclick: () => { o.end = ''; save(); syncAll(); } }, 'Auto');
   return [
-    h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, runBtn,
+    h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, h('span', { class: 'lbl', title: '▶ Scenario is in the strip above the plots' }, 'Scenario run'),
       check('runLoop', 'Loop', () => !!o.runLoop, v => { o.runLoop = v; save(); }),
       liveText(() => { const p = runProgress(o); return p === null ? '' : `<span class="lbl">Scenario · ${(100 * p).toFixed(0)} %</span>`; })),
     liveText(() => { const p = runProgress(o); return p === null ? '' : `<div class="runbar"><span style="width:${(100 * p).toFixed(1)}%"></span></div>`; }),
@@ -364,8 +354,6 @@ function eventRow(o, sel, edit) {
 }
 
 /* ---------------- Time slider: a window that follows the current time ---------------- */
-let scrubW0 = NaN, scrubSpanW = NaN; // the window and the span it was made for, kept here so that a rail rebuild doesn't move it
-const hold = scrubHold(); // shared with the Play button, which cancels a pending resume
 
 function timeScrubber(o) {
   const keys = 'Arrow keys: 1 min (with Shift: 1 s). Page Up / Down: a tenth of the span.';
@@ -373,7 +361,7 @@ function timeScrubber(o) {
   const r = h('input', { type: 'range', id: 'time-r', step: 'any', 'aria-label': 'Time, within the span shown', title: keys });
   const n = h('input', { type: 'number', id: 'time-n', step: 1, 'aria-label': 'Seconds from the epoch', title: 'Seconds from the epoch', style: 'width:120px;flex:none' });
   let span = scrubSpan(o); // while held, the window stays still under the pointer
-  const release = () => { scrubW0 = scrubEnd(hold, o, scrubW0, span); save(); syncAll(); };
+  const release = () => { scrubEnd(hold, o); save(); syncAll(); };
   r.addEventListener('pointerdown', e => {
     if (e.button !== 0 || !e.isPrimary || hold.held) return; // right-click, another finger, a press during a hold
     scrubPress(hold, o); syncAll();
@@ -390,15 +378,21 @@ function timeScrubber(o) {
   n.addEventListener('change', () => { const x = +n.value; if (n.value !== '' && Number.isFinite(x)) { o.t = clampTime(o, x); save(); } n.value = String(Math.trunc(o.t) || 0); syncAll(); });
   onSync(() => {
     if (!hold.held) {
-      span = scrubSpan(o); if (span !== scrubSpanW) { scrubSpanW = span; scrubW0 = NaN; } // a new span (or orbit period): back on its pages
-      scrubW0 = scrubWindowAt(o, scrubW0, span); r.min = scrubW0; r.max = scrubW0 + span; r.value = o.t;
+      // the page shown is o.page, shared with the timeline and the plots (#100); a new span (or orbit period) goes back on its pages
+      span = scrubSpan(o); const w = scrubWindowAt(o, o.page && o.page.span === span ? o.page.w : NaN, span);
+      if (!o.page || o.page.w !== w || o.page.span !== span) o.page = { w, span };
+      r.min = w; r.max = w + span; r.value = o.t;
     }
     if (document.activeElement !== n) n.value = String(Math.trunc(o.t) || 0);
   });
   const spanSeg = seg(SCRUB_SPANS, () => o.scrub || 'orbit', v => { o.scrub = v; save(); }); // the sync puts the window on the page of t
   spanSeg.title = 'How much time the slider shows';
+  // ‹ › (#100): a page back or on, the time with it, so the thumb stays put (the same point one orbit later)
+  const turn = dir => h('button', { class: 'btn', 'aria-label': dir < 0 ? 'A page back' : 'A page on',
+    title: dir < 0 ? 'Back one page: the time and the slider, by its span (one orbit, a day or 3 days)' : 'On one page: the time and the slider, by its span (one orbit, a day or 3 days)',
+    onclick: () => { if (hold.held) return; const x = scrubTurn(o, o.page ? o.page.w : NaN, span, dir); o.t = x.t; o.page = Number.isNaN(x.w) ? null : { w: x.w, span }; save(); syncAll(); } }, dir < 0 ? '‹' : '›');
   return h('div', { style: 'display:flex;flex-direction:column;gap:6px' }, r,
-    h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, spanSeg, h('span', { style: 'flex:1' }), n, h('span', { class: 'lbl' }, 's')));
+    h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, turn(-1), spanSeg, turn(1), h('span', { style: 'flex:1' }), n, h('span', { class: 'lbl' }, 's')));
 }
 
 /* ---------------- Scenario card: library, and which spacecraft flies ---------------- */
@@ -455,7 +449,7 @@ function scenarioCard(ctx) {
       h('button', { class: 'btn', onclick: () => copyText(JSON.stringify(exportScenario(S), null, 1), 'Scenario JSON') }, 'Copy JSON'),
       h('button', { class: 'btn', title: 'Save this scenario as a .json file', onclick: () => downloadText(fileName(activeScenario(S).name, 'scenario'), JSON.stringify(exportScenario(S), null, 1)) }, 'Download'),
       h('button', { class: 'btn', title: 'Paste, open or drop a scenario JSON', onclick: () => importDlg() }, 'Import…')),
-    tip('A scenario keeps the orbit, its epoch, the current time, guidance and target, and which spacecraft flies it. Display options are shared. <b>Copy JSON</b> and <b>Download</b> hold the scenario (its orbit as now defined, not what the other orbit tabs keep) and the name of its spacecraft (the spacecraft itself is in <b>Spacecraft Layout</b>). To import, paste, open or drop a file on this card.')), t => importDlg(t)); // drop a scenario file on the card to import it
+    tip('A scenario keeps the orbit, its epoch, the current time, guidance and target, and which spacecraft flies it. Display options are shared, except the orbital frame shown. <b>Copy JSON</b> and <b>Download</b> hold the scenario (its orbit as now defined, not what the other orbit tabs keep) and the name of its spacecraft (the spacecraft itself is in <b>Spacecraft Layout</b>). To import, paste, open or drop a file on this card.')), t => importDlg(t)); // drop a scenario file on the card to import it
 }
 
 /* ---------------- Orbit card: elements / r,v / TLE ---------------- */

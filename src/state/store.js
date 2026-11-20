@@ -29,13 +29,14 @@ export function defaultState() {
     tab: 'rot',
     rot: { seq: '321', euler: [30, 20, 10], q: AM.C2q(AM.euler2C('321', [30 * D2R, 20 * D2R, 10 * D2R])), scalarFirst: true, dcmView: 'BR', probe: [1, 1, 0], showProbe: true, showGhosts: true, showTrails: true, showSC: true, nudge: 15 },
     orbit: {
-      preset: 'sso1030', def: 'elements', r: null, v: null, tle: '', epoch: EPOCH0, hp: 550, ha: 550, i: 97.59, raan: 0, argp: 0, nu0: 0, j2: true, t: 0, playing: true, speed: 60, scrub: 'orbit', schedule: [], end: '', run: false, runLoop: false,
+      preset: 'sso1030', def: 'elements', r: null, v: null, tle: '', epoch: EPOCH0, hp: 550, ha: 550, i: 97.59, raan: 0, argp: 0, nu0: 0, j2: true, t: 0, playing: true, speed: 60, dir: 1, page: null, scrub: 'orbit', schedule: [], end: '', run: false, runLoop: false,
       mode: 'offsets', refFrame: 'vvlh', roll: 0, pitch: 0, yaw: 0, sunAxis: '-Z', sunSec: 'nadir', sunSecAxis: '+X', tgtLat: 52.23, tgtLon: 21.01, tgtAlt: 0, tgtSlew: 60, rgtR: 143, rgtD: 10, rgtLtan: 22.5, rgtLon: 0, defs: {}, defFrom: '', rvOsc: true, tgtComp: '',
       show: { eci: true, orbFrame: true, track: true, sunv: true, moonv: true, bv: true, cones: true, follow: false, plView: true, plBorders: true, plCities: true }, scale: 1.0,
       plot: { sigs: [], win: 'orbit', comma: null, dockH: null, collapsed: false },
     },
     layout: { sel: null, gizmo: 'translate', oriTab: 'ypr', dcmDir: 0, alignDcmDir: 0, imp: { dir: 'CS', order: 'first', fix: true }, view: '3d', table: { sort: '', dir: 1, type: 'all', q: '', comma: null }, show: { cones: true, excl: false, labels: true, bus: 0.55, principal: false, com: true, orbitDirs: true } },
     sc: defaultSC(),
+    ui: { folded: {}, tips: {} }, // rail cards folded, and showing their notes (#87): 'tab:title' → true
   };
   ensureFleet(s); ensureScenarios(s);
   return s;
@@ -78,6 +79,8 @@ export function migrate(s) {
   for (const it of s.scenarios.items) if (it.data) it.data = { ...JSON.parse(d), ...(('rvOsc' in it.data) ? {} : { rvOsc: false }), ...it.data }; // a fresh copy each: no shared arrays; #85: an older r, v flies as it did
   // v0.9: the pointing payload became a setting of each schedule change; older changes flew the scenario's
   fillChanges(s.orbit); for (const it of s.scenarios.items) fillChanges(it.data);
+  // #87: cards folded and showing their notes; saves from before have none
+  s.ui = { folded: { ...(s.ui && s.ui.folded) }, tips: { ...(s.ui && s.ui.tips) } };
   if ('lvlh' in s.orbit.show) { s.orbit.show.orbFrame = s.orbit.show.lvlh; delete s.orbit.show.lvlh; }
 }
 

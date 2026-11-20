@@ -82,7 +82,8 @@ S.orbit ──orbitElements()──► elements ──propagate()──► r, v
                               ├──► bodyInset.update(): Sun/Earth/B seen from the body frame
                               ├──► payloadView() + mapView() ──► payloadInset.draw(): boresight camera image
                               │        (Natural Earth map clipped to the view), pointing error
-                              ├──► orbitPanel / HUD readouts (sensorEval, bodyRate, pointing)
+                              ├──► readouts.js: the view's State / Pointing / Sensors box (sensorEval, bodyRate, pointing)
+                              ├──► transport.js: the playback strip above the plots (time, speed, scenario run)
                               └──► computeTimeline(): one orbit of samples, cached by key
 ```
 

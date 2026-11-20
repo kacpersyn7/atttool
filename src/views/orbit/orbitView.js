@@ -13,7 +13,7 @@ import { S, save, scVersion } from '../../state/store.js';
 import { $, h, liveText, syncAll } from '../../ui/dom.js';
 import { deg, fmt } from '../../ui/format.js';
 import { mkView, viewPreset, sizeOf, gfx } from '../../gfx/renderer.js';
-import { COL, V3, Arrow, makeTriad, makeLabel, setObjFromCBR, fixLabels, disposeTree } from '../../gfx/primitives.js';
+import { COL, V3, Arrow, makeTriad, makeLabel, setObjFromCBR, fixLabels, declutterLabels, disposeTree } from '../../gfx/primitives.js';
 import { earthTexture, earthGeometry, atmosphere, starfield, glowSprite } from '../../gfx/earth.js';
 import { buildSC } from '../../gfx/spacecraftMesh.js';
 import { compAxis } from '../../spacecraft/component.js';
@@ -26,6 +26,8 @@ import { createBodyInset } from './bodyInset.js';
 import { createPayloadInset } from './payloadInset.js';
 import { createTimelineView } from './timelineView.js';
 import { createPlotView } from './plotView.js';
+import { transportStrip } from './transport.js';
+import { hudSection, pointingSection, sensorsSection } from './readouts.js';
 import { editSchedule, orbitPanel, pickChange } from './orbitPanel.js';
 import { toast } from '../../ui/overlay.js';
 
@@ -90,6 +92,7 @@ export function createOrbitView({ renderRail }) {
       if (c) pickChange(c.id, panelCtx); else toast(`The schedule holds up to ${MAX_CHANGES} changes, from ${DATE_MIN.slice(0, 4)} to ${DATE_MAX.slice(0, 4)}`); },
   });
   const plots = createPlotView($('#timeline'));
+  const strip = h('div', { class: 'transport-row' }); $('#timeline .dockbody').prepend(strip); // Play, speed, time (#86): filled by hud()
 
   /* ---------- geometry refresh (cached) ---------- */
   let lastOrbitKey = '', lastOrbitT = 0, lastTrackT = -1e9, lastTrackKey = '';
@@ -176,6 +179,10 @@ export function createOrbitView({ renderRail }) {
   }
   function render() {
     const { w, h: H } = sizeOf(); const r = gfx.renderer;
+    // labels that would overlap one placed before are hidden (#90); in this order: what matters most wins
+    // a target on the far side of the Earth (its label is drawn through it) yields to the others
+    V.camera.updateMatrixWorld(); const tw = tgt.getWorldPosition(new THREE.Vector3()), tFar = tgt.visible && tw.clone().sub(V.camera.position).dot(tw) > 0; // (tgt rides on the Earth)
+    declutterLabels([tFar ? null : tgt, sunArrow, moonArrow, vArrow, bArrow, orbTriad, footLbl, scModel, eciTriad, tFar ? tgt : null], V.camera, w, H);
     r.setScissorTest(false); r.setViewport(0, 0, w, H); r.render(V.scene, V.camera);
     inset.render(H);
   }
@@ -201,7 +208,10 @@ export function createOrbitView({ renderRail }) {
   function panel() { return orbitPanel(panelCtx); }
 
   function hud() {
-    $('#hudTL').append(h('div', { class: 'hud' }, h('h4', null, 'State'),
+    strip.replaceChildren(transportStrip());
+    // readouts in sections that fold to a summary (#89); the rail keeps the settings
+    const stateSum = () => cur ? `${(AM.v.norm(cur.st.r) - ENV.RE).toFixed(1)} km · ${cur.ecl ? 'eclipse' : 'sunlit'}` : '';
+    $('#hudTL').append(h('div', { class: 'hud' }, hudSection('state', 'State', stateSum, false,
       h('dl', { class: 'kv' },
         h('dt', null, 'Altitude · speed'), h('dd', null, liveText(() => cur ? (AM.v.norm(cur.st.r) - ENV.RE).toFixed(1) + ' km · ' + AM.v.norm(cur.st.v).toFixed(3) + ' km/s' : '')),
         h('dt', null, 'Lat · lon'), h('dd', null, liveText(() => { if (!cur) return ''; const ll = ENV.ecef2ll(ENV.eci2ecef(cur.st.r, cur.date)); return deg(ll.lat).toFixed(2) + '° · ' + deg(ll.lon).toFixed(2) + '°'; })),
@@ -213,7 +223,8 @@ export function createOrbitView({ renderRail }) {
         h('dt', null, 'Sun in body'), h('dd', null, liveText(() => cur ? '[' + AM.m.mulv(cur.CBI, cur.sun).map(x => fmt(x, 2)).join(' ') + ']' : '')),
         h('dt', null, 'Moon in body'), h('dd', null, liveText(() => cur ? '[' + AM.m.mulv(cur.CBI, cur.moon).map(x => fmt(x, 2)).join(' ') + ']' : '')),
         h('dt', null, 'B in body (nT)'), h('dd', null, liveText(() => cur ? '[' + AM.m.mulv(cur.CBI, ENV.bfieldECI(cur.st.r, cur.date)).map(x => x.toFixed(0)).join(' ') + ']' : ''))),
-      h('div', { class: 'legend', style: 'margin-top:6px' }, h('span', null, h('i', { style: 'background:var(--sun)' }), 'Sun'), h('span', null, h('i', { style: 'background:var(--moon)' }), 'Moon'), h('span', null, h('i', { style: 'background:#57c7b8' }), 'B (dipole)'), h('span', null, h('i', { style: 'background:var(--cyan)' }), 'v'), h('span', null, h('i', { style: 'background:#38506f' }), 'orbit in eclipse'))));
+      h('div', { class: 'legend', style: 'margin-top:6px' }, h('span', null, h('i', { style: 'background:var(--sun)' }), 'Sun'), h('span', null, h('i', { style: 'background:var(--moon)' }), 'Moon'), h('span', null, h('i', { style: 'background:#57c7b8' }), 'B (dipole)'), h('span', null, h('i', { style: 'background:var(--cyan)' }), 'v'), h('span', null, h('i', { style: 'background:#38506f' }), 'orbit in eclipse'))),
+      pointingSection(() => cur), sensorsSection(() => cur)));
     $('#hudTR').append(
       h('button', { class: 'vbtn', onclick: () => { S.orbit.show.follow = false; V.controls.target.set(0, 0, 0); viewPreset(V, [1, -.9, .5], 28); syncAll(); } }, 'Earth view'),
       h('button', { class: 'vbtn', onclick: () => { S.orbit.show.follow = true; zoomSC(); syncAll(); } }, 'Zoom to S/C'),

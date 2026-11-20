@@ -3,7 +3,7 @@
  * rebuilds the control rail, and runs the animation loop.
  */
 import { S, save } from './state/store.js';
-import { $, resetBindings, syncAll, tickLive } from './ui/dom.js';
+import { $, resetBindings, setCardMemory, syncAll, tickLive } from './ui/dom.js';
 import { closeModal } from './ui/overlay.js';
 import { guardFileDrops } from './ui/files.js';
 import { showConventions } from './ui/conventions.js';
@@ -17,6 +17,9 @@ const TAB_KEYS = { '1': 'rot', '2': 'orbit', '3': 'layout' };
 
 export function startApp() {
   guardFileDrops(); // a file dropped outside a drop target must not open in the tab
+  // cards remember being folded and showing their notes, per tab and title (#87)
+  const remember = which => (k, on) => { if (on) S.ui[which][k] = true; else delete S.ui[which][k]; save(); };
+  setCardMemory({ scope: () => S.tab, folded: k => !!S.ui.folded[k], setFolded: remember('folded'), tips: k => !!S.ui.tips[k], setTips: remember('tips') });
   initRenderer($('#vp'));
   const ctx = { renderRail: () => renderRail() };
   /** Workspaces by tab id. Each: { V, update, render, panel, hud, init?, enter?, leave?, tick? } */
@@ -52,6 +55,11 @@ export function startApp() {
     if (TAB_KEYS[e.key]) setTab(TAB_KEYS[e.key]);
     else if (e.key === ' ' && S.tab === 'orbit') { S.orbit.playing = !S.orbit.playing; save(); syncAll(); e.preventDefault(); }
     else if (e.key === 'Escape') closeModal();
+  });
+  // Space plays and pauses; a button that has focus (◀, ›, a card title) must not also act on it. Some browsers click
+  // a focused button on keyup, whatever keydown did (#101)
+  window.addEventListener('keyup', e => {
+    if (e.key === ' ' && S.tab === 'orbit' && document.activeElement.tagName === 'BUTTON' && !$('#modal').contains(document.activeElement)) e.preventDefault();
   });
   $('#btnConv').addEventListener('click', showConventions);
   const build = document.querySelector('meta[name="atttool-build"]')?.getAttribute('content');

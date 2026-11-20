@@ -13,7 +13,7 @@ import { SCENARIO_KEYS, activeScenario, addScenario, deleteScenario, duplicateSc
 const fresh = () => { const s = defaultState(); migrate(s); return s; };
 
 test('scenarios: the key list matches the orbit settings: everything is either in a scenario or a known display setting', () => {
-  const display = new Set(['show', 'plot', 'playing', 'speed', 'scrub', 'scale', 'hideInset', '_init', 'run', 'runLoop']);
+  const display = new Set(['show', 'plot', 'playing', 'speed', 'dir', 'page', 'scrub', 'scale', 'hideInset', '_init', 'run', 'runLoop']);
   for (const k of Object.keys(defaultState().orbit)) assert.ok(SCENARIO_KEYS.includes(k) || display.has(k), `orbit.${k} is in neither list`);
   for (const k of SCENARIO_KEYS) { assert.ok(!display.has(k), k); assert.ok(k in defaultState().orbit, `no default for ${k}`); }
 });
@@ -246,4 +246,10 @@ test('import report: invalid attitudes, parts the spacecraft does not have, long
   const long = 'L'.repeat(40); addScenario(s, scenarioData(s.orbit), long); assert.equal(previewScenario(s, { ...j, name: long }, D()).sameName, s.scenarios.active, 'a long name still finds its match');
   const old = { ...j, orbit: { ...j.orbit } }; delete old.orbit.tgtSlew; delete old.orbit.end; delete old.orbit.schedule;
   const p = previewScenario(s, old, D()); assert.deepEqual(p.report, [], 'an export from 0.8 resets nothing'); assert.equal(p.info.length, 1);
+});
+
+test('a save from before #87 (no ui, or a broken one) gets empty fold and note memory; what is there is kept', () => {
+  for (const ui of [undefined, null, 7]) { const s = defaultState(); if (ui === undefined) delete s.ui; else s.ui = ui; migrate(s); assert.deepEqual(s.ui, { folded: {}, tips: {} }); }
+  const s = defaultState(); s.ui = { folded: { 'orbit:Scenario': true }, tips: { 'rot:Quaternion': true } }; migrate(s);
+  assert.deepEqual(s.ui, { folded: { 'orbit:Scenario': true }, tips: { 'rot:Quaternion': true } });
 });
