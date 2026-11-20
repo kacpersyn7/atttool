@@ -217,16 +217,23 @@ export function scenarioSpan(o) {
 }
 
 /** Play the scenario from its start: o.run makes playback stop (or loop, o.runLoop) at its end. */
-export function startRun(o) { o.t = scenarioSpan(o).start; o.run = true; o.playing = true; }
+export function startRun(o) { o.t = scenarioSpan(o).start; o.run = true; o.playing = true; o.dir = 1; }
 
 /**
  * After a playback step from time t0 to o.t: when the step reached the end of a run, loop back or stop there.
- * A run that was already past its end (the time was moved there, or the end was moved before it) just ends,
- * leaving the time alone. Works also when the step stopped at a date limit. @returns true if anything changed.
+ * Played backwards (o.dir −1, #101) the same at its start: stop there, or with Loop go on from its end. A run that
+ * was already past that end (the time was moved there, or the end was moved before it) just ends, leaving the time
+ * alone. Works also when the step stopped at a date limit. @returns true if anything changed.
  */
 export function runStep(o, t0 = o.t) {
   if (!o.run) return false;
   const sp = scenarioSpan(o);
+  if (o.dir < 0) {
+    if (t0 <= sp.start) { o.run = false; return true; }
+    if (o.t > sp.start) return false;
+    if (o.runLoop) { o.t = sp.end; o.playing = true; return true; }
+    o.t = sp.start; o.playing = false; o.run = false; return true;
+  }
   if (t0 >= sp.end) { o.run = false; return true; }
   if (o.t < sp.end) return false;
   if (o.runLoop) { o.t = sp.start; o.playing = true; return true; }

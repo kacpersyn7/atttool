@@ -78,10 +78,10 @@ export function setEpoch(o, str) {
   return true;
 }
 
-/** Playback step of dt seconds of real time; stops at the limit. */
+/** Playback step of dt seconds of real time, forwards or (o.dir −1) backwards; stops at a date limit. */
 export function advanceTime(o, dt) {
   if (!o.playing) return;
-  const t = o.t + dt * o.speed; o.t = clampTime(o, t); if (o.t !== t) o.playing = false;
+  const t = o.t + dt * o.speed * (o.dir < 0 ? -1 : 1); o.t = clampTime(o, t); if (o.t !== t) o.playing = false; // o.dir −1: backwards (#101)
 }
 
 /** Spans the time slider can show (o.scrub, a shared display setting) and their labels. */
