@@ -24,7 +24,7 @@ import { cleanOn } from './events.js';
 /** The fields of state.orbit that make up a scenario. refFrame only picks the frame shown, but it goes with the mode's offsets. */
 export const SCENARIO_KEYS = ['preset', 'def', 'r', 'v', 'tle', 'epoch', 'hp', 'ha', 'i', 'raan', 'argp', 'nu0', 'j2', 't',
   'mode', 'refFrame', 'roll', 'pitch', 'yaw', 'sunAxis', 'sunSec', 'sunSecAxis', 'tgtLat', 'tgtLon', 'tgtAlt', 'tgtComp', 'tgtSlew', 'schedule', 'end',
-  'rgtR', 'rgtD', 'rgtLtan', 'rgtLon', 'defs', 'defFrom'];
+  'rgtR', 'rgtD', 'rgtLtan', 'rgtLon', 'defs', 'defFrom', 'rvOsc'];
 /** Scenario fields kept in the library (parking, duplicate, the save) but not exported: what the other orbit tabs hold (#81). */
 export const LOCAL_KEYS = ['defs', 'defFrom'];
 /** Those that name parts of a spacecraft: only valid on the spacecraft they were saved with. */
@@ -132,6 +132,7 @@ const VALID = {
   rgtR: x => Number.isInteger(x) && x >= 1 && x <= 1000, rgtD: x => Number.isInteger(x) && x >= 1 && x <= 1000, rgtLtan: inRange(0, 24), rgtLon: inRange(-180, 180),
   defs: x => !!x && typeof x === 'object' && !Array.isArray(x), // and then cleaned tab by tab (sanitizeScenario)
   defFrom: x => x === '' || Object.hasOwn(DEF_FIELDS, x),
+  rvOsc: x => typeof x === 'boolean', // r, v is osculating (#85); false: saved before, flown as mean elements as it was
 };
 /** Names of the scenario fields for the import report. */
 const FIELD_NAME = {
@@ -140,7 +141,7 @@ const FIELD_NAME = {
   roll: 'roll', pitch: 'pitch', yaw: 'yaw', sunAxis: 'Sun axis', sunSec: 'secondary direction', sunSecAxis: 'secondary axis', tgtLat: 'target latitude',
   tgtLon: 'target longitude', tgtAlt: 'target height', tgtComp: 'pointing axis', tgtSlew: 'slew to/from target', schedule: 'mode schedule', end: 'scenario end',
   rgtR: 'repeat orbits', rgtD: 'repeat days', rgtLtan: 'repeat-track LTAN', rgtLon: 'reference track longitude',
-  defs: 'inputs kept by the other orbit tabs', defFrom: 'orbit tab used before',
+  defs: 'inputs kept by the other orbit tabs', defFrom: 'orbit tab used before', rvOsc: 'state vector kind',
 };
 
 /**
@@ -152,6 +153,7 @@ export function sanitizeScenario(orbit, defaults, report = null, info = null) {
   const src = orbit && typeof orbit === 'object' ? orbit : {}, note = m => { if (report) report.push(m); };
   const bad = SCENARIO_KEYS.filter(k => Object.hasOwn(src, k) && !VALID[k](src[k])), missing = SCENARIO_KEYS.filter(k => !Object.hasOwn(src, k) && !LOCAL_KEYS.includes(k));
   const o = Object.fromEntries(SCENARIO_KEYS.map(k => [k, VALID[k](src[k]) ? src[k] : defaults[k]]));
+  if (!Object.hasOwn(src, 'rvOsc')) o.rvOsc = false; // a file from before #85: its r, v flies as it did
   if (bad.length) note(`Reset to the default (not a valid value): ${bad.map(k => FIELD_NAME[k] || k).join(', ')}.`);
   if (missing.length && info) info.push(`${missing.length} setting${missing.length === 1 ? ' was' : 's were'} not in the file (made by an older version) and took the default.`);
   if (o.def === 'rv' && !(vec3(o.r) && vec3(o.v))) { o.def = 'elements'; note('The orbit was defined by a state vector without all six numbers, so the elements are used.'); } // the state vector fields need all six numbers
@@ -161,8 +163,9 @@ export function sanitizeScenario(orbit, defaults, report = null, info = null) {
   o.schedule = cleanSchedule(o.schedule, o, o.inertialQ, report);
   // the inputs other orbit tabs keep (#81): a tab's are kept only if every one is valid, and not for the tab in use
   const tabs = {}, droppedTabs = [];
-  for (const [d, x] of Object.entries(o.defs || {})) {
+  for (let [d, x] of Object.entries(o.defs || {})) {
     if (!Object.hasOwn(DEF_FIELDS, d) || d === o.def) continue;
+    if (x && typeof x === 'object' && d === 'rv' && x.rvOsc === undefined) x = { ...x, rvOsc: false }; // kept before #85
     if (x && typeof x === 'object' && DEF_FIELDS[d].every(k => VALID[k](x[k]))) tabs[d] = { ...Object.fromEntries(DEF_FIELDS[d].map(k => [k, x[k]])), ...(isNum(x.at) ? { at: x.at } : {}) }; else droppedTabs.push(DEF_NAMES[d]);
   }
   o.defs = tabs; if (o.defFrom && !tabs[o.defFrom]) o.defFrom = '';
