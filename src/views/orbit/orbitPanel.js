@@ -14,10 +14,8 @@ import { TARGET_SLEW, TARGET_SLEW_MAX, changeTurn, payloadComp, scheduleOrder, t
 import { ELEV_MAX, EVENT_KINDS, EVENT_WINDOW, OFFSET_MAX, afterCandidates, eventLabel } from '../../sim/events.js';
 import { timelineKey } from '../../sim/timeline.js';
 import { NAME_MAX, addChange, cleanName, deleteChange, duplicateChange, nudgeChange, renameChange, runProgress, scheduleHistory, scenarioSpan, scheduleNotes, setChangeMode, setChangeStart, takeRotation } from '../../sim/schedule.js';
-import { sensorEval } from '../../sim/sensors.js';
 // the slider's hold, shared with Play in the transport strip
 import { hold } from './transport.js';
-import { pointing } from '../../sim/payload.js';
 
 /** Body-axis choices for pointing modes; optionally include component boresights / normals. */
 function axisOptions(withComps = true) {
@@ -99,29 +97,9 @@ export function orbitPanel(ctx) {
     h('div', { class: 'grid2' }, numCell('tlat', 'Target lat °', () => g.tgtLat, x => { g.tgtLat = x; save(); }, .1, 2), numCell('tlon', 'Target lon °', () => g.tgtLon, x => { g.tgtLon = x; save(); }, .1, 2), altCell('talt', 'Target height m')),
     cones.length ? selectRow({ id: 'tgtComp', label: 'Pointing axis', options: cones.map(c => [c.id, c.name]), get: () => (payloadComp(S, g) || {}).id, set: v => { g.tgtComp = v; save(); ctx.renderRail(); } }) : null,
     sched.length ? h('p', { class: 'tip', style: 'margin:0' }, g === o ? 'For the initial settings: each schedule change has its own target and payload.' : 'For the change selected in Mode schedule.') : null,
-    liveText(() => {
-      const cur = ctx.cur(); if (!cur) return ''; const p = pointing(S, cur); if (!p) return '';
-      const note = sched.length && cur.g !== g ? `<p class="tip" style="margin:0 0 4px">Now flying: ${cur.seg ? 'the change at ' + esc(showUTC(cur.g.start)) : 'the initial settings'}. The numbers are for its payload and target.</p>` : '';
-      if (!p.tgtUp) return note + `<span class="chip dim">Target below horizon · elevation ${deg(p.elev).toFixed(1)}°</span>`;
-      const kmT = x => x === null ? '—' : Math.abs(x) < 1 ? fmt(x * 1000, 0) + ' m' : fmt(x, 2) + ' km';
-      const row = (k, val) => `<div style="display:flex;justify-content:space-between"><span>${k}</span><span style="font-family:var(--f-mono)">${val}</span></div>`;
-      return note + `<div style="display:flex;flex-direction:column;gap:4px">${row('Angle error', fmt(p.ang, 3) + '°')}${row('along · cross', fmt(p.along, 3) + '° · ' + fmt(p.cross, 3) + '°')}${row('Ground error', kmT(p.gnd))}${row('along · cross', kmT(p.gAlong) + ' · ' + kmT(p.gCross))}${row('Target elevation', deg(p.elev).toFixed(1) + '°')}${p.h !== 0 && p.relief !== null ? row('Relief displacement', kmT(p.relief)) : ''}</div>`;
-    }),
+    h('div', { class: 'status' }, liveText(notFlying)),
+    note('The pointing error is in the <b>Pointing</b> box of the view, for what flies now.'),
     tip('Boresight minus target. <b>along</b> > 0: looking ahead of the target along the ground track; <b>cross</b> > 0: looking to the right of it. Ground error is measured from the target to where the boresight hits the Earth (at the height of the target). In <b>Ground target tracking</b> mode it is zero by construction (no attitude errors yet). A target with a height is seen shifted from the point under it (hollow marker in the payload view): that shift is the relief displacement.')));
-
-  out.push(card('Sensors now', 'live',
-    liveText(() => {
-      const cur = ctx.cur(); if (!cur) return ''; const rows = [];
-      for (const c of S.sc.comps) {
-        if (c.type !== 'str') continue;
-        const s = sensorEval(c, cur);
-        rows.push(`<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span>${esc(c.name)}</span><span class="lbl" style="font-family:var(--f-mono);font-size:11.5px">☉ ${s.sunAng.toFixed(0)}° · ☾ ${s.moonUp ? s.moonAng.toFixed(0) + '°' : '–'} · limb ${s.limb.toFixed(0)}°</span>${s.ok ? '<span class="chip ok">Tracking</span>' : s.sunBlind ? '<span class="chip warn">Sun-blinded</span>' : s.earthBlind ? '<span class="chip bad">Earth in FOV</span>' : '<span class="chip moon">Moon-blinded</span>'}</div>`);
-      }
-      const css = S.sc.comps.filter(c => c.type === 'css'); if (css.length) { const n = css.filter(c => sensorEval(c, cur).sees).length; rows.push(`<div style="display:flex;justify-content:space-between"><span>Sun sensors seeing Sun</span><span class="chip ${n ? 'ok' : 'dim'}">${n}/${css.length}</span></div>`); }
-      const pc = payloadComp(S, cur.g); if (pc) { const s = sensorEval(pc, cur); rows.push(`<div style="display:flex;justify-content:space-between"><span>${esc(pc.name)} off-nadir</span><span style="font-family:var(--f-mono)">${s.nadAng.toFixed(1)}°</span></div>`); }
-      return `<div style="display:flex;flex-direction:column;gap:6px">${rows.join('')}</div>`;
-    }),
-    tip('Star tracker is blinded if the Sun is inside its exclusion angle, the Earth limb is closer than its Earth exclusion, or the Moon (when not behind the Earth) is inside its Moon exclusion. ☾ – = Moon behind the Earth. Edit the angles in <b>Spacecraft Layout</b>.')));
 
   out.push(card('Display', null,
     selectRow({ id: 'refFrame', label: 'Orbital frame shown (per scenario)', options: Object.entries(ENV.ORBIT_FRAMES).map(([k, f]) => [k, f.label]), get: () => o.refFrame, set: v => { o.refFrame = v; save(); ctx.renderRail(); } }),

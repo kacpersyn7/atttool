@@ -27,6 +27,7 @@ import { createPayloadInset } from './payloadInset.js';
 import { createTimelineView } from './timelineView.js';
 import { createPlotView } from './plotView.js';
 import { transportStrip } from './transport.js';
+import { hudSection, pointingSection, sensorsSection } from './readouts.js';
 import { editSchedule, orbitPanel, pickChange } from './orbitPanel.js';
 import { toast } from '../../ui/overlay.js';
 
@@ -204,7 +205,9 @@ export function createOrbitView({ renderRail }) {
 
   function hud() {
     strip.replaceChildren(transportStrip());
-    $('#hudTL').append(h('div', { class: 'hud' }, h('h4', null, 'State'),
+    // readouts in sections that fold to a summary (#89); the rail keeps the settings
+    const stateSum = () => cur ? `${(AM.v.norm(cur.st.r) - ENV.RE).toFixed(1)} km · ${cur.ecl ? 'eclipse' : 'sunlit'}` : '';
+    $('#hudTL').append(h('div', { class: 'hud' }, hudSection('state', 'State', stateSum, false,
       h('dl', { class: 'kv' },
         h('dt', null, 'Altitude · speed'), h('dd', null, liveText(() => cur ? (AM.v.norm(cur.st.r) - ENV.RE).toFixed(1) + ' km · ' + AM.v.norm(cur.st.v).toFixed(3) + ' km/s' : '')),
         h('dt', null, 'Lat · lon'), h('dd', null, liveText(() => { if (!cur) return ''; const ll = ENV.ecef2ll(ENV.eci2ecef(cur.st.r, cur.date)); return deg(ll.lat).toFixed(2) + '° · ' + deg(ll.lon).toFixed(2) + '°'; })),
@@ -216,7 +219,8 @@ export function createOrbitView({ renderRail }) {
         h('dt', null, 'Sun in body'), h('dd', null, liveText(() => cur ? '[' + AM.m.mulv(cur.CBI, cur.sun).map(x => fmt(x, 2)).join(' ') + ']' : '')),
         h('dt', null, 'Moon in body'), h('dd', null, liveText(() => cur ? '[' + AM.m.mulv(cur.CBI, cur.moon).map(x => fmt(x, 2)).join(' ') + ']' : '')),
         h('dt', null, 'B in body (nT)'), h('dd', null, liveText(() => cur ? '[' + AM.m.mulv(cur.CBI, ENV.bfieldECI(cur.st.r, cur.date)).map(x => x.toFixed(0)).join(' ') + ']' : ''))),
-      h('div', { class: 'legend', style: 'margin-top:6px' }, h('span', null, h('i', { style: 'background:var(--sun)' }), 'Sun'), h('span', null, h('i', { style: 'background:var(--moon)' }), 'Moon'), h('span', null, h('i', { style: 'background:#57c7b8' }), 'B (dipole)'), h('span', null, h('i', { style: 'background:var(--cyan)' }), 'v'), h('span', null, h('i', { style: 'background:#38506f' }), 'orbit in eclipse'))));
+      h('div', { class: 'legend', style: 'margin-top:6px' }, h('span', null, h('i', { style: 'background:var(--sun)' }), 'Sun'), h('span', null, h('i', { style: 'background:var(--moon)' }), 'Moon'), h('span', null, h('i', { style: 'background:#57c7b8' }), 'B (dipole)'), h('span', null, h('i', { style: 'background:var(--cyan)' }), 'v'), h('span', null, h('i', { style: 'background:#38506f' }), 'orbit in eclipse'))),
+      pointingSection(() => cur), sensorsSection(() => cur)));
     $('#hudTR').append(
       h('button', { class: 'vbtn', onclick: () => { S.orbit.show.follow = false; V.controls.target.set(0, 0, 0); viewPreset(V, [1, -.9, .5], 28); syncAll(); } }, 'Earth view'),
       h('button', { class: 'vbtn', onclick: () => { S.orbit.show.follow = true; zoomSC(); syncAll(); } }, 'Zoom to S/C'),
