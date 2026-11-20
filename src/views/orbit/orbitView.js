@@ -82,9 +82,9 @@ export function createOrbitView({ renderRail }) {
   // SAR (#11): the beam's footprint on the ground now, and the strip it sweeps over ±10 min, Earth-fixed (as tgt)
   const SAR_N = 41, SAR_DT = 30, lift = 1 + 1e-4; // samples, s apart; a little above the ground
   const sarFoot = new THREE.LineLoop(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(12), 3)), new THREE.LineBasicMaterial({ color: 0xbfe0ff }));
-  const sarStrip = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array((SAR_N - 1) * 18), 3)), new THREE.MeshBasicMaterial({ color: 0x8fbfef, transparent: true, opacity: .55, side: THREE.DoubleSide, depthWrite: false }));
+  const sarStrip = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array((SAR_N - 1) * 18), 3)), new THREE.MeshBasicMaterial({ color: 0x7fe7ff, transparent: true, opacity: .7, side: THREE.DoubleSide, depthWrite: false }));
   // its near and far edges as lines too: a swath tens of km wide is a pixel or two from afar, and a line always shows
-  const sarEdges = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array((SAR_N - 1) * 12), 3)), new THREE.LineBasicMaterial({ color: 0xbfe0ff }));
+  const sarEdges = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array((SAR_N - 1) * 12), 3)), new THREE.LineBasicMaterial({ color: 0xffffff }));
   sarFoot.frustumCulled = sarStrip.frustumCulled = sarEdges.frustumCulled = false; earth.add(sarFoot, sarStrip, sarEdges);
   let sarKey = '';
   const toEarth = (p, date) => ENV.eci2ecef(p, date).map(x => x * U * lift);
