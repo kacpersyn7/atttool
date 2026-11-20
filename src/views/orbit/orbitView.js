@@ -13,7 +13,7 @@ import { S, save, scVersion } from '../../state/store.js';
 import { $, h, liveText, syncAll } from '../../ui/dom.js';
 import { deg, fmt } from '../../ui/format.js';
 import { mkView, viewPreset, sizeOf, gfx } from '../../gfx/renderer.js';
-import { COL, V3, Arrow, makeTriad, makeLabel, setObjFromCBR, fixLabels, disposeTree } from '../../gfx/primitives.js';
+import { COL, V3, Arrow, makeTriad, makeLabel, setObjFromCBR, fixLabels, declutterLabels, disposeTree } from '../../gfx/primitives.js';
 import { earthTexture, earthGeometry, atmosphere, starfield, glowSprite } from '../../gfx/earth.js';
 import { buildSC } from '../../gfx/spacecraftMesh.js';
 import { compAxis } from '../../spacecraft/component.js';
@@ -179,6 +179,10 @@ export function createOrbitView({ renderRail }) {
   }
   function render() {
     const { w, h: H } = sizeOf(); const r = gfx.renderer;
+    // labels that would overlap one placed before are hidden (#90); in this order: what matters most wins
+    // a target on the far side of the Earth (its label is drawn through it) yields to the others
+    V.camera.updateMatrixWorld(); const tw = tgt.getWorldPosition(new THREE.Vector3()), tFar = tgt.visible && tw.clone().sub(V.camera.position).dot(tw) > 0; // (tgt rides on the Earth)
+    declutterLabels([tFar ? null : tgt, sunArrow, moonArrow, vArrow, bArrow, orbTriad, footLbl, scModel, eciTriad, tFar ? tgt : null], V.camera, w, H);
     r.setScissorTest(false); r.setViewport(0, 0, w, H); r.render(V.scene, V.camera);
     inset.render(H);
   }
