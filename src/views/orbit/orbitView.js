@@ -22,12 +22,13 @@ import { addChange, runStep, setChangeStart } from '../../sim/schedule.js';
 import { resolveEventStarts } from '../../sim/events.js';
 import { attitudeAt, autoSlews, bodyRate, payloadComp } from '../../sim/guidance.js';
 import { timelineKey } from '../../sim/timeline.js';
+import { sarSwath } from '../../sim/sar.js';
 import { createBodyInset } from './bodyInset.js';
 import { createPayloadInset } from './payloadInset.js';
 import { createTimelineView } from './timelineView.js';
 import { createPlotView } from './plotView.js';
 import { transportStrip } from './transport.js';
-import { hudSection, pointingSection, sensorsSection } from './readouts.js';
+import { hudSection, pointingSection, sarSection, sensorsSection } from './readouts.js';
 import { editSchedule, orbitPanel, pickChange } from './orbitPanel.js';
 import { toast } from '../../ui/overlay.js';
 
@@ -78,6 +79,33 @@ export function createOrbitView({ renderRail }) {
   const tgt = new THREE.Group();
   { const m = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.12, 12), new THREE.MeshBasicMaterial({ color: 0xff7bd5 })); m.rotation.x = -Math.PI / 2; m.position.z = 0.06; tgt.add(m); const l = makeLabel('Target', '#ff7bd5', 22, { scale: .8 }); l.position.z = .14; tgt.add(l); }
   earth.add(tgt);
+  // SAR (#11): the beam's footprint on the ground now, and the strip it sweeps over ±10 min, Earth-fixed (as tgt)
+  // samples, s apart (a 15 s chord sags 0.25 km below the sphere, under the lift); a little above the ground
+  const SAR_N = 81, SAR_DT = 15, lift = 1 + 1e-4;
+  const sarFoot = new THREE.LineLoop(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(12), 3)), new THREE.LineBasicMaterial({ color: 0xbfe0ff }));
+  const sarStrip = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array((SAR_N - 1) * 18), 3)), new THREE.MeshBasicMaterial({ color: 0x7fe7ff, transparent: true, opacity: .7, side: THREE.DoubleSide, depthWrite: false }));
+  // its near and far edges as lines too: a swath tens of km wide is a pixel or two from afar, and a line always shows
+  const sarEdges = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array((SAR_N - 1) * 12), 3)), new THREE.LineBasicMaterial({ color: 0xffffff }));
+  sarFoot.frustumCulled = sarStrip.frustumCulled = sarEdges.frustumCulled = false; earth.add(sarFoot, sarStrip, sarEdges);
+  let sarKey = '';
+  const toEarth = (p, date) => ENV.eci2ecef(p, date).map(x => x * U * lift);
+  function updateSar(A) {
+    const c = S.sc.comps.find(x => x.type === 'sar');
+    sarFoot.visible = sarStrip.visible = sarEdges.visible = !!c && !!S.orbit.show.sar; if (!sarFoot.visible) return;
+    const sw = sarSwath(c, A), pa = sarFoot.geometry.attributes.position;
+    sarFoot.visible = sw.corners.every(Boolean);
+    if (sarFoot.visible) { sw.corners.forEach((p, k) => pa.setXYZ(k, ...toEarth(p, A.date))); pa.needsUpdate = true; }
+    // the strip: worked out again when the time has moved 15 s or anything it depends on changed
+    const key = timelineKey(S, scVersion(), 0) + '|' + Math.round(A.t / 15); if (key === sarKey) return; sarKey = key;
+    const edges = []; for (let k = 0; k < SAR_N; k++) { const B = attitudeAt(S, A.t + (k - (SAR_N - 1) / 2) * SAR_DT), s = sarSwath(c, B); edges.push(s.ok ? s.edges.map(p => toEarth(p, B.date)) : null); } // in antenna order: near and far can swap (a beam at nadir)
+    const sp = sarStrip.geometry.attributes.position, ep = sarEdges.geometry.attributes.position; let q = 0, e = 0;
+    for (let k = 0; k + 1 < SAR_N; k++) {
+      const a = edges[k], b = edges[k + 1]; if (!a || !b) continue;
+      for (const p of [a[0], a[1], b[0], a[1], b[1], b[0]]) sp.setXYZ(q++, ...p);
+      for (const p of [a[0], b[0], a[1], b[1]]) ep.setXYZ(e++, ...p);
+    }
+    sarStrip.geometry.setDrawRange(0, q); sarEdges.geometry.setDrawRange(0, e); sp.needsUpdate = ep.needsUpdate = true;
+  }
 
   /* ---------- sub-views ---------- */
   const insetEl = $('#inset');
@@ -166,6 +194,7 @@ export function createOrbitView({ renderRail }) {
         foot.scale.setScalar(Math.max(footR, 0.025)); footLbl.position.copy(foot.position).addScaledVector(n, 0.02);
       }
     } else ray.visible = foot.visible = footLbl.visible = false;
+    updateSar(A);
     tgt.visible = A.g.mode === 'target' || (!!o.show.plView && !!pc); // the payload view measures the error against it in every mode
     plEl.hidden = !(o.show.plView && pc);
     // the target in force: a schedule change may have its own
@@ -224,7 +253,7 @@ export function createOrbitView({ renderRail }) {
         h('dt', null, 'Moon in body'), h('dd', null, liveText(() => cur ? '[' + AM.m.mulv(cur.CBI, cur.moon).map(x => fmt(x, 2)).join(' ') + ']' : '')),
         h('dt', null, 'B in body (nT)'), h('dd', null, liveText(() => cur ? '[' + AM.m.mulv(cur.CBI, ENV.bfieldECI(cur.st.r, cur.date)).map(x => x.toFixed(0)).join(' ') + ']' : ''))),
       h('div', { class: 'legend', style: 'margin-top:6px' }, h('span', null, h('i', { style: 'background:var(--sun)' }), 'Sun'), h('span', null, h('i', { style: 'background:var(--moon)' }), 'Moon'), h('span', null, h('i', { style: 'background:#57c7b8' }), 'B (dipole)'), h('span', null, h('i', { style: 'background:var(--cyan)' }), 'v'), h('span', null, h('i', { style: 'background:#38506f' }), 'orbit in eclipse'))),
-      pointingSection(() => cur), sensorsSection(() => cur)));
+      pointingSection(() => cur), sensorsSection(() => cur), sarSection(() => cur)));
     $('#hudTR').append(
       h('button', { class: 'vbtn', onclick: () => { S.orbit.show.follow = false; V.controls.target.set(0, 0, 0); viewPreset(V, [1, -.9, .5], 28); syncAll(); } }, 'Earth view'),
       h('button', { class: 'vbtn', onclick: () => { S.orbit.show.follow = true; zoomSC(); syncAll(); } }, 'Zoom to S/C'),

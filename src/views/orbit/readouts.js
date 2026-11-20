@@ -10,6 +10,7 @@ import { deg, esc, fmt } from '../../ui/format.js';
 import { payloadComp } from '../../sim/guidance.js';
 import { pointing } from '../../sim/payload.js';
 import { sensorEval } from '../../sim/sensors.js';
+import { sarImaging, sarSwath } from '../../sim/sar.js';
 import { parseEpoch } from '../../sim/scenario.js';
 
 /** A section of the box: its title button (with `summary()` shown while folded) and its body; folded at first if `folded0`. */
@@ -59,4 +60,25 @@ export function sensorsSection(cur) {
     const pc = payloadComp(S, c.g); if (pc) rows.push(`<div class="srd"><span>${esc(pc.name)} off-nadir</span><span class="lbl">${sensorEval(pc, c).nadAng.toFixed(1)}°</span></div>`);
     return rows.join('');
   }), h('p', { class: 'tip' }, 'Exclusion angles: Spacecraft Layout. ☾ – : the Moon is behind the Earth.'));
+}
+
+/**
+ * The first SAR antenna (#11): its look side and angle, the swath now (incidence of its near and far edges, its width
+ * on the ground) and whether it can image (the swath within its imaging range); null without one. Starts folded.
+ */
+export function sarSection(cur) {
+  const c = () => S.sc.comps.find(x => x.type === 'sar'); if (!c()) return null;
+  const sw = () => { const A = cur(), k = c(); return A && k ? sarSwath(k, A) : null; }, d = x => (x * 180 / Math.PI).toFixed(1);
+  return hudSection('sar', 'SAR', () => { const x = sw(); return !x ? '' : !x.ok ? 'beam off the Earth' : `${x.side} · ${d(x.incNear)}–${d(x.incFar)}° · ${x.width.toFixed(0)} km`; }, true,
+    liveText(() => {
+      const x = sw(), k = c(); if (!x || !k) return '';
+      const can = sarImaging(k, x), why = !x.ok ? 'beam off the Earth' : x.straddles ? 'swath across the ground track' : 'outside its imaging range';
+      const chip = can ? '<span class="chip ok">can image</span>' : `<span class="chip dim">${why}</span>`;
+      // near and far are taken across the antenna (Y_C): turned from the track, they are not the true near and far range
+      const skew = x.skew * 180 / Math.PI > 10 ? `<div class="lbl">Its long side is ${d(x.skew)}° from the track: the swath is worked out across the antenna, not the track.</div>` : '';
+      return `<dl class="kv">${row(esc(k.name) + ' looks', `${x.side} · ${d(x.look)}° from nadir`)}`
+        // across the ground track near and far tie (straight down): no incidence range then
+        + (x.ok ? `${x.straddles ? '' : row('Swath incidence', `${d(x.incNear)}° – ${d(x.incFar)}°`)}${row('Swath width', x.width.toFixed(1) + ' km')}` : '')
+        + `${row('Imaging range', `${k.incMin}° – ${k.incMax}°`)}</dl>${chip}${skew}`;
+    }));
 }

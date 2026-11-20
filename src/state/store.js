@@ -31,7 +31,7 @@ export function defaultState() {
     orbit: {
       preset: 'sso1030', def: 'elements', r: null, v: null, tle: '', epoch: EPOCH0, hp: 550, ha: 550, i: 97.59, raan: 0, argp: 0, nu0: 0, j2: true, t: 0, playing: true, speed: 60, dir: 1, page: null, scrub: 'orbit', schedule: [], end: '', run: false, runLoop: false,
       mode: 'offsets', refFrame: 'vvlh', roll: 0, pitch: 0, yaw: 0, sunAxis: '-Z', sunSec: 'nadir', sunSecAxis: '+X', tgtLat: 52.23, tgtLon: 21.01, tgtAlt: 0, tgtSlew: 60, rgtR: 143, rgtD: 10, rgtLtan: 22.5, rgtLon: 0, defs: {}, defFrom: '', rvOsc: true, tgtComp: '',
-      show: { eci: true, orbFrame: true, track: true, sunv: true, moonv: true, bv: true, cones: true, follow: false, plView: true, plBorders: true, plCities: true }, scale: 1.0,
+      show: { eci: true, orbFrame: true, track: true, sunv: true, moonv: true, bv: true, cones: true, sar: true, follow: false, plView: true, plBorders: true, plCities: true }, scale: 1.0,
       plot: { sigs: [], win: 'orbit', comma: null, dockH: null, collapsed: false },
     },
     layout: { sel: null, gizmo: 'translate', oriTab: 'ypr', dcmDir: 0, alignDcmDir: 0, imp: { dir: 'CS', order: 'first', fix: true }, view: '3d', table: { sort: '', dir: 1, type: 'all', q: '', comma: null }, show: { cones: true, excl: false, labels: true, bus: 0.55, principal: false, com: true, orbitDirs: true } },
