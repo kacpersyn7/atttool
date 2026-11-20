@@ -533,3 +533,30 @@ test('a change added at a time inside a slew under way starts when the slew ends
   const s = inertialPair(60), o = s.orbit; const c = addChange(o, o.schedule[0], s.rot.q, 620);
   assert.equal(parseEpoch(c.start).getTime(), parseEpoch(at(s, 660)).getTime());
 });
+
+test('playing backwards (#101): time runs back at the speed; a run stops at its start, or loops to its end; ▶ Scenario goes forwards', () => {
+  const s = fresh(), o = s.orbit; o.speed = 60; o.playing = true; o.dir = -1; o.t = 1000;
+  advanceTime(o, 2); assert.equal(o.t, 880, 'two seconds back at 60×');
+  o.dir = 1; advanceTime(o, 2); assert.equal(o.t, 1000, 'and forwards again');
+  // back past the first date: stops there
+  const lo = (Date.UTC(1900, 0, 1) - epochDate(o).getTime()) / 1000; o.t = lo + 30; o.dir = -1; advanceTime(o, 1); assert.equal(o.t, lo); assert.equal(o.playing, false);
+  // a run played backwards
+  const sp = scenarioSpan(o); startRun(o); assert.equal(o.dir, 1, '▶ Scenario plays forwards'); assert.equal(o.t, sp.start);
+  o.t = sp.start + 100; o.dir = -1; o.playing = true; let t0 = o.t; advanceTime(o, 1); assert.equal(runStep(o, t0), false, 'still inside');
+  t0 = o.t; o.t = sp.start - 20; assert.equal(runStep(o, t0), true); assert.equal(o.t, sp.start, 'stopped at its start'); assert.equal(o.run, false); assert.equal(o.playing, false);
+  startRun(o); o.runLoop = true; o.dir = -1; o.t = sp.start + 10; t0 = o.t; o.t = sp.start - 10; runStep(o, t0);
+  assert.equal(o.t, sp.end, 'Loop: on from its end'); assert.equal(o.playing, true); assert.equal(o.run, true);
+  // a run whose start was already behind when going backwards just ends
+  o.runLoop = false; o.t = sp.start - 500; t0 = o.t; o.t -= 60; assert.equal(runStep(o, t0), true); assert.equal(o.run, false); assert.equal(o.t, sp.start - 560, 'the time left alone');
+});
+
+test('⏮ / ⏭ while playing backwards (#101): the change just passed is the one ahead, so ⏭ goes on and ⏮ takes the next one back', () => {
+  const s = fresh(), o = s.orbit, at = t => new Date(epochDate(o).getTime() + t * 1000).toISOString().slice(0, 19);
+  o.schedule = [{ id: 'a', start: at(600), slew: 30, mode: 'sun' }, { id: 'b', start: at(1200), slew: 30, mode: 'sun' }];
+  o.playing = true; o.speed = 60; o.dir = -1; o.t = 100;
+  let t = adjacentChange(o, 1); assert.equal(t, 600); o.t = t - 30; // a frame later, played back past it
+  t = adjacentChange(o, 1); assert.equal(t, 1200, '⏭ goes on, not back to 600'); o.t = t - 30;
+  assert.equal(adjacentChange(o, -1), 600, '⏮ while playing backwards: the change just behind, not skipped');
+  o.dir = 1; o.t = 620; assert.equal(adjacentChange(o, -1), null, 'forwards, as before: 600 counts as just jumped to');
+  o.playing = false; o.t = 620; assert.equal(adjacentChange(o, -1), 600, 'paused: the previous one');
+});

@@ -56,6 +56,11 @@ export function startApp() {
     else if (e.key === ' ' && S.tab === 'orbit') { S.orbit.playing = !S.orbit.playing; save(); syncAll(); e.preventDefault(); }
     else if (e.key === 'Escape') closeModal();
   });
+  // Space plays and pauses; a button that has focus (◀, ›, a card title) must not also act on it. Some browsers click
+  // a focused button on keyup, whatever keydown did (#101)
+  window.addEventListener('keyup', e => {
+    if (e.key === ' ' && S.tab === 'orbit' && document.activeElement.tagName === 'BUTTON' && !$('#modal').contains(document.activeElement)) e.preventDefault();
+  });
   $('#btnConv').addEventListener('click', showConventions);
   const build = document.querySelector('meta[name="atttool-build"]')?.getAttribute('content');
   $('#ver').textContent = 'v' + VERSION + (build ? ' · ' + build : '');

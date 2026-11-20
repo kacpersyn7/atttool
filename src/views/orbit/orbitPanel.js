@@ -47,7 +47,7 @@ export function orbitPanel(ctx) {
     timeScrubber(o),
     h('div', { class: 'kv' }, h('dt', null, 'From the epoch'), h('dd', null, liveText(() => tPlus(o.t)))),
     liveText(() => { const d = farFromEpoch(o); return d === null ? '' : `<p class="tip" style="color:var(--warn)">${d.toFixed(0)} days from the epoch: the Sun geometry and the plane drift still hold, the position along the orbit does not (no drag).</p>`; }),
-    note('<b>Play</b>, ⏮ / ⏭, the speed and <b>▶ Scenario</b> are in the strip above the plots; Space plays and pauses.'),
+    note('<b>◀ / ▶ Play</b> (backwards or forwards), ⏮ / ⏭, the speed and <b>▶ Scenario</b> are in the strip above the plots; Space plays and pauses.'),
     tip('Moving the time keeps the orbit. The slider shows one page at a time, counted from the epoch; ‹ and › move a page, the time with it, so the thumb stays put (one orbital period, a day or 3 days back or on), or type a date.')));
 
   const sched = o.schedule || [];

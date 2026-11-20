@@ -148,15 +148,15 @@ export function nudgeChange(o, id, dt) {
 
 /**
  * The start (s from the epoch) of the next change after the current time (dir +1), or of the previous one
- * before it (dir -1). Going back, a change that started within the last second of real time (scaled by the
- * playback speed) counts as the one just jumped to, so pressing again goes further back, also while playing.
- * Null if none.
+ * before it (dir -1). A change just passed in the direction of play (within the last second of real time, scaled by
+ * the speed; one second when paused, going back) counts as the one just jumped to, so pressing again goes further,
+ * also while playing: behind t when playing forwards, ahead of it when playing backwards (#101). Null if none.
  */
 export function adjacentChange(o, dir) {
   const e0 = epochDate(o).getTime(), ts = [...new Set(scheduleOrder(o.schedule).map(x => (x.ms - e0) / 1000))];
-  if (dir > 0) { const t = ts.find(x => x > o.t + 1e-6); return t === undefined ? null : t; }
-  const grace = Math.max(1, o.playing ? +o.speed || 1 : 1);
-  const back = ts.filter(x => x < o.t - grace); return back.length ? back[back.length - 1] : null;
+  const backwards = o.playing && o.dir < 0, grace = Math.max(1, o.playing ? +o.speed || 1 : 1);
+  if (dir > 0) { const t = ts.find(x => x > o.t + (backwards ? grace : 1e-6)); return t === undefined ? null : t; }
+  const back = ts.filter(x => x < o.t - (backwards ? 1e-6 : grace)); return back.length ? back[back.length - 1] : null;
 }
 
 /** What undo restores of a change; its other settings (roll, axes, target, its attitude q, …) keep their current values. */
@@ -217,16 +217,23 @@ export function scenarioSpan(o) {
 }
 
 /** Play the scenario from its start: o.run makes playback stop (or loop, o.runLoop) at its end. */
-export function startRun(o) { o.t = scenarioSpan(o).start; o.run = true; o.playing = true; }
+export function startRun(o) { o.t = scenarioSpan(o).start; o.run = true; o.playing = true; o.dir = 1; }
 
 /**
  * After a playback step from time t0 to o.t: when the step reached the end of a run, loop back or stop there.
- * A run that was already past its end (the time was moved there, or the end was moved before it) just ends,
- * leaving the time alone. Works also when the step stopped at a date limit. @returns true if anything changed.
+ * Played backwards (o.dir −1, #101) the same at its start: stop there, or with Loop go on from its end. A run that
+ * was already past that end (the time was moved there, or the end was moved before it) just ends, leaving the time
+ * alone. Works also when the step stopped at a date limit. @returns true if anything changed.
  */
 export function runStep(o, t0 = o.t) {
   if (!o.run) return false;
   const sp = scenarioSpan(o);
+  if (o.dir < 0) {
+    if (t0 <= sp.start) { o.run = false; return true; }
+    if (o.t > sp.start) return false;
+    if (o.runLoop) { o.t = sp.end; o.playing = true; return true; }
+    o.t = sp.start; o.playing = false; o.run = false; return true;
+  }
   if (t0 >= sp.end) { o.run = false; return true; }
   if (o.t < sp.end) return false;
   if (o.runLoop) { o.t = sp.start; o.playing = true; return true; }
