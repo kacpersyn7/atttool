@@ -108,8 +108,6 @@ export function scrubWindowAt(o, w0, span) {
  * page boundary read back from the slider is off by rounding), else the page of t. No window yet: pass NaN.
  */
 export const scrubWindow = (t, w0, span) => { const m = span * 1e-9; return t >= w0 - m && t <= w0 + span + m ? w0 : scrubPage(t, span); };
-/** Start of the window after a slider move is released: at the right end the next page, at the left end the one before, so the next drag goes on. */
-export const scrubRelease = (t, w0, span) => { const m = span * 1e-9; return t >= w0 + span - m ? w0 + span : t <= w0 + m ? w0 - span : w0; };
 /** Time step (s) of a key on the slider: arrows 1 min (with Shift 1 s), Page Up/Down a tenth of the span; null for other keys. */
 export function scrubKey(key, shift, span) {
   const dir = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1, PageUp: 1, PageDown: -1 }[key]; if (!dir) return null;
@@ -123,13 +121,20 @@ export function scrubKey(key, shift, span) {
 export const scrubHold = () => ({ held: false, moved: false, resume: false });
 /** Primary press on the slider. A second press during a hold (another finger) changes nothing. */
 export function scrubPress(h, o) { if (h.held) return; h.held = true; h.moved = false; h.resume = o.playing; o.playing = false; }
-/** Release: resumes playback if the press paused it, and returns the new window start (see scrubRelease). */
-export function scrubEnd(h, o, w0, span) {
-  // pressing a thumb already at an end changes nothing and fires no input, but must still move the window on
-  let w = h.held || h.moved ? scrubRelease(o.t, w0, span) : w0;
-  if ((w > w0 && o.t >= clampTime(o, Infinity)) || (w < w0 && o.t <= clampTime(o, -Infinity))) w = w0; // nothing to turn to past a date limit
+/** Release: resumes playback if the press paused it. The page stays (#100): releasing at an end doesn't turn it; ‹ › do (scrubTurn). */
+export function scrubEnd(h, o) {
   if (h.held && h.resume) o.playing = true;
-  h.held = h.moved = h.resume = false; return w;
+  h.held = h.moved = h.resume = false;
+}
+
+/**
+ * ‹ / › (#100): the time and the slider window one page (span) back (dir −1) or on (+1), so the thumb stays where it
+ * is: with the Orbit span, the same point of the orbit one orbit later. Near a date limit the time goes as far as it
+ * can and the window is the page of it (w NaN: scrubWindowAt works it out). @returns { t, w }
+ */
+export function scrubTurn(o, w0, span, dir) {
+  const want = o.t + dir * span, t = clampTime(o, want);
+  return { t, w: t === want ? w0 + dir * span : NaN };
 }
 /** Play or Pause pressed during a hold: that choice wins, release won't resume. */
 export function scrubCancelResume(h) { h.resume = false; }
