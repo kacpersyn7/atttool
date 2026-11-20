@@ -54,6 +54,43 @@ export function propagate(el, t, j2) {
 }
 
 /**
+ * First-order J2 short-period term of the semi-major axis, osculating a − mean a (km), at elements el (km, rad;
+ * nu0 = the true anomaly at that moment). Kozai (1959):
+ *   δa = (J2 Rₑ²/a) · [ ((a/r)³ − (1−e²)^−3/2) (1 − 3/2 sin²i) + 3/2 sin²i (a/r)³ cos 2u ],  u = ω + ν
+ * so ±1.5·J2·Rₑ²/a·sin²i·cos 2u on a circular orbit (±9.4 km at 550 km SSO). It is what makes the a of a state
+ * vector (osculating) differ from the a the secular model flies (mean): a 9 km error in a is ~1300 km a day along-track.
+ */
+export function j2ShortPeriodA(el) {
+  const { a, e, i } = el, s2 = Math.sin(i) ** 2, ar3 = ((1 + e * Math.cos(el.nu0)) / (1 - e * e)) ** 3; // (a/r)³
+  return J2 * RE * RE / a * ((ar3 - (1 - e * e) ** -1.5) * (1 - 1.5 * s2) + 1.5 * s2 * ar3 * Math.cos(2 * (el.argp + el.nu0)));
+}
+
+/**
+ * Mean elements for propagate (with J2) from osculating ones, e.g. rv2coe of a state vector: the semi-major axis
+ * less its short-period term (j2ShortPeriodA), the term that sets the along-track rate. The other elements' short-
+ * period terms are bounded and left as they are (#85: tens of km over a day in LEO instead of up to ~1300 km).
+ */
+export function meanFromOsculating(el) { return { ...el, a: el.a - j2ShortPeriodA(el) }; }
+
+/** The inverse of meanFromOsculating: osculating elements whose mean ones are el (a found by fixed-point iteration, so the round trip is exact). */
+export function osculatingFromMean(el) {
+  let a = el.a;
+  for (let k = 0; k < 20; k++) { const next = el.a + j2ShortPeriodA({ ...el, a }); if (Math.abs(next - a) < 1e-10) { a = next; break; } a = next; }
+  return { ...el, a };
+}
+
+/**
+ * The state vector (ECI km, km/s) of the orbit with mean elements el at t s after the epoch, as an osculating state:
+ * the one a full J2 propagator (or rv2coe and meanFromOsculating) takes for this orbit. With j2 off it is the
+ * two-body state, as propagate gives. Its position differs from propagate's by the short-period term (~δa radially).
+ */
+export function osculatingState(el, t, j2) {
+  const s = propagate(el, t, j2); if (!j2) return { r: s.r, v: s.v };
+  const o = propagate(osculatingFromMean({ a: el.a, e: el.e, i: el.i, raan: s.raan, argp: s.argp, nu0: s.nu }), 0, false);
+  return { r: o.r, v: o.v };
+}
+
+/**
  * Classical elements from an inertial state vector (r km, v km/s) — the inverse of
  * propagate(el, 0). Singular cases are resolved so the round trip is exact:
  *   circular (e ≈ 0)            → argp = 0, nu0 = argument of latitude

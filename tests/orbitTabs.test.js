@@ -116,3 +116,21 @@ test('orbit tabs: a repeat track can take the LTAN of the tab before; J2 decides
   assert.equal(previousOrbit(q), null, 'a repeat track without J2 is not valid: nothing to bring over');
   q.j2 = true; const r = previousOrbit(q); assert.ok(r && r.def === 'ssrgt', 'with J2 it is: its orbit can be brought over');
 });
+
+test('a state vector saved before #85 keeps flying as it did (as mean elements) until it is edited or switched', () => {
+  const s = fresh(), o = s.orbit; o.j2 = true; switchDefinition(o, 'rv'); assert.equal(o.rvOsc, true, 'filled from the orbit: osculating');
+  const E = orbitElements(o);
+  // an older file: no rvOsc, and its r, v is the mean-element state the old version wrote
+  const json = JSON.parse(JSON.stringify(exportScenario(s))); delete json.orbit.rvOsc;
+  const m = ENV.propagate(E, 0, false); json.orbit.r = m.r; json.orbit.v = m.v;
+  const old = sanitizeScenario(json.orbit, newScenarioOrbit(defaultState().orbit));
+  assert.equal(old.rvOsc, false);
+  const c = ENV.rv2coe(m.r, m.v); assert.ok(Math.abs(orbitElements(old).a - c.a) < 1e-9, 'flown with the a it was saved with');
+  assert.ok(Math.abs(orbitElements({ ...old, rvOsc: true }).a - c.a) > 5, 'read as osculating it would be ~9 km lower');
+  // parked scenarios and kept tabs from before get the same
+  const s2 = fresh(); s2.scenarios.items[0].data = null; s2.scenarios.items.push({ id: 'x', name: 'Old', data: { ...json.orbit }, scId: s2.fleet.active }); migrate(s2);
+  assert.equal(s2.scenarios.items[1].data.rvOsc, false);
+  const k = fresh().orbit; k.defs = { rv: { r: m.r, v: m.v, epoch: k.epoch } }; switchDefinition(k, 'rv'); assert.equal(k.rvOsc, false, 'a kept r, v from before');
+  // what the tool writes now is osculating
+  const x = fresh().orbit; x.rvOsc = false; restartFromState(x, 100); assert.equal(x.rvOsc, true);
+});
