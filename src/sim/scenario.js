@@ -152,6 +152,28 @@ export function farFromEpoch(o) {
 }
 
 const tleCache = { text: null, val: null };
+let sgpCache = { text: null, val: null };
+/**
+ * The SGP4 record of TLE scenario o (#91), cached by the TLE text, or null (no valid TLE). offMin: minutes from the
+ * epoch the tool counts t from (the TLE's, to the millisecond) to the TLE's exact epoch. It serializes as "sgp4:" and
+ * the TLE's lines: it rides on the elements, which keys are made of.
+ */
+function sgp4Of(o) {
+  const t = tleOf(o); if (!t) return null;
+  if (sgpCache.text !== o.tle) {
+    // it serializes with the TLE's lines, so keys made of the elements change with any change of it (B*, the epoch: line 1)
+    let s = null; try { s = ENV.tleSatrec(t.l1, t.l2); s.offMin = (t.epoch.getTime() - (s.jdsatepoch - 2440587.5) * 86400000) / 60000; s.toJSON = () => 'sgp4:' + t.l1 + '|' + t.l2; } catch { s = null; }
+    sgpCache = { text: o.tle, val: s };
+  }
+  return sgpCache.val;
+}
+
+/** Why SGP4 gives no state for TLE scenario o at t (s from the epoch), or null: it stopped (decay, elements out of range). */
+export function sgp4Problem(o, t) {
+  if (o.def !== 'tle') return null; const s = sgp4Of(o); if (!s) return null;
+  return ENV.sgp4At(s, t / 60 + s.offMin) ? null : (ENV.SGP4_ERRORS[s.error] || 'error ' + s.error);
+}
+
 /** Parsed TLE of the orbit settings (cached), or null if none / invalid. */
 export function tleOf(o) {
   if (!o.tle) return null;
@@ -174,8 +196,8 @@ export function orbitElements(o) {
   if (o.def === 'rv' && o.r && o.v) { // an osculating state: with J2, flown with its mean a (#85); one saved before that (rvOsc false) as it was
     const c = ENV.rv2coe(o.r, o.v); if (!c.error) { const E = { a: c.a, e: c.e, i: c.i, raan: c.raan, argp: c.argp, nu0: c.nu0 }; return o.j2 && o.rvOsc !== false ? ENV.meanFromOsculating(E) : E; }
   }
-  if (o.def === 'tle') { // its mean motion is the mean anomaly's rate: with J2 on, the semi-major axis is the one that flies at it
-    const t = tleOf(o); if (t) return { a: o.j2 ? ENV.smaForMeanMotion(t.n * 2 * Math.PI / 86400, t.e, t.i * D2R) : t.a, e: t.e, i: t.i * D2R, raan: t.raan * D2R, argp: t.argp * D2R, nu0: ENV.meanToTrue(t.M * D2R, t.e) };
+  if (o.def === 'tle') { // its mean motion is the mean anomaly's rate: the semi-major axis is the one at which n + Ṁ_J2 equals it, whatever the J2 option (#91)
+    const t = tleOf(o); if (t) { const E = { a: ENV.smaForMeanMotion(t.n * 2 * Math.PI / 86400, t.e, t.i * D2R), e: t.e, i: t.i * D2R, raan: t.raan * D2R, argp: t.argp * D2R, nu0: ENV.meanToTrue(t.M * D2R, t.e) }; const s = sgp4Of(o); if (s) E.sgp4 = s; return E; } // flown with SGP4 (#91); the mean elements describe it
   }
   return fieldElements(o);
 }
