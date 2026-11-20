@@ -6,7 +6,7 @@ import { deg, esc, fmt, hhmm, tPlus } from '../../ui/format.js';
 import { TYPES } from '../../spacecraft/componentTypes.js';
 import { activeItem, selectSpacecraft, validateAxes } from '../../spacecraft/library.js';
 import { MAX_CHANGES, activeScenario, addScenario, deleteScenario, duplicateScenario, exportScenario, importScenario, newScenarioOrbit, previewScenario, renameScenario, selectScenario } from '../../sim/scenarioLibrary.js';
-import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, DATE_MAX, DATE_MIN, DEF_FIELDS, DEF_NAMES, PRESETS, previousOrbit, usePreviousOrbit, SCRUB_SPANS, clampTime, currentDate, epochDate, farFromEpoch, formatEpoch, ltanOf, orbitElements, ssrgtClosure, ssrgtSolution, scrubCancelResume, scrubEnd, scrubKey, scrubPress, scrubSpan, scrubWindowAt, setCurrentDate, setEpoch, switchDefinition, restartFromState, definitionError, tleOf, parseEpoch, validDate } from '../../sim/scenario.js';
+import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, DATE_MAX, DATE_MIN, DEF_FIELDS, DEF_NAMES, PRESETS, previousOrbit, usePreviousOrbit, SCRUB_SPANS, clampTime, currentDate, epochDate, farFromEpoch, formatEpoch, ltanOf, orbitElements, ssrgtClosure, ssrgtSolution, scrubCancelResume, scrubEnd, scrubKey, scrubPress, scrubSpan, scrubWindowAt, setCurrentDate, setEpoch, switchDefinition, restartFromState, definitionError, tleOf, parseEpoch, validDate, stateForPropagator } from '../../sim/scenario.js';
 import { copyText, showModal, closeModal, toast } from '../../ui/overlay.js';
 import { downloadText, fileName, onFileDrop, openFileButton } from '../../ui/files.js';
 import { exampleScheduleCSV, forAdding, scheduleFromCSV, scheduleToCSV } from '../../sim/scheduleCsv.js';
@@ -487,9 +487,10 @@ function orbitCard(ctx, o, sl) {
     sl('hp', 'Perigee alt km', 200, 40000, 1, 'hp', 0), sl('ha', 'Apogee alt km', 200, 40000, 1, 'ha', 0),
     sl('inc', 'Inclination i°', 0, 180, .01, 'i', 2), sl('raan', 'RAAN Ω°', 0, 360, .1, 'raan', 1), sl('argp', 'Arg. perigee ω°', 0, 360, .5, 'argp', 1), sl('nu0', 'True anomaly ν₀°', 0, 360, .5, 'nu0', 1)];
   if (o.def === 'rv') {
-    const cell = (key, k, lab, step, dec) => numCell(`${key}${k}`, lab, () => o[key][k], x => { o[key][k] = x; changed(); }, step, dec);
+    // a typed or pasted r, v is a state vector: osculating (#85)
+    const cell = (key, k, lab, step, dec) => numCell(`${key}${k}`, lab, () => o[key][k], x => { o[key][k] = x; o.rvOsc = true; changed(); }, step, dec);
     const paste = h('input', { type: 'text', placeholder: 'Paste 6 numbers: r0 = [x y z]; v0 = [vx vy vz]', 'aria-label': 'Paste r and v' });
-    const applyPaste = () => { const n = (paste.value.replace(/r0|v0|r|v/gi, ' ').match(NUMS) || []).map(Number); if (n.length !== 6) { paste.setCustomValidity('Need exactly 6 numbers'); paste.reportValidity(); return; } paste.setCustomValidity(''); o.r = n.slice(0, 3); o.v = n.slice(3); paste.value = ''; changed(); };
+    const applyPaste = () => { const n = (paste.value.replace(/r0|v0|r|v/gi, ' ').match(NUMS) || []).map(Number); if (n.length !== 6) { paste.setCustomValidity('Need exactly 6 numbers'); paste.reportValidity(); return; } paste.setCustomValidity(''); o.r = n.slice(0, 3); o.v = n.slice(3); o.rvOsc = true; paste.value = ''; changed(); };
     paste.addEventListener('keydown', e => { if (e.key === 'Enter') applyPaste(); });
     body = [
       h('div', { class: 'lbl' }, 'Position r at the epoch, J2000 / GCRF (km)'),
@@ -497,8 +498,10 @@ function orbitCard(ctx, o, sl) {
       h('div', { class: 'lbl' }, 'Velocity v at the epoch (km/s)'),
       h('div', { class: 'grid3' }, [0, 1, 2].map(k => cell('v', k, 'v' + 'xyz'[k], .001, 6))),
       h('div', { style: 'display:grid;grid-template-columns:1fr auto;gap:6px' }, paste, h('button', { class: 'btn', onclick: applyPaste }, 'Use')),
+      o.rvOsc === false ? h('div', null, h('p', { class: 'tip', style: 'color:var(--warn);margin:0' }, 'Saved by an older AttTool, which flew a state vector as if its elements were mean ones: it still flies so, to keep the orbit you had. A state vector from another tool is osculating, so it should fly as one: with J2, up to ~1300 km a day along track apart in LEO.'),
+        h('div', { class: 'btns', style: 'margin-top:4px' }, h('button', { class: 'btn', title: 'Read r, v as an osculating state vector (as one typed now is)', onclick: () => { o.rvOsc = true; save(); ctx.renderRail(); } }, 'Fly it as a state vector'))) : null,
       status(), derived(),
-      tip('Converted exactly to osculating elements at the epoch. With J2 on, these feed a mean-element secular model, so long runs drift slightly from a full propagator. The tool\'s ECI ignores precession (≈ J2000).')];
+      tip('An osculating state at the epoch, as a full propagator gives it. With J2 on, the model flies mean elements: the semi-major axis less its J2 short-period term (up to ±1.5·J2·Rₑ²/a·sin²i, about 9 km in LEO), which sets the along-track rate. So the drawn spacecraft is up to ~9 km (in LEO) from the r typed, and turning J2 on or off moves it. The other elements\' short-period terms are not modelled: against a full J2 propagator, expect about 5 to 30 km after a day in LEO, growing a few km a day, and up to ~90 km after a day on GTO or Molniya orbits. The tool\'s ECI ignores precession (≈ J2000).')];
   }
   if (o.def === 'tle') {
     const ta = h('textarea', { id: 'tle', rows: 3, spellcheck: 'false', class: 'dcm', placeholder: 'NAME (optional)\n1 25544U 98067A   …\n2 25544  51.6416 …' });
@@ -541,13 +544,14 @@ function orbitCard(ctx, o, sl) {
       derived(),
       tip('Altitude and inclination are solved so the orbit is sun-synchronous and repeats its ground track after the given orbits and days, with the J2 secular drift of Ω, ω and M. The altitude is a − Rₑ: Sentinel-2 (786 km) and Sentinel-1 (693 km) quote it so; Landsat and Sentinel-3 quote another reference, so theirs differ by several km. RAAN comes from the LTAN at the epoch; orbit 1 crosses the equator northbound at the reference longitude. Circular. The model has no drag, so the track holds forever; a real one needs regular manoeuvres to stay on it.')];
   }
-  const nowState = () => { const c = ctx.cur(); return c ? { r: c.st.r, v: c.st.v, d: c.date } : null; };
+  // the state to start a full propagator from (#85, sim/scenario.js stateForPropagator)
+  const nowState = () => { const c = ctx.cur(); if (!c) return null; const s = stateForPropagator(o, c.t); return { r: s.r, v: s.v, d: c.date }; };
   return card('Orbit', 'Keplerian + J2',
     h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, h('span', { class: 'lbl' }, 'Defined by'), defSeg),
     h('div', { class: 'btns' }, usePrev),
     h('div', { class: 'row two' }, h('label', { for: 'epoch' }, 'Epoch (UTC)'), epochInput),
     ...body, ...common,
-    h('div', { class: 'lbl' }, 'State now (ECI ≈ J2000)'),
+    h('div', { class: 'lbl', title: 'The state to start a full propagator (or the r, v tab) from to fly this orbit: with J2, its semi-major axis is the osculating one, so the mean motion is right. Its position is the drawn one moved radially by the J2 short-period term: up to ~9 km in LEO, more on eccentric orbits.' }, 'State now (ECI ≈ J2000, for a propagator)'),
     h('div', { class: 'kv' },
       h('dt', null, 'r (km)'), h('dd', null, liveText(() => { const n = nowState(); return n ? '[' + n.r.map(x => fmt(x, 3)).join(', ') + ']' : ''; })),
       h('dt', null, 'v (km/s)'), h('dd', null, liveText(() => { const n = nowState(); return n ? '[' + n.v.map(x => fmt(x, 6)).join(', ') + ']' : ''; }))),
