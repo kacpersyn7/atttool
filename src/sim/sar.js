@@ -7,7 +7,9 @@
  * ±el/2 about the boresight, sorted by incidence), their incidence angles, the ground width between them and the
  * side of the ground track it lies on (right = −ĥ, the right of the velocity seen from above). The incidence at the
  * ground for a look (off-nadir) angle θ from radius r: sin θᵢ = (r / Rₑ) sin θ; the ground central angle from the
- * nadir is θᵢ − θ. Imaging is possible when the swath lies within the antenna's imaging range (incMin…incMax).
+ * nadir is θᵢ − θ. Imaging is possible when the swath lies within the antenna's imaging range (incMin…incMax) and on
+ * one side of the ground track. The model takes the antenna's long side along the track: near and far are along Y_C,
+ * so for an antenna turned from the track (skew) they are not the true near and far range.
  * Pure functions.
  */
 import * as AM from '../core/attitude.js';
@@ -17,6 +19,10 @@ import { attitudeAt } from './guidance.js';
 import { epochDate } from './scenario.js';
 
 const { v, m } = AM;
+/** A direction this close to the orbit plane (|d·ĥ|, unit d) is on neither side of the ground track. */
+const SIDE_EPS = 1e-6;
+/** The side of the ground track direction d (unit, ECI) points to: +1 right (−ĥ), −1 left, 0 neither. */
+const sideOf = (d, hHat) => { const t = -v.dot(d, hHat); return Math.abs(t) < SIDE_EPS ? 0 : Math.sign(t); };
 
 /** Full beam widths (rad): { az (along the panel's long side), el (across) }. */
 export function sarBeams(c) { return { az: c.lambda / c.w, el: c.lambda / c.h }; }
@@ -33,20 +39,24 @@ const incidenceAt = (p, r) => v.angle(v.unit(p), v.sub(r, p));
 
 /**
  * The swath of SAR component c at geometry A (attitudeAt).
- * @returns {{ok, side, look, bore, incNear, incFar, near, far, width, corners}} look (rad, the boresight from nadir);
- *   side 'right' | 'left' | 'nadir' (the boresight's side of the ground track); near, far (ECI km: where the edge rays
- *   meet the ground, sorted by incidence; null if one misses); incNear, incFar (rad); width (km, on the ground
- *   between them); corners (ECI km or null: the four corners of the beam on the ground); ok: both edges on the ground.
+ * @returns {{ok, side, look, bore, edges, straddles, skew, incNear, incFar, near, far, width, corners}} look (rad, the
+ *   boresight from nadir); side 'right' | 'left' | 'nadir' (the boresight's side of the ground track); edges (ECI km or
+ *   null: where the edge rays meet the ground, in antenna order −Y_C, +Y_C); near, far (the same, sorted by incidence;
+ *   null unless both are on the ground); incNear, incFar (rad); width (km: the great-circle distance between them);
+ *   corners (ECI km or null: the four corners of the beam on the ground); ok: both edges on the ground; straddles: the
+ *   edge rays on both sides of the orbit plane, the swath across the ground track; skew (rad, 0…π/2): the angle between
+ *   the antenna's long side and the along-track direction.
  */
 export function sarSwath(c, A) {
   const r = A.st.r, [X, Y, Z] = axesI(c, A), { az, el } = sarBeams(c);
   const nadir = v.unit(v.scale(r, -1)), hHat = v.unit(v.cross(r, A.st.v));
-  const look = v.angle(Z, nadir), toward = -v.dot(Z, hHat);
-  const side = Math.abs(toward) < 1e-9 ? 'nadir' : toward > 0 ? 'right' : 'left';
+  const look = v.angle(Z, nadir), sd = sideOf(Z, hHat), side = sd > 0 ? 'right' : sd < 0 ? 'left' : 'nadir';
   const ray = (a, e) => v.unit(v.add(Z, v.add(v.scale(X, Math.tan(a)), v.scale(Y, Math.tan(e)))));
-  const edges = [-1, 1].map(s => ENV.rayEarth(r, ray(0, s * el / 2)));
+  const rays = [-1, 1].map(s => ray(0, s * el / 2)), edges = rays.map(d => ENV.rayEarth(r, d));
+  const straddles = sideOf(rays[0], hHat) * sideOf(rays[1], hHat) < 0;
+  const skew = Math.acos(Math.min(1, Math.abs(v.dot(X, v.unit(v.cross(hHat, r))))));
   const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sa, se]) => ENV.rayEarth(r, ray(sa * az / 2, se * el / 2)));
-  const out = { ok: false, side, look, bore: ENV.rayEarth(r, Z), incNear: null, incFar: null, near: null, far: null, width: null, corners };
+  const out = { ok: false, side, look, bore: ENV.rayEarth(r, Z), edges, straddles, skew, incNear: null, incFar: null, near: null, far: null, width: null, corners };
   if (!edges[0] || !edges[1]) return out;
   const inc = edges.map(p => incidenceAt(p, r)), k = inc[0] <= inc[1] ? 0 : 1;
   Object.assign(out, { ok: true, near: edges[k], far: edges[1 - k], incNear: inc[k], incFar: inc[1 - k] });
@@ -54,10 +64,13 @@ export function sarSwath(c, A) {
   return out;
 }
 
-/** Whether SAR c can image with swath sw (sarSwath): both edges on the ground, within its imaging range. */
+/**
+ * Whether SAR c can image with swath sw (sarSwath): both edges on the ground, on one side of the ground track (across
+ * it, echoes from the left and the right arrive together), within its imaging range.
+ */
 export function sarImaging(c, sw) {
   const D2R = Math.PI / 180;
-  return !!sw && sw.ok && sw.incNear >= c.incMin * D2R - 1e-12 && sw.incFar <= c.incMax * D2R + 1e-12;
+  return !!sw && sw.ok && !sw.straddles && sw.incNear >= c.incMin * D2R - 1e-12 && sw.incFar <= c.incMax * D2R + 1e-12;
 }
 
 /** A target (ECI km) seen in the antenna frame of c at geometry A: { az, el } (rad from the boresight), front (in front of the panel), up (above its horizon). */
@@ -84,12 +97,14 @@ export function beamCrossing(state, c, t0, t1, tgtE) {
 /**
  * The roll offset (deg) that puts SAR c's boresight at look angle `lookDeg` from nadir on `side` ('right' | 'left'),
  * keeping the yaw and pitch of guidance settings g (nominal attitude + offsets, 3-2-1), at time t (s): the root nearest
- * g's roll, or null if no roll gets there (e.g. a boresight along the roll axis).
+ * g's roll, or null if no roll gets there: the look angle past the horizon, a boresight along the roll axis, or a roll
+ * axis across the track (the roll then only tilts the beam forward and back, in the orbit plane).
  */
 export function rollForLook(state, g, c, lookDeg, side, t = state.orbit.t) {
   const D2R = Math.PI / 180, A = attitudeAt(state, t), r = A.st.r, nadir = v.unit(v.scale(r, -1)), hHat = v.unit(v.cross(r, A.st.v));
   const boreB = m.col(compCBC(c), 2), look = lookDeg * D2R, want = side === 'left' ? -1 : 1;
-  const at = phi => { const CBI = m.mul(AM.euler2C('321', [(g.yaw || 0) * D2R, (g.pitch || 0) * D2R, phi * D2R]), A.CNI), b = m.mulv(m.T(CBI), boreB); return { f: v.angle(b, nadir) - look, s: -v.dot(b, hHat) * want }; };
+  if (incidenceForLook(look, v.norm(r)) === null) return null;
+  const at = phi => { const CBI = m.mul(AM.euler2C('321', [(g.yaw || 0) * D2R, (g.pitch || 0) * D2R, phi * D2R]), A.CNI), b = m.mulv(m.T(CBI), boreB); return { f: v.angle(b, nadir) - look, s: sideOf(b, hHat) * want }; };
   const roots = [];
   for (let p = -180; p < 180; p += 0.5) {
     let lo = p, hi = p + 0.5, flo = at(lo), fhi = at(hi);

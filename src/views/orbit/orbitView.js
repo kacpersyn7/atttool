@@ -80,7 +80,8 @@ export function createOrbitView({ renderRail }) {
   { const m = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.12, 12), new THREE.MeshBasicMaterial({ color: 0xff7bd5 })); m.rotation.x = -Math.PI / 2; m.position.z = 0.06; tgt.add(m); const l = makeLabel('Target', '#ff7bd5', 22, { scale: .8 }); l.position.z = .14; tgt.add(l); }
   earth.add(tgt);
   // SAR (#11): the beam's footprint on the ground now, and the strip it sweeps over ±10 min, Earth-fixed (as tgt)
-  const SAR_N = 41, SAR_DT = 30, lift = 1 + 1e-4; // samples, s apart; a little above the ground
+  // samples, s apart (a 15 s chord sags 0.25 km below the sphere, under the lift); a little above the ground
+  const SAR_N = 81, SAR_DT = 15, lift = 1 + 1e-4;
   const sarFoot = new THREE.LineLoop(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(12), 3)), new THREE.LineBasicMaterial({ color: 0xbfe0ff }));
   const sarStrip = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array((SAR_N - 1) * 18), 3)), new THREE.MeshBasicMaterial({ color: 0x7fe7ff, transparent: true, opacity: .7, side: THREE.DoubleSide, depthWrite: false }));
   // its near and far edges as lines too: a swath tens of km wide is a pixel or two from afar, and a line always shows
@@ -96,7 +97,7 @@ export function createOrbitView({ renderRail }) {
     if (sarFoot.visible) { sw.corners.forEach((p, k) => pa.setXYZ(k, ...toEarth(p, A.date))); pa.needsUpdate = true; }
     // the strip: worked out again when the time has moved 15 s or anything it depends on changed
     const key = timelineKey(S, scVersion(), 0) + '|' + Math.round(A.t / 15); if (key === sarKey) return; sarKey = key;
-    const edges = []; for (let k = 0; k < SAR_N; k++) { const B = attitudeAt(S, A.t + (k - (SAR_N - 1) / 2) * SAR_DT), s = sarSwath(c, B); edges.push(s.ok ? [toEarth(s.near, B.date), toEarth(s.far, B.date)] : null); }
+    const edges = []; for (let k = 0; k < SAR_N; k++) { const B = attitudeAt(S, A.t + (k - (SAR_N - 1) / 2) * SAR_DT), s = sarSwath(c, B); edges.push(s.ok ? s.edges.map(p => toEarth(p, B.date)) : null); } // in antenna order: near and far can swap (a beam at nadir)
     const sp = sarStrip.geometry.attributes.position, ep = sarEdges.geometry.attributes.position; let q = 0, e = 0;
     for (let k = 0; k + 1 < SAR_N; k++) {
       const a = edges[k], b = edges[k + 1]; if (!a || !b) continue;

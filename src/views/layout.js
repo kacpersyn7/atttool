@@ -146,10 +146,15 @@ export function createLayoutView({ renderRail }) {
     if (c.type === 'rw') params.push(param('hmax', 'H max N·m·s', .05, 2));
     if (c.type === 'sa') params.push(param('w', 'Width m', .05, 2), param('h', 'Height m', .05, 2));
     if (c.type === 'sar') { // #11
-      params.push(param('w', 'Length m (+X_C, along track)', .05, 2, .01), param('h', 'Height m (+Y_C)', .01, 2, .01), param('lambda', 'Wavelength m', .001, 3, .001),
+      // the beam stays at most 1 rad wide: the wavelength no longer than the panel's length or height
+      // syncAll: the cell shows the clamped value once it loses focus
+      const sized = (key, lo, hi) => x => { if (Number.isFinite(x)) c[key] = Math.min(hi(), Math.max(lo(), x)); scChanged(); refreshMass(); syncAll(); };
+      params.push(numCell('p-w', 'Length m (+X_C, along track)', () => c.w, sized('w', () => Math.max(.01, c.lambda), () => Infinity), .05, 2),
+        numCell('p-h', 'Height m (+Y_C)', () => c.h, sized('h', () => Math.max(.01, c.lambda), () => Infinity), .01, 2),
+        numCell('p-lambda', 'Wavelength m', () => c.lambda, sized('lambda', () => .001, () => Math.min(c.w, c.h)), .001, 3),
         // the imaging range stays ordered, within 0–90° incidence
-        numCell('p-incMin', 'Imaging from °', () => c.incMin, x => { if (Number.isFinite(x)) c.incMin = Math.max(0, Math.min(c.incMax - 0.5, x)); scChanged(); }, .5, 1),
-        numCell('p-incMax', 'Imaging to °', () => c.incMax, x => { if (Number.isFinite(x)) c.incMax = Math.min(90, Math.max(c.incMin + 0.5, x)); scChanged(); }, .5, 1));
+        numCell('p-incMin', 'Imaging from °', () => c.incMin, x => { if (Number.isFinite(x)) c.incMin = Math.max(0, Math.min(c.incMax - 0.5, x)); scChanged(); syncAll(); }, .5, 1),
+        numCell('p-incMax', 'Imaging to °', () => c.incMax, x => { if (Number.isFinite(x)) c.incMax = Math.min(90, Math.max(c.incMin + 0.5, x)); scChanged(); syncAll(); }, .5, 1));
     }
     // its own row: in the three-column grid a select is too narrow to read
     const sideRow = c.type === 'sar' ? selectRow({ id: 'p-side', label: 'Looks', options: [['right', 'Right of the track'], ['left', 'Left of the track']], get: () => c.side, set: v => { c.side = v; scChanged(); } }) : null;

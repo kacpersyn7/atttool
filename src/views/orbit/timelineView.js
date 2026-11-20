@@ -38,7 +38,7 @@ export function createTimelineView(tlc, band = {}) {
         else if (r.kind === 'sa') col = `rgba(79,140,255,${0.15 + 0.85 * val})`;
         else if (r.kind === 'pl') col = val ? '#9fb0c8' : null;
         else if (r.kind === 'sar') col = val ? '#6f9ccc' : null;
-        else if (r.kind === 'sart') col = val ? '#ff7bd5' : null; // the target's colour in the 3D view
+        else if (r.kind === 'sart') col = val === 2 ? '#ff7bd5' : val === 1 ? '#6b4a63' : null; // the target's colour in the 3D view; dim while the SAR can't image
         if (col) { const bw = r.kind === 'sart' ? Math.max(3, w / tl.N + .6) : w / tl.N + .6; x.fillStyle = col; x.fillRect(L + n / tl.N * w, y + 2, bw, rowH - 4); } // a crossing lasts seconds: at least 3 px
       }
       if (r.kind === 'mode') { // name each run of one mode where it fits

@@ -11,7 +11,7 @@ import { TGT_ALT_MIN, TGT_ALT_MAX, targetHeight, DATE_MAX, DATE_MIN, DEF_FIELDS,
 import { copyText, showModal, closeModal, toast } from '../../ui/overlay.js';
 import { downloadText, fileName, onFileDrop, openFileButton } from '../../ui/files.js';
 import { exampleScheduleCSV, forAdding, scheduleFromCSV, scheduleToCSV } from '../../sim/scheduleCsv.js';
-import { TARGET_SLEW, TARGET_SLEW_MAX, changeTurn, payloadComp, scheduleOrder, tooFast } from '../../sim/guidance.js';
+import { TARGET_SLEW, TARGET_SLEW_MAX, attitudeAt, changeTurn, payloadComp, scheduleOrder, tooFast } from '../../sim/guidance.js';
 import { ELEV_MAX, EVENT_KINDS, EVENT_WINDOW, OFFSET_MAX, afterCandidates, eventLabel } from '../../sim/events.js';
 import { lookForIncidence, rollForLook } from '../../sim/sar.js';
 import { timelineKey } from '../../sim/timeline.js';
@@ -140,12 +140,14 @@ function sarLookRow(g, ctx) {
   const r = ctx.cur() ? AM.v.norm(ctx.cur().st.r) : ENV.RE + 550;
   const mid = Math.round(lookForIncidence((c.incMin + c.incMax) / 2 * AM.D2R, r) * AM.R2D * 10) / 10;
   let look = mid, side = c.side;
-  const lookIn = h('input', { type: 'number', id: 'sarLook', min: 0, max: 80, step: 0.5, value: String(mid), style: 'width:80px', 'aria-label': 'SAR look angle (deg from nadir)' });
-  lookIn.addEventListener('change', () => { const x = +lookIn.value; if (Number.isFinite(x) && x >= 0 && x < 90) look = x; else lookIn.value = String(look); });
+  const lookIn = h('input', { type: 'number', id: 'sarLook', min: 1, max: 80, step: 0.5, value: String(mid), style: 'width:80px', 'aria-label': 'SAR look angle (deg from nadir)' });
+  lookIn.addEventListener('change', () => { const x = +lookIn.value; if (Number.isFinite(x) && x >= 1 && x < 90) look = x; else lookIn.value = String(look); });
   const sideSeg = seg([['left', 'Left'], ['right', 'Right']], () => side, v => { side = v; });
   const go = h('button', { class: 'btn', title: `Roll so ${c.name} looks this far from nadir, to this side of the track (yaw and pitch stay)`, onclick: () => {
+    const rNow = AM.v.norm(attitudeAt(S, S.orbit.t).st.r), horizon = Math.asin(ENV.RE / rNow) * AM.R2D;
+    if (look >= horizon) { toast(`${look}° from nadir is past the horizon: it is ${horizon.toFixed(1)}° at this altitude`); return; }
     const roll = rollForLook(S, g, c, look, side, S.orbit.t);
-    if (roll === null) { toast(`No roll turns ${c.name} to ${look}° ${side}: its boresight is along the roll axis, or can't reach that angle`); return; }
+    if (roll === null) { toast(`No roll turns ${c.name} to ${look}° ${side}: its boresight is along the roll axis, or the yaw turns the roll axis across the track`); return; }
     g.roll = Math.round(roll * 100) / 100; save(); syncAll();
   } }, 'Roll to it');
   return h('div', null,
