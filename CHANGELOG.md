@@ -5,6 +5,8 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-20
+
 ### Added
 - **TLEs fly with SGP4** (#91): a TLE is now flown with SGP4 (SDP4 for deep space), the model element sets are made for, with J2–J4, drag and, in deep space, the Sun, the Moon and resonances; it used to be the Keplerian + J2 model, which drifted by kilometres a day. It is a port of the reference code of Vallado et al. (*Revisiting Spacetrack Report #3*, 2006), verified against its test TLEs to 4 mm (32 of 33; the last has no valid published state). Ground tracks follow it (TEME, turned by GMST). If SGP4 stops (a decay), the TLE tab says so. The Orbit card shows *SGP4* for a TLE, and its J2 option applies to the other definitions.
 - **Play backwards** (#101): ◀ next to ▶ in the playback strip plays time backwards at the chosen speed; each pauses when it is the one playing, and Space pauses and resumes the last way. A scenario run played backwards stops at its start, or with Loop goes on from its end; ▶ Scenario always plays forwards.
@@ -126,6 +128,7 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 - 40 unit tests (`npm test`), zero-dependency dev server and single-file build, architecture and conventions docs. Original kept in `legacy/`.
 
 [Unreleased]: https://github.com/kacpersyn7/atttool/compare/v0.9.0...HEAD
+[0.10.0]: https://github.com/kacpersyn7/atttool/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/kacpersyn7/atttool/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/kacpersyn7/atttool/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/kacpersyn7/atttool/compare/v0.6.0...v0.7.0
