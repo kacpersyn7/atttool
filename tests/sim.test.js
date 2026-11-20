@@ -509,7 +509,13 @@ test('time: with the Orbit span the slider pages are the timeline and plot orbit
     close(scrubWindow(t, NaN, T), tl.W0, 1e-6, `t=${t}`); close(plotWindow(s).t0, tl.W0, 1e-6);
   }
   // a page turn (‹ ›) from inside a page lands on the page the timeline shows
-  for (const k of [-47, -27, 15, 23, 30, 46]) { s.orbit.t = (k + 0.3) * T; const x = scrubTurn(s.orbit, k * T, T, 1); s.orbit.t = x.t; close(scrubWindow(x.t, x.w, T), computeTimeline(s, 0, null, 8).W0, 1e-6, `k=${k}`); }
+  for (const k of [-47, -27, 15, 23, 30, 46]) { s.orbit.t = (k + 0.3) * T; s.orbit.page = null; const x = scrubTurn(s.orbit, k * T, T, 1); s.orbit.t = x.t; close(scrubWindow(x.t, x.w, T), computeTimeline(s, 0, null, 8).W0, 1e-6, `k=${k}`); }
+  // on a page boundary (released at the right end, then ›, then ‹), the slider, the timeline and the plots show the same page (#100)
+  for (const k of [-3, 1, 7]) {
+    s.orbit.t = k * T; s.orbit.page = { w: (k - 1) * T, span: T }; const same = () => [computeTimeline(s, 0, null, 8).W0, plotWindow(s).t0].forEach(w => close(w, s.orbit.page.w, 1e-6, `k=${k}`));
+    same(); for (const dir of [1, -1]) { const x = scrubTurn(s.orbit, s.orbit.page.w, T, dir); s.orbit.t = x.t; s.orbit.page = { w: x.w, span: T }; same(); }
+  }
+  s.orbit.page = { w: 0, span: 86400 }; s.orbit.t = 5 * T; close(computeTimeline(s, 0, null, 8).W0, 5 * T, 1e-6, 'a page for another span: the page of t');
 });
 
 test('time: page turns stay within the date limits (a midnight epoch with the Day span puts the limits on page edges)', () => {
