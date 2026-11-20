@@ -145,6 +145,13 @@ export function createLayoutView({ renderRail }) {
     if (c.type === 'mtq') params.push(param('dipole', 'Dipole A·m²', 1, 1), param('len', 'Length m', .01, 2));
     if (c.type === 'rw') params.push(param('hmax', 'H max N·m·s', .05, 2));
     if (c.type === 'sa') params.push(param('w', 'Width m', .05, 2), param('h', 'Height m', .05, 2));
+    if (c.type === 'sar') { // #11
+      params.push(param('w', 'Length m (+X_C, along track)', .05, 2, .01), param('h', 'Height m (+Y_C)', .01, 2, .01), param('lambda', 'Wavelength m', .001, 3, .001),
+        // the imaging range stays ordered, within 0–90° incidence
+        numCell('p-incMin', 'Imaging from °', () => c.incMin, x => { if (Number.isFinite(x)) c.incMin = Math.max(0, Math.min(c.incMax - 0.5, x)); scChanged(); }, .5, 1),
+        numCell('p-incMax', 'Imaging to °', () => c.incMax, x => { if (Number.isFinite(x)) c.incMax = Math.min(90, Math.max(c.incMin + 0.5, x)); scChanged(); }, .5, 1),
+        selectRow({ id: 'p-side', label: 'Looks', options: [['right', 'Right of the track'], ['left', 'Left of the track']], get: () => c.side, set: v => { c.side = v; scChanged(); } }));
+    }
     const delBtn = confirmButton('Delete', 'Click again to delete', () => { S.sc.comps = S.sc.comps.filter(x => x.id !== c.id); validateAxes(S); S.layout.sel = null; scChanged(); renderRail(); });
     const axName = axisName(c.type);
     const nameIn = h('input', { type: 'text', id: 'cname', value: c.name, 'aria-label': 'Component name' }); nameIn.addEventListener('change', () => { c.name = nameIn.value.slice(0, 24) || c.name; scChanged(); renderRail(); });
@@ -274,7 +281,9 @@ export function createLayoutView({ renderRail }) {
     const typeSel = h('select', { id: 'addType', 'aria-label': 'Component type' }, Object.entries(TYPES).map(([k, t]) => h('option', { value: k }, t.label)));
     const busItem = h('button', { class: 'comp' + (S.layout.sel === 'bus' ? ' sel' : ''), onclick: () => select('bus') }, h('i', { style: 'background:' + BUS_COLOR }), h('span', null, 'Bus'), h('small', null, [b.x, b.y, b.z].map(x => x.toFixed(2)).join(' × ') + ' m'));
     const list = h('div', { class: 'complist' }, busItem, S.sc.comps.map(cc => h('button', { class: 'comp' + (cc.id === S.layout.sel ? ' sel' : ''), onclick: () => select(cc.id) }, h('i', { style: 'background:' + TYPES[cc.type].color }), h('span', null, cc.name), h('small', null, compAxis(cc).map(x => (x >= 0 ? '+' : '−') + Math.abs(x).toFixed(2)).join(' ')))));
-    const addComp = () => { const t = typeSel.value; const n = S.sc.comps.filter(x => x.type === t).length + 1; const cc = mkComp(t, t.toUpperCase() + '-' + n, busPointToSCF(S.sc, [0, 0, -b.z / 2 - 0.05]), busDirToSCF(S.sc, [0, 0, -1]), busDirToSCF(S.sc, [1, 0, 0])); S.sc.comps.push(cc); S.layout.sel = cc.id; scChanged(); renderRail(); };
+    // a new part goes on the bus −Z face, facing out; a SAR antenna on the +Z face, facing out, its long side along +X (#11): with the
+    // example layout that is nadir, along the track, so a roll turns it to either side
+    const addComp = () => { const t = typeSel.value, s = t === 'sar' ? 1 : -1; const n = S.sc.comps.filter(x => x.type === t).length + 1; const cc = mkComp(t, t.toUpperCase() + '-' + n, busPointToSCF(S.sc, [0, 0, s * (b.z / 2 + 0.05)]), busDirToSCF(S.sc, [0, 0, s]), busDirToSCF(S.sc, [1, 0, 0])); S.sc.comps.push(cc); S.layout.sel = cc.id; scChanged(); renderRail(); };
     out.push(card('Components', S.sc.comps.length + ' items',
       h('div', { style: 'display:grid;grid-template-columns:1fr auto;gap:6px' }, typeSel, h('button', { class: 'btn primary', onclick: addComp }, '+ Add')),
       list, tip('Everything is placed in the spacecraft frame (SCF), like a CAD model. Click a part (or the bus) in the 3D view or the list; drag the handles to move or rotate it. Right column: unit vector of its +Z axis in SCF.')));

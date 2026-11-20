@@ -10,6 +10,7 @@ import { deg, esc, fmt } from '../../ui/format.js';
 import { payloadComp } from '../../sim/guidance.js';
 import { pointing } from '../../sim/payload.js';
 import { sensorEval } from '../../sim/sensors.js';
+import { sarImaging, sarSwath } from '../../sim/sar.js';
 import { parseEpoch } from '../../sim/scenario.js';
 
 /** A section of the box: its title button (with `summary()` shown while folded) and its body; folded at first if `folded0`. */
@@ -59,4 +60,21 @@ export function sensorsSection(cur) {
     const pc = payloadComp(S, c.g); if (pc) rows.push(`<div class="srd"><span>${esc(pc.name)} off-nadir</span><span class="lbl">${sensorEval(pc, c).nadAng.toFixed(1)}°</span></div>`);
     return rows.join('');
   }), h('p', { class: 'tip' }, 'Exclusion angles: Spacecraft Layout. ☾ – : the Moon is behind the Earth.'));
+}
+
+/**
+ * The first SAR antenna (#11): its look side and angle, the swath now (incidence of its near and far edges, its width
+ * on the ground) and whether it can image (the swath within its imaging range); null without one. Starts folded.
+ */
+export function sarSection(cur) {
+  const c = () => S.sc.comps.find(x => x.type === 'sar'); if (!c()) return null;
+  const sw = () => { const A = cur(), k = c(); return A && k ? sarSwath(k, A) : null; }, d = x => (x * 180 / Math.PI).toFixed(1);
+  return hudSection('sar', 'SAR', () => { const x = sw(); return !x ? '' : !x.ok ? 'beam off the Earth' : `${x.side} · ${d(x.incNear)}–${d(x.incFar)}° · ${x.width.toFixed(0)} km`; }, true,
+    liveText(() => {
+      const x = sw(), k = c(); if (!x || !k) return '';
+      const can = sarImaging(k, x), chip = can ? '<span class="chip ok">can image</span>' : `<span class="chip dim">${x.ok ? 'outside its imaging range' : 'beam off the Earth'}</span>`;
+      return `<dl class="kv">${row(esc(k.name) + ' looks', `${x.side} · ${d(x.look)}° from nadir`)}`
+        + (x.ok ? `${row('Swath incidence', `${d(x.incNear)}° – ${d(x.incFar)}°`)}${row('Swath width', x.width.toFixed(1) + ' km')}` : '')
+        + `${row('Imaging range', `${k.incMin}° – ${k.incMax}°`)}</dl>${chip}`;
+    }));
 }

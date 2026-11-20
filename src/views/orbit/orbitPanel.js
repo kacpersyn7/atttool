@@ -1,4 +1,5 @@
 /** Control rail for the Orbit & Frames workspace. */
+import * as AM from '../../core/attitude.js';
 import * as ENV from '../../env/index.js';
 import { S, save, scChanged, scVersion, defaultState } from '../../state/store.js';
 import { h, card, tip, slider, numCell, selectRow, check, seg, liveText, syncAll, onSync, confirmButton, note } from '../../ui/dom.js';
@@ -12,6 +13,7 @@ import { downloadText, fileName, onFileDrop, openFileButton } from '../../ui/fil
 import { exampleScheduleCSV, forAdding, scheduleFromCSV, scheduleToCSV } from '../../sim/scheduleCsv.js';
 import { TARGET_SLEW, TARGET_SLEW_MAX, changeTurn, payloadComp, scheduleOrder, tooFast } from '../../sim/guidance.js';
 import { ELEV_MAX, EVENT_KINDS, EVENT_WINDOW, OFFSET_MAX, afterCandidates, eventLabel } from '../../sim/events.js';
+import { lookForIncidence, rollForLook } from '../../sim/sar.js';
 import { timelineKey } from '../../sim/timeline.js';
 import { NAME_MAX, addChange, cleanName, deleteChange, duplicateChange, nudgeChange, renameChange, runProgress, scheduleHistory, scenarioSpan, scheduleNotes, setChangeMode, setChangeStart, takeRotation } from '../../sim/schedule.js';
 // the slider's hold, shared with Play in the transport strip
@@ -67,7 +69,8 @@ export function orbitPanel(ctx) {
     h('div', { class: 'btns' },
       h('button', { class: 'btn', onclick: () => { g.roll = g.pitch = g.yaw = 0; save(); syncAll(); } }, 'Zero offsets'),
       h('button', { class: 'btn', onclick: () => { g.roll = 25; g.pitch = 0; g.yaw = 0; save(); syncAll(); } }, 'Side-look 25°'),
-      h('button', { class: 'btn', onclick: () => { g.roll = 0; g.pitch = 20; save(); syncAll(); } }, 'Forward 20°')));
+      h('button', { class: 'btn', onclick: () => { g.roll = 0; g.pitch = 20; save(); syncAll(); } }, 'Forward 20°')),
+    sarLookRow(g, ctx));
   if (g.mode === 'sun') modeCtl.push(
     selectRow({ id: 'sunAxis', label: 'Point at Sun', options: axisOptions(), get: () => g.sunAxis, set: v => { g.sunAxis = v; save(); } }),
     selectRow({ id: 'sunSecAxis', label: 'Secondary axis', options: axisOptions(false), get: () => g.sunSecAxis || '+X', set: v => { g.sunSecAxis = v; save(); } }),
@@ -112,6 +115,7 @@ export function orbitPanel(ctx) {
       check('s-moon', 'Moon + vector', () => o.show.moonv, v => { o.show.moonv = v; save(); }),
       check('s-b', 'Magnetic field B', () => o.show.bv, v => { o.show.bv = v; save(); }),
       check('s-cones', 'Sensor FOV cones', () => o.show.cones, v => { o.show.cones = v; save(); }),
+      check('s-sar', 'SAR swath', () => o.show.sar, v => { o.show.sar = v; save(); }),
       check('s-follow', 'Camera follows S/C', () => o.show.follow, v => { o.show.follow = v; if (v) ctx.zoomSC(); save(); })),
     h('div', { class: 'lbl' }, 'Insets'),
     h('div', { class: 'checks' },
@@ -124,6 +128,29 @@ export function orbitPanel(ctx) {
     slider({ id: 'scscale', label: 'S/C size (×)', min: .1, max: 4, step: .05, dec: 2, get: () => o.scale, set: x => { o.scale = x; save(); } }),
     tip('The spacecraft is drawn hugely oversized (about 130 km per metre at 1×) so you can see it from orbit distance. The map in the payload view and on the Earth is Natural Earth 1:50m (public domain): schematic, good to a few km, so use it for orientation, not to measure pointing errors.')));
   return out;
+}
+
+/**
+ * The SAR roll helper (#11), in nominal + offsets mode: the roll that puts the first SAR antenna's boresight at a look
+ * angle on a side (sim/sar.js rollForLook), for the settings edited (g). Defaults: the antenna's side and the look
+ * angle of the middle of its imaging range. Nothing without a SAR antenna.
+ */
+function sarLookRow(g, ctx) {
+  const c = S.sc.comps.find(x => x.type === 'sar'); if (!c) return null;
+  const r = ctx.cur() ? AM.v.norm(ctx.cur().st.r) : ENV.RE + 550;
+  const mid = Math.round(lookForIncidence((c.incMin + c.incMax) / 2 * AM.D2R, r) * AM.R2D * 10) / 10;
+  let look = mid, side = c.side;
+  const lookIn = h('input', { type: 'number', id: 'sarLook', min: 0, max: 80, step: 0.5, value: String(mid), style: 'width:80px', 'aria-label': 'SAR look angle (deg from nadir)' });
+  lookIn.addEventListener('change', () => { const x = +lookIn.value; if (Number.isFinite(x) && x >= 0 && x < 90) look = x; else lookIn.value = String(look); });
+  const sideSeg = seg([['left', 'Left'], ['right', 'Right']], () => side, v => { side = v; });
+  const go = h('button', { class: 'btn', title: `Roll so ${c.name} looks this far from nadir, to this side of the track (yaw and pitch stay)`, onclick: () => {
+    const roll = rollForLook(S, g, c, look, side, S.orbit.t);
+    if (roll === null) { toast(`No roll turns ${c.name} to ${look}° ${side}: its boresight is along the roll axis, or can't reach that angle`); return; }
+    g.roll = Math.round(roll * 100) / 100; save(); syncAll();
+  } }, 'Roll to it');
+  return h('div', null,
+    h('div', { class: 'lbl', title: `The middle of ${c.name}'s imaging range (${c.incMin}–${c.incMax}° incidence) is ${mid}° from nadir here` }, `SAR look (${esc(c.name)})`),
+    h('div', { class: 'btns', style: 'align-items:center' }, lookIn, h('span', { class: 'lbl' }, '° from nadir'), sideSeg, go));
 }
 
 /** Playing the whole scenario: Loop, the progress, and the scenario end (UTC, or automatic); ▶ Scenario is in the transport strip. */
