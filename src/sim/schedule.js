@@ -202,7 +202,8 @@ export const AUTO_END_MARGIN = 300;
  * end = o.end (UTC) if it is a valid date after the start, else automatic: when the last change (the one that flies,
  * for changes at the same moment) has finished its slew, plus AUTO_END_MARGIN (the attitude stops moving there, since
  * any earlier slew has ended or blends into that one); one orbit from the start without a schedule, or when that
- * would not be after the start. Both within the date limits.
+ * would leave less than AUTO_END_MARGIN after the start (a start typed after the schedule has played out), so the run
+ * never shrinks to seconds. Both within the date limits.
  * @returns {{ start, end, auto (the end is automatic), autoEnd (what automatic would be), autoOrbit (that is one orbit
  *   from the start), startAuto (the start is automatic), autoStart (what automatic would be) }}
  */
@@ -213,7 +214,8 @@ export function scenarioSpan(o) {
   const tStart = typedAt(o.runStart), startAuto = tStart === null, start = startAuto ? autoStart : tStart;
   const last = order[order.length - 1], orbit = () => clampTime(o, start + ENV.propagate(orbitElements(o), 0, false).period);
   let autoEnd = last ? clampTime(o, (last.ms - e0) / 1000 + Math.max(0, +sched[last.i].slew || 0) + AUTO_END_MARGIN) : null;
-  const autoOrbit = autoEnd === null || autoEnd <= start; // no schedule, or a start typed after its last change
+  // no schedule, or a start typed after the schedule has played out: one orbit
+  const autoOrbit = autoEnd === null || autoEnd - start < AUTO_END_MARGIN;
   if (autoOrbit) autoEnd = orbit();
   const typed = typedAt(o.end), auto = typed === null || typed <= start;
   return { start, end: auto ? autoEnd : typed, auto, autoEnd, autoOrbit, startAuto, autoStart };

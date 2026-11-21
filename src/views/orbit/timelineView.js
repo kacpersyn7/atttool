@@ -24,7 +24,8 @@ export function createTimelineView(tlc, band = {}) {
     const x = tlc.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0); x.clearRect(0, 0, W, Hh);
     const L = LEFT, w = W - LEFT - RIGHT;
     x.font = '500 11px "JetBrains Mono", monospace'; x.textBaseline = 'middle';
-    x.fillStyle = '#8697ae'; x.fillText('One orbit · ' + (tl.T / 60).toFixed(1) + ' min', 0, 7);
+    const head = 'One orbit · ' + (tl.T / 60).toFixed(1) + ' min', headW = x.measureText(head).width;
+    x.fillStyle = '#8697ae'; x.fillText(head, 0, 7);
     // the scenario run (▶ Scenario plays it): where its start and end tags go on this page; a minute label they would cover is left out
     const sp = scenarioSpan(S.orbit), xs = t => L + (t - tl.W0) / tl.T * w, clip = v => Math.max(L, Math.min(L + w, v));
     x.font = '600 10px "JetBrains Mono", monospace';
@@ -60,7 +61,8 @@ export function createTimelineView(tlc, band = {}) {
     const a = clip(xs(sp.start)), b = clip(xs(sp.end));
     x.fillStyle = 'rgba(5,8,13,.62)'; if (a > L) x.fillRect(L, top, a - L, Hh - top); if (b < L + w) x.fillRect(b, top, L + w - b, Hh - top);
     x.font = '600 10px "JetBrains Mono", monospace';
-    for (const g of tags) { x.fillStyle = '#f2a93b'; x.fillRect(g.px - .75, top - 2, 1.5, Hh - top + 2); x.fillStyle = '#0a1018e0'; x.fillRect(g.lx, 1, g.x1 - g.lx, 12); x.fillStyle = '#f2a93b'; x.fillText(g.lb, g.lx + 2, 7); }
+    // a tag over the header (a run starting at the page's left edge) is left out: its line marks it
+    for (const g of tags) { x.fillStyle = '#f2a93b'; x.fillRect(g.px - .75, top - 2, 1.5, Hh - top + 2); if (g.lx < headW + 4) continue; x.fillStyle = '#0a1018e0'; x.fillRect(g.lx, 1, g.x1 - g.lx, 12); x.fillStyle = '#f2a93b'; x.fillText(g.lb, g.lx + 2, 7); }
     x.font = '500 11px "JetBrains Mono", monospace';
     const cx = L + ((S.orbit.t - tl.W0) / tl.T) * w; x.fillStyle = '#ffffff'; x.fillRect(cx - 1, top - 4, 2, Hh - top + 4);
     const bi = tl.rows.findIndex(r => r.kind === 'mode'); geom = bi < 0 ? null : { L, w, y0: top + bi * rowH, y1: top + (bi + 1) * rowH };
