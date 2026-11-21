@@ -84,6 +84,6 @@ export function startApp() {
   requestAnimationFrame(loop);
 
   // what loading the save set aside (state/store.js migrate)
-  if (LOAD_NOTES.length) showModal(h('div', null, h('h3', null, 'Some saved parts are set aside'), ...[...new Set(LOAD_NOTES)].map(t => h('p', null, t))));
+  if (LOAD_NOTES.length) showModal(h('div', null, h('h2', null, 'Some saved parts are set aside'), ...[...new Set(LOAD_NOTES)].map(t => h('p', null, t))));
   return { VIEWS, setTab, renderRail };
 }

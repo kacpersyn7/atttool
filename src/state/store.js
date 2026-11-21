@@ -18,8 +18,7 @@ import { ensureFleet } from '../spacecraft/library.js';
 import { ensureScenarios, scenarioData, fillChanges } from '../sim/scenarioLibrary.js';
 import { normalizeBus, convertLegacyFrame } from '../spacecraft/bus.js';
 import { defaultAlign } from '../spacecraft/alignment.js';
-import { fillParams, cleanMaxRate } from '../spacecraft/component.js';
-import { TYPES } from '../spacecraft/componentTypes.js';
+import { fillParams, cleanMaxRate, setAsideUnknown } from '../spacecraft/component.js';
 import { EPOCH0 } from '../sim/scenario.js';
 
 export const STORAGE_KEY = 'atttool.v1';
@@ -64,18 +63,6 @@ function load() {
  */
 export const LOAD_NOTES = [];
 
-/**
- * Parts of a type this version doesn't know (a save from a newer version, or a branch with new part types) are set
- * aside in sc.setAside: kept in the save, not used, so nothing that draws or works out a part meets an unknown type.
- * Set-aside parts of a type this version knows come back. @returns the names of the parts set aside now, with types.
- */
-export function setAsideUnknown(sc) {
-  const all = [...(sc.comps || []), ...(sc.setAside || [])], known = c => c && Object.hasOwn(TYPES, c.type);
-  sc.comps = all.filter(known); const away = all.filter(c => !known(c));
-  if (away.length) sc.setAside = away; else delete sc.setAside;
-  return away.map(c => `${c && c.name || 'a part'} (${c && c.type || 'no type'})`);
-}
-
 /** Upgrade saves from older versions in place. */
 export function migrate(s) {
   // v0.2 -> v0.3: the old "LVLH" frame is STK's VVLH; nadir mode became the generic "offsets" mode
@@ -84,12 +71,13 @@ export function migrate(s) {
   // the spacecraft. The old offsets mode flew SCF = selected orbital frame, so start from that.
   // v0.7: the spacecraft library; a save with one spacecraft becomes a library of one
   const f = ensureFleet(s);
-  for (const sc of [s.sc, ...f.items.map(i => i.sc).filter(Boolean)]) {
+  const named = [{ sc: s.sc, name: (f.items.find(i => i.id === f.active) || {}).name, active: true }, ...f.items.filter(i => i.sc).map(i => ({ sc: i.sc, name: i.name }))];
+  for (const { sc, name, active } of named) {
     normalizeBus(sc.bus); convertLegacyFrame(sc);
     if (!sc.align) sc.align = defaultAlign(s.orbit.refFrame || 'vvlh');
     // parts of a type this version doesn't know: set aside, and said
     const away = setAsideUnknown(sc);
-    if (away.length) LOAD_NOTES.push(`Spacecraft${sc === s.sc ? '' : ' in the library'}: ${away.join(', ')}. This version doesn't know ${away.length === 1 ? 'this part\'s type' : 'these parts\' types'}, so ${away.length === 1 ? 'it is' : 'they are'} set aside: kept in the save, but not used. A version that knows the type brings ${away.length === 1 ? 'it' : 'them'} back.`);
+    if (away.length) LOAD_NOTES.push(`${active ? 'The spacecraft flown' : 'Library spacecraft'}${name ? ' “' + name + '”' : ''}: ${away.join(', ')}. This version doesn't know ${away.length === 1 ? 'this part\'s type' : 'these parts\' types'}, so ${away.length === 1 ? 'it is' : 'they are'} set aside: kept in the save, but not used. A version that knows the type brings ${away.length === 1 ? 'it' : 'them'} back; settings that pointed with ${away.length === 1 ? 'it' : 'them'} (a pointing axis, a Sun axis) use their defaults meanwhile.`);
     // v0.6: new type parameters (e.g. the star tracker's moonExcl) for parts saved before they existed
     (sc.comps || []).forEach(fillParams);
     // #57: a maximum slew rate for the schedule's automatic slew times

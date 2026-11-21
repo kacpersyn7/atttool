@@ -56,6 +56,20 @@ export const MAX_RATE_DEFAULT = 1, MAX_RATE_MIN = 0.05, MAX_RATE_MAX = 30;
 /** A maximum slew rate as kept: within the limits, else the default (older spacecraft have none). */
 export const cleanMaxRate = x => Number.isFinite(x) && x >= MAX_RATE_MIN && x <= MAX_RATE_MAX ? x : MAX_RATE_DEFAULT;
 
+/**
+ * Parts of a type this version doesn't know (a save from a newer version, or a branch with new part types) are set
+ * aside in sc.setAside: kept in the save, not used, so nothing that draws or works out a part meets an unknown type.
+ * Set-aside parts of a type this version knows come back (at the end of the list). Anything not an object is dropped.
+ * @returns the parts set aside now, as "name (type)".
+ */
+export function setAsideUnknown(sc) {
+  const list = x => Array.isArray(x) ? x : [], all = [...list(sc.comps), ...list(sc.setAside)];
+  const known = c => c && typeof c === 'object' && Object.hasOwn(TYPES, c.type);
+  sc.comps = all.filter(known); const away = all.filter(c => c && typeof c === 'object' && !known(c));
+  if (away.length) sc.setAside = away; else delete sc.setAside;
+  return away.map(c => `${typeof c.name === 'string' && c.name ? c.name : 'a part'} (${typeof c.type === 'string' && c.type ? c.type : 'no type'})`);
+}
+
 /** Validate & normalise an imported spacecraft config. Throws Error with a readable message. */
 export function sanitizeSpacecraft(json) {
   const sc = json.sc || json;
@@ -65,6 +79,9 @@ export function sanitizeSpacecraft(json) {
   sc.align = checkAlign(sc.align);
   if (!(sc.bus.mass >= 0)) throw new Error('Bus mass must be a number.');
   const isVec = a => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
+  // a file from a version that set parts aside: those of known types come back and are checked as any part; the rest stay
+  // aside (a part of an unknown type in comps is still refused below)
+  if ('setAside' in sc) { const keep = sc.comps; sc.comps = []; setAsideUnknown(sc); sc.comps = [...keep, ...sc.comps]; }
   sc.comps.forEach((c, k) => {
     if (!c || typeof c !== 'object') throw new Error(`Part ${k + 1} is not an object.`);
     if (!Object.hasOwn(TYPES, c.type)) throw new Error('Unknown component type "' + c.type + '".');

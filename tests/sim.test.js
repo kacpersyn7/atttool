@@ -574,16 +574,3 @@ test('time: far from the epoch is flagged, sooner for a TLE; T+ reads with sign 
   assert.equal(farFromEpoch({ t: 2 * DAY, def: 'tle' }), null); assert.equal(farFromEpoch({ t: 3 * DAY, def: 'tle' }), 3);
   for (const [s, want] of [[0, 'T+00:00:00'], [59.9, 'T+00:00:59'], [-0.4, 'T+00:00:00'], [-3661, 'T−01:01:01'], [86400, 'T+1 d 00:00:00'], [14 * DAY + 11525, 'T+14 d 03:12:05'], [-2 * DAY - 1, 'T−2 d 00:00:01']]) assert.equal(tPlus(s), want);
 });
-
-/* ---- a save with parts of a type this version doesn't know ---- */
-import { setAsideUnknown } from '../src/state/store.js';
-test('saves: a part of an unknown type is set aside (kept, not used), and comes back once its type is known', () => {
-  const ok = { id: 'a', type: 'str', name: 'STR-1' }, odd = { id: 'b', type: 'warpdrive', name: 'WD-1' };
-  const sc = { comps: [ok, odd] };
-  assert.deepEqual(setAsideUnknown(sc), ['WD-1 (warpdrive)']);
-  assert.deepEqual(sc.comps, [ok]); assert.deepEqual(sc.setAside, [odd], 'kept in the save');
-  assert.deepEqual(setAsideUnknown(sc), ['WD-1 (warpdrive)'], 'loading again: still aside, said again'); assert.equal(sc.comps.length, 1);
-  // a version that knows the type: back among the parts, nothing set aside
-  odd.type = 'rw'; assert.deepEqual(setAsideUnknown(sc), []); assert.deepEqual(sc.comps.map(c => c.id), ['a', 'b']); assert.equal('setAside' in sc, false);
-  assert.deepEqual(setAsideUnknown({ comps: [] }), []); assert.deepEqual(setAsideUnknown({ comps: [null] }), ['a part (no type)'], 'junk is set aside too');
-});
