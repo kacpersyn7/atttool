@@ -155,7 +155,7 @@ function scenarioRunCard(o) {
       if (isStart) return sp.startAuto ? `automatic: ${sp.autoStart < 0 ? 'the first change' : 'the epoch'}` : 'set by hand';
       return sp.auto ? `automatic: ${sp.autoOrbit ? 'one orbit' : 'the last change + 5 min'}` : 'set by hand'; }, 'lbl');
     return [h('div', { class: 'row two' }, h('label', { for: id }, isStart ? 'Starts (UTC)' : 'Ends (UTC)'), inp),
-      h('div', { style: 'display:flex;justify-content:space-between;align-items:center;gap:8px' }, how, pending, h('span', { style: 'display:flex;gap:6px' }, now, auto))];
+      h('div', { style: 'display:flex;justify-content:space-between;align-items:center;gap:8px' }, how, h('span', { style: 'display:flex;gap:6px' }, now, auto)), pending];
   };
   const length = () => { const sp = scenarioSpan(o), s = Math.max(0, Math.round(sp.end - sp.start)), d = Math.floor(s / 86400), hr = Math.floor(s % 86400 / 3600), mi = Math.floor(s % 3600 / 60);
     return (d ? d + ' d ' : '') + (d || hr ? hr + ' h ' : '') + mi + ' min'; };
@@ -164,8 +164,9 @@ function scenarioRunCard(o) {
     h('div', { class: 'kv' }, h('dt', null, 'Length'), h('dd', null, liveText(length))),
     h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' },
       check('runLoop', 'Loop', () => !!o.runLoop, v => { o.runLoop = v; save(); }),
-      liveText(() => { const p = runProgress(o); return p === null ? '' : `<span class="lbl">Playing the run · ${(100 * p).toFixed(0)} %</span>`; })),
-    liveText(() => { const p = runProgress(o); return p === null ? '' : `<div class="runbar"><span style="width:${(100 * p).toFixed(1)}%"></span></div>`; }),
+      liveText(() => { const p = runProgress(o); return `<span class="lbl">${p === null ? 'Not playing the run' : `Playing the run · ${(100 * p).toFixed(0)} %`}</span>`; })),
+    // always there, empty when no run plays: the card keeps its height
+    liveText(() => { const p = runProgress(o); return `<div class="runbar"><span style="width:${p === null ? 0 : (100 * p).toFixed(1)}%"></span></div>`; }),
     note('<b>▶ Scenario</b>, in the strip above the plots, plays the run from its start to its end, then pauses (or loops). The timeline shades the time outside it; ▶ Play and the time slider are not limited to it.'));
 }
 
