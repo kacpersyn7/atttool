@@ -5,6 +5,9 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 
 ## [Unreleased]
 
+### Changed
+- **The scenario run is explicit** (#106): its own *Scenario run* card, with when it starts and ends (UTC; each automatic or typed, with *Now* to use the current time and *Auto*), its length, Loop and the progress. The start used to be implicit (the epoch, or the first change if earlier), and the end and Loop sat in the Time card, which now only holds the clock. The timeline shades the time outside the run and marks its start and end. ▶ Scenario plays the run; ▶ Play and the time slider are not limited to it. Scenario files keep the run's start (`runStart`).
+
 ## [0.10.0] - 2026-11-20
 
 ### Added

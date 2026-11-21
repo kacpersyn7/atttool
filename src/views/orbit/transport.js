@@ -34,7 +34,7 @@ export function transportStrip() {
     class: 'btn', title: dir < 0 ? 'Go to the start of the previous change' : 'Go to the start of the next change', 'aria-label': dir < 0 ? 'Previous change' : 'Next change',
     onclick: () => { const t = adjacentChange(o, dir); if (t === null) { toast(dir < 0 ? 'No earlier change' : 'No later change'); return; } o.t = t; save(); syncAll(); },
   }, dir < 0 ? '⏮' : '⏭');
-  const run = h('button', { class: 'btn', title: 'Play the scenario from its start to its end at the chosen speed, then pause (Loop and the end: Time card)', onclick: () => { scrubCancelResume(hold); startRun(o); save(); syncAll(); } }, '▶ Scenario');
+  const run = h('button', { class: 'btn', title: 'Play the scenario from its start to its end at the chosen speed, then pause (its start, end and Loop: the Scenario run card)', onclick: () => { scrubCancelResume(hold); startRun(o); save(); syncAll(); } }, '▶ Scenario');
   const progress = liveText(() => { const p = runProgress(o); return p === null ? '' : `<span class="runbar mini" title="Scenario · ${(100 * p).toFixed(0)} %"><span style="width:${(100 * p).toFixed(1)}%"></span></span>`; });
   const clock = liveText(() => `<span class="mono">${currentDate(o).toISOString().slice(0, 19).replace('T', ' ')} UTC</span> <span class="lbl">${tPlus(o.t)}</span>`, 'clock');
   return h('div', { class: 'transport', role: 'toolbar', 'aria-label': 'Playback' },

@@ -367,6 +367,22 @@ test('scenario span: automatic end after the last slew + 5 min, one orbit withou
   o.end = ''; o.schedule = [{ id: 'early', start: at(s, -3000), slew: 0, mode: 'sun' }]; close(scenarioSpan(o).start, -3000, 1e-6, 'starts at a change before the epoch');
 });
 
+test('scenario run: a typed start wins over the automatic one; the automatic end stays after it; old saves and files have none', () => {
+  const s = fresh(), o = s.orbit, T = 2 * Math.PI * Math.sqrt(orbitElements(o).a ** 3 / 398600.4418);
+  assert.equal(o.runStart, '', 'automatic by default');
+  o.schedule = [{ id: 'a', start: at(s, 600), slew: 60, mode: 'sun' }];
+  let sp = scenarioSpan(o); assert.equal(sp.startAuto, true); assert.equal(sp.start, 0); assert.equal(sp.autoOrbit, false); close(sp.end, 600 + 60 + AUTO_END_MARGIN, 1e-6);
+  o.runStart = at(s, 300); sp = scenarioSpan(o); assert.equal(sp.startAuto, false); close(sp.start, 300, 1e-6); assert.equal(sp.autoStart, 0); close(sp.end, 960, 1e-6, 'the end still follows the schedule');
+  // a start after the last change: the automatic end is one orbit from it
+  o.runStart = at(s, 5000); sp = scenarioSpan(o); close(sp.start, 5000, 1e-6); assert.equal(sp.autoOrbit, true); close(sp.end, 5000 + T, 1e-6);
+  // without a schedule: one orbit from the typed start; a typed end before it is ignored (automatic)
+  o.schedule = []; o.runStart = at(s, -1200); sp = scenarioSpan(o); close(sp.start, -1200, 1e-6, 'before the epoch too'); close(sp.end, -1200 + T, 1e-6);
+  o.end = at(s, -1500); assert.equal(scenarioSpan(o).auto, true); o.end = at(s, 0); assert.equal(scenarioSpan(o).auto, false);
+  o.runStart = 'soon'; assert.equal(scenarioSpan(o).startAuto, true, 'not a date: automatic');
+  // ▶ Scenario starts at the typed start
+  o.runStart = at(s, 300); o.end = ''; o.schedule = [{ id: 'a', start: at(s, 600), slew: 60, mode: 'sun' }]; o.t = 4000; startRun(o); close(o.t, 300, 1e-6);
+});
+
 test('scenario run: starts at the start, stops at the end (or loops) when a playback step reaches it', () => {
   const s = fresh(), o = s.orbit; o.schedule = [{ id: 'a', start: at(s, 600), slew: 60, mode: 'sun' }]; o.t = 5000; o.playing = false;
   startRun(o); assert.equal(o.t, 0); assert.equal(o.run, true); assert.equal(o.playing, true); assert.equal(runProgress(o), 0);

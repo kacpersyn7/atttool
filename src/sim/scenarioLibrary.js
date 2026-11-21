@@ -23,7 +23,7 @@ import { cleanOn } from './events.js';
 
 /** The fields of state.orbit that make up a scenario. refFrame only picks the frame shown, but it goes with the mode's offsets. */
 export const SCENARIO_KEYS = ['preset', 'def', 'r', 'v', 'tle', 'epoch', 'hp', 'ha', 'i', 'raan', 'argp', 'nu0', 'j2', 't',
-  'mode', 'refFrame', 'roll', 'pitch', 'yaw', 'sunAxis', 'sunSec', 'sunSecAxis', 'tgtLat', 'tgtLon', 'tgtAlt', 'tgtComp', 'tgtSlew', 'schedule', 'end',
+  'mode', 'refFrame', 'roll', 'pitch', 'yaw', 'sunAxis', 'sunSec', 'sunSecAxis', 'tgtLat', 'tgtLon', 'tgtAlt', 'tgtComp', 'tgtSlew', 'schedule', 'runStart', 'end',
   'rgtR', 'rgtD', 'rgtLtan', 'rgtLon', 'defs', 'defFrom', 'rvOsc'];
 /** Scenario fields kept in the library (parking, duplicate, the save) but not exported: what the other orbit tabs hold (#81). */
 export const LOCAL_KEYS = ['defs', 'defFrom'];
@@ -128,6 +128,7 @@ const VALID = {
   sunAxis: axis, sunSec: oneOf('nadir', 'zenith', 'velocity', 'normal', 'antinormal'), sunSecAxis: axis,
   tgtLat: inRange(-90, 90), tgtLon: angle, tgtAlt: isNum, tgtComp: isStr, tgtSlew: inRange(0, 900),
   schedule: Array.isArray, // and then cleaned change by change (cleanSchedule)
+  runStart: x => x === '' || (isStr(x) && validDate(x)), // '' = automatic
   end: x => x === '' || (isStr(x) && validDate(x)), // '' = automatic
   rgtR: x => Number.isInteger(x) && x >= 1 && x <= 1000, rgtD: x => Number.isInteger(x) && x >= 1 && x <= 1000, rgtLtan: inRange(0, 24), rgtLon: inRange(-180, 180),
   defs: x => !!x && typeof x === 'object' && !Array.isArray(x), // and then cleaned tab by tab (sanitizeScenario)
@@ -139,7 +140,7 @@ const FIELD_NAME = {
   preset: 'orbit preset', def: 'orbit definition', r: 'state vector r', v: 'state vector v', tle: 'TLE', epoch: 'epoch', hp: 'perigee altitude', ha: 'apogee altitude',
   i: 'inclination', raan: 'RAAN', argp: 'argument of perigee', nu0: 'true anomaly', j2: 'J2', t: 'current time', mode: 'guidance mode', refFrame: 'shown frame',
   roll: 'roll', pitch: 'pitch', yaw: 'yaw', sunAxis: 'Sun axis', sunSec: 'secondary direction', sunSecAxis: 'secondary axis', tgtLat: 'target latitude',
-  tgtLon: 'target longitude', tgtAlt: 'target height', tgtComp: 'pointing axis', tgtSlew: 'slew to/from target', schedule: 'mode schedule', end: 'scenario end',
+  tgtLon: 'target longitude', tgtAlt: 'target height', tgtComp: 'pointing axis', tgtSlew: 'slew to/from target', schedule: 'mode schedule', runStart: 'scenario run start', end: 'scenario end',
   rgtR: 'repeat orbits', rgtD: 'repeat days', rgtLtan: 'repeat-track LTAN', rgtLon: 'reference track longitude',
   defs: 'inputs kept by the other orbit tabs', defFrom: 'orbit tab used before', rvOsc: 'state vector kind',
 };

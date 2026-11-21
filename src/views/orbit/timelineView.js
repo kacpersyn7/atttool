@@ -6,7 +6,7 @@
 import { S, save, scVersion } from '../../state/store.js';
 import { syncAll } from '../../ui/dom.js';
 import { clampTime, epochDate, formatEpoch } from '../../sim/scenario.js';
-import { changeAtTime, startNear } from '../../sim/schedule.js';
+import { changeAtTime, scenarioSpan, startNear } from '../../sim/schedule.js';
 import { computeTimeline } from '../../sim/timeline.js';
 
 const LEFT = 112, RIGHT = 52; // px reserved for row names / percentages
@@ -49,6 +49,18 @@ export function createTimelineView(tlc, band = {}) {
       }
       x.fillStyle = '#8697ae'; x.textAlign = 'right'; x.fillText(tl.stats[i] === null ? '' : tl.stats[i].toFixed(0) + '%', W, y + rowH / 2); x.textAlign = 'left';
     });
+    // the scenario run (▶ Scenario plays it): the time outside it shaded, its start and end marked where they are on this page
+    const sp = scenarioSpan(S.orbit), xs = t => L + (t - tl.W0) / tl.T * w, clip = v => Math.max(L, Math.min(L + w, v));
+    const a = clip(xs(sp.start)), b = clip(xs(sp.end));
+    x.fillStyle = 'rgba(5,8,13,.62)'; if (a > L) x.fillRect(L, top, a - L, Hh - top); if (b < L + w) x.fillRect(b, top, L + w - b, Hh - top);
+    x.font = '600 10px "JetBrains Mono", monospace';
+    for (const [t, lb, right] of [[sp.start, 'run ▸', true], [sp.end, '◂ end', false]]) {
+      const px = xs(t); if (px < L || px > L + w) continue;
+      x.fillStyle = '#f2a93b'; x.fillRect(px - .75, top - 2, 1.5, Hh - top + 2);
+      const lw = x.measureText(lb).width, lx = right ? Math.min(px + 2, L + w - lw - 4) : Math.max(px - lw - 6, L);
+      x.fillStyle = '#0a1018e0'; x.fillRect(lx, 1, lw + 4, 12); x.fillStyle = '#f2a93b'; x.fillText(lb, lx + 2, 7);
+    }
+    x.font = '500 11px "JetBrains Mono", monospace';
     const cx = L + ((S.orbit.t - tl.W0) / tl.T) * w; x.fillStyle = '#ffffff'; x.fillRect(cx - 1, top - 4, 2, Hh - top + 4);
     const bi = tl.rows.findIndex(r => r.kind === 'mode'); geom = bi < 0 ? null : { L, w, y0: top + bi * rowH, y1: top + (bi + 1) * rowH };
     if (drag && drag.id && drag.moved && geom) { // the start being dragged, and its time
