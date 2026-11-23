@@ -5,6 +5,9 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 
 ## [Unreleased]
 
+### Fixed
+- **A save with a part of an unknown type no longer stops the app** (#108): opening a save from a version with a newer part type (such as a SAR antenna) failed with *can't access property "color", T is undefined*. Such parts are now set aside, kept in the save but not used, and a message says which; a version that knows the type brings them back.
+
 ## [0.10.0] - 2026-11-20
 
 ### Added
