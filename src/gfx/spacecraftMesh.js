@@ -22,6 +22,15 @@ export function compMesh(c) {
     case 'gnss': cyl(0.06, 0.06, 0.02, std(col)); cyl(0.04, 0.04, 0.02, std('#d6b13e'), 0.01); break;
     case 'ant': box(0.12, 0.12, 0.02, std(col)); for (let i = 0; i < 4; i++) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.035, 0.004), std('#c2953a', { metalness: .9 })); m.position.set((i % 2 - .5) * .05, (Math.floor(i / 2) - .5) * .05, 0.012); g.add(m); } break;
     case 'thr': { const m = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.07, 16, 1, true), std(col, { side: THREE.DoubleSide, metalness: .8 })); m.rotation.x = -Math.PI / 2; m.position.z = 0.035; g.add(m); cyl(0.015, 0.015, 0.05, std('#4a5160'), -0.02); break; }
+    case 'sar': { // #11: a panel of radiating tiles, w along +X_C (azimuth), h along +Y_C, facing +Z_C
+      const w = c.w || 3.2, hh = c.h || 0.4;
+      const cv = document.createElement('canvas'); cv.width = 512; cv.height = 128; const x = cv.getContext('2d');
+      x.fillStyle = '#5d6878'; x.fillRect(0, 0, 512, 128);
+      for (let i = 0; i < 32; i++) for (let j = 0; j < 4; j++) { x.fillStyle = (i + j) % 2 ? '#c9d2df' : '#b4bfcf'; x.fillRect(i * 16 + 1, j * 32 + 1, 14, 30); }
+      const tex = new THREE.CanvasTexture(cv), side = std('#7d8796');
+      g.add(new THREE.Mesh(new THREE.BoxGeometry(w, hh, 0.05), [side, side, side, side, std('#ffffff', { map: tex, metalness: .2, roughness: .5 }), std('#3a4250')]));
+      break;
+    }
     case 'sa': {
       const w = c.w || 1, hh = c.h || 0.7;
       const cv = document.createElement('canvas'); cv.width = 256; cv.height = 180; const x = cv.getContext('2d');
@@ -69,6 +78,12 @@ export function buildSC(sc, opts = {}) {
         const ex = new THREE.Mesh(coneGeom(c.sunExcl, 0.7, 32), new THREE.MeshBasicMaterial({ color: COL.sun, wireframe: true, transparent: true, opacity: .25 })); ex.userData.noPick = true; ex.userData.isCone = true; g.add(ex);
         if (c.moonExcl > 0) { const mx = new THREE.Mesh(coneGeom(c.moonExcl, 0.6, 24), new THREE.MeshBasicMaterial({ color: COL.moon, wireframe: true, transparent: true, opacity: .25 })); mx.userData.noPick = true; mx.userData.isCone = true; g.add(mx); }
       }
+    }
+    if (opts.cones && c.type === 'sar') { // its beam: a rectangular pyramid, λ/w by λ/h (sim/sar.js)
+      const L = 1.6, ta = Math.tan(c.lambda / c.w / 2), te = Math.tan(c.lambda / c.h / 2), cs = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, e]) => new THREE.Vector3(a * ta * L, e * te * L, L));
+      const pts = []; for (let k = 0; k < 4; k++) pts.push(new THREE.Vector3(), cs[k], cs[k], cs[(k + 1) % 4]);
+      const beam = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: new THREE.Color(TYPES.sar.color), transparent: true, opacity: .55 }));
+      beam.userData.noPick = true; beam.userData.isCone = true; g.add(beam);
     }
     if (c.type === 'mtq' && opts.dipoles) { const a = new Arrow(0xff9b5e, (c.len || .36) / 2 + 0.12, 0.007); a.setDir([0, 0, 1]); g.add(a); }
     if (opts.labels) { const l = makeLabel(c.name, '#' + new THREE.Color(TYPES[c.type].color).getHexString(), 22, { scale: opts.labelScale || 0.85, weight: 500 }); l.position.set(0, 0, 0.02); g.add(l); g.userData.label = l; }

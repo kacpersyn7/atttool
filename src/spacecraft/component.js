@@ -92,6 +92,12 @@ export function sanitizeSpacecraft(json) {
     if (c.mass === undefined) c.mass = TYPES[c.type].mass;
     if (!(c.mass >= 0)) throw new Error(who + ': "mass" must be a number.');
     c.id = c.id || newId(); c.q = AM.q.unit(c.q); delete c.eul; fillParams(c);
+    if (c.type === 'sar') { // #11
+      for (const k of ['w', 'h', 'lambda']) if (!(Number.isFinite(c[k]) && c[k] > 0)) throw new Error(`${who}: "${k}" must be a positive number.`);
+      if (c.lambda > Math.min(c.w, c.h)) throw new Error(`${who}: "lambda" can't be more than "w" or "h" (the beam, λ/D, would be over 1 rad wide).`);
+      if (!(Number.isFinite(c.incMin) && Number.isFinite(c.incMax) && c.incMin >= 0 && c.incMin < c.incMax && c.incMax <= 90)) throw new Error(`${who}: the imaging range needs 0 ≤ "incMin" < "incMax" ≤ 90 (deg).`);
+      if (c.side !== 'right' && c.side !== 'left') throw new Error(`${who}: "side" must be "right" or "left".`);
+    }
   });
   sc.maxRate = cleanMaxRate(sc.maxRate);
   return sc;

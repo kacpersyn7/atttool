@@ -1,9 +1,10 @@
 /**
  * Mass properties about the centre of mass, in spacecraft-frame (SCF) axes; CoM given in SCF.
- * Model: bus = uniform box, components = point masses, solar arrays = thin plates.
+ * Model: bus = uniform box, components = point masses, solar arrays and SAR antennas = thin plates (w × h, normal +Z_C).
  */
 import * as AM from '../core/attitude.js';
 import { compCBC } from './component.js';
+import { TYPES } from './componentTypes.js';
 import { busPose } from './bus.js';
 
 /** @returns {{M:number, com:number[], I:number[][], E:{vals:number[], vecs:number[][]}}} */
@@ -14,7 +15,8 @@ export function massProps(sc) {
   const parts = [{ m: Mb, p: bp.pos, I: AM.m.mul(bp.C, AM.m.mul(IbG, AM.m.T(bp.C))) }];
   for (const c of sc.comps) {
     let Ic = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
-    if (c.type === 'sa') { const w = c.w || 1, hh = c.h || .7, m = c.mass; const Il = [[m * hh * hh / 12, 0, 0], [0, m * w * w / 12, 0], [0, 0, m * (w * w + hh * hh) / 12]]; const C = compCBC(c); Ic = AM.m.mul(C, AM.m.mul(Il, AM.m.T(C))); }
+    // a thin plate (w × h, normal +Z_C): solar array, SAR antenna
+    if (TYPES[c.type] && TYPES[c.type].plate) { const w = c.w || 1, hh = c.h || .7, m = c.mass; const Il = [[m * hh * hh / 12, 0, 0], [0, m * w * w / 12, 0], [0, 0, m * (w * w + hh * hh) / 12]]; const C = compCBC(c); Ic = AM.m.mul(C, AM.m.mul(Il, AM.m.T(C))); }
     parts.push({ m: c.mass || 0, p: c.pos, I: Ic });
   }
   const M = parts.reduce((s, p) => s + p.m, 0);

@@ -37,7 +37,9 @@ export function createTimelineView(tlc, band = {}) {
         else if (r.kind === 'css') col = val ? '#d8b23e' : null;
         else if (r.kind === 'sa') col = `rgba(79,140,255,${0.15 + 0.85 * val})`;
         else if (r.kind === 'pl') col = val ? '#9fb0c8' : null;
-        if (col) { x.fillStyle = col; x.fillRect(L + n / tl.N * w, y + 2, w / tl.N + .6, rowH - 4); }
+        else if (r.kind === 'sar') col = val ? '#6f9ccc' : null;
+        else if (r.kind === 'sart') col = val === 2 ? '#ff7bd5' : val === 1 ? '#6b4a63' : null; // the target's colour in the 3D view; dim while the SAR can't image
+        if (col) { const bw = r.kind === 'sart' ? Math.max(3, w / tl.N + .6) : w / tl.N + .6; x.fillStyle = col; x.fillRect(L + n / tl.N * w, y + 2, bw, rowH - 4); } // a crossing lasts seconds: at least 3 px
       }
       if (r.kind === 'mode') { // name each run of one mode where it fits
         x.fillStyle = '#0a1018'; x.font = '600 10px "JetBrains Mono", monospace';
@@ -47,7 +49,7 @@ export function createTimelineView(tlc, band = {}) {
           if (nm) x.fillText(nm, L + n / tl.N * w + 4, y + rowH / 2); n = m; }
         x.font = '500 11px "JetBrains Mono", monospace';
       }
-      x.fillStyle = '#8697ae'; x.textAlign = 'right'; x.fillText(tl.stats[i] === null ? '' : tl.stats[i].toFixed(0) + '%', W, y + rowH / 2); x.textAlign = 'left';
+      x.fillStyle = '#8697ae'; x.textAlign = 'right'; x.fillText(tl.stats[i] === null ? '' : typeof tl.stats[i] === 'string' ? tl.stats[i] : tl.stats[i].toFixed(0) + '%', W, y + rowH / 2); x.textAlign = 'left';
     });
     const cx = L + ((S.orbit.t - tl.W0) / tl.T) * w; x.fillStyle = '#ffffff'; x.fillRect(cx - 1, top - 4, 2, Hh - top + 4);
     const bi = tl.rows.findIndex(r => r.kind === 'mode'); geom = bi < 0 ? null : { L, w, y0: top + bi * rowH, y1: top + (bi + 1) * rowH };
