@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as AM from '../src/core/attitude.js';
-import { mkComp, compAxis, qFromBoresight, envelope, sanitizeSpacecraft } from '../src/spacecraft/component.js';
+import { mkComp, compAxis, qFromBoresight, envelope, sanitizeSpacecraft, setAsideUnknown } from '../src/spacecraft/component.js';
 import { defaultSC } from '../src/spacecraft/exampleSpacecraft.js';
 import { ensureFleet, activeItem, selectSpacecraft, addSpacecraft, duplicateSpacecraft, renameSpacecraft, deleteSpacecraft, replaceActive } from '../src/spacecraft/library.js';
-import { defaultState, migrate } from '../src/state/store.js';
+import { LOAD_NOTES, defaultState, migrate } from '../src/state/store.js';
 import { massProps } from '../src/spacecraft/massProperties.js';
 import { exportPython } from '../src/spacecraft/exportPython.js';
 import { close, closeArr } from './helpers.js';
@@ -285,3 +285,35 @@ test('import: a part without pos, name, q or valid mass, or a bus without mass, 
   const sc = sanitizeSpacecraft(part({})); assert.ok(sc.comps[0].mass > 0, 'missing mass → the type default'); assert.ok(Number.isFinite(massProps(sc).M));
 });
 
+test('saves: a part of an unknown type is set aside (kept, not used), and comes back once its type is known (#108)', () => {
+  const ok = { id: 'a', type: 'str', name: 'STR-1' }, odd = { id: 'b', type: 'warpdrive', name: 'WD-1' }, sc = { comps: [ok, odd] };
+  assert.deepEqual(setAsideUnknown(sc), ['WD-1 (warpdrive)']); assert.deepEqual(sc.comps, [ok]); assert.deepEqual(sc.setAside, [odd], 'kept in the save');
+  assert.deepEqual(setAsideUnknown(sc), ['WD-1 (warpdrive)'], 'loading again: still aside'); assert.equal(sc.comps.length, 1);
+  odd.type = 'rw'; assert.deepEqual(setAsideUnknown(sc), []); assert.deepEqual(sc.comps.map(c => c.id), ['a', 'b'], 'back, at the end'); assert.equal('setAside' in sc, false);
+  // junk: not arrays, not objects
+  const j = { comps: [null, 3], setAside: {} }; assert.deepEqual(setAsideUnknown(j), []); assert.deepEqual(j.comps, []);
+  assert.deepEqual(setAsideUnknown({ comps: 'x', setAside: [{ name: 'Z' }] }), ['Z (no type)']);
+});
+
+test('saves: migrate sets aside unknown parts of the flown and the library spacecraft, says which, and survives a save round trip (#108)', () => {
+  const s = defaultState(); migrate(s); const first = s.fleet.active; addSpacecraft(s, defaultSC(), 'B'); selectSpacecraft(s, first);
+  const sar = { id: 'x1', type: 'sar', name: 'SAR-1', pos: [0, 0, 1], q: { w: 1, x: 0, y: 0, z: 0 }, mass: 30 };
+  s.sc.comps.push({ ...sar }); s.fleet.items.find(i => i.name === 'B').sc.comps.push({ ...sar, id: 'x2' });
+  const n0 = s.sc.comps.length, back = JSON.parse(JSON.stringify(s)); LOAD_NOTES.length = 0; migrate(back);
+  assert.equal(back.sc.comps.length, n0 - 1); assert.deepEqual(back.sc.setAside.map(c => c.id), ['x1']);
+  assert.deepEqual(back.fleet.items.find(i => i.name === 'B').sc.setAside.map(c => c.id), ['x2']);
+  assert.equal(LOAD_NOTES.length, 2); assert.match(LOAD_NOTES[0], /flown .*SAR-1 \(sar\)/); assert.match(LOAD_NOTES[1], /Library spacecraft “B”/);
+  // saved again and loaded again: still aside, nothing lost
+  const again = JSON.parse(JSON.stringify(back)); LOAD_NOTES.length = 0; migrate(again); assert.deepEqual(again.sc.setAside.map(c => c.id), ['x1']); LOAD_NOTES.length = 0;
+});
+
+test('saves: a spacecraft file with set-aside parts is checked on import; a bad setAside can\'t stop the app (#108)', () => {
+  const base = () => JSON.parse(JSON.stringify(defaultSC()));
+  // known type in setAside: back among the parts, checked as any part
+  const a = base(); a.setAside = [{ type: 'rw', name: 'RW-X' }]; assert.throws(() => sanitizeSpacecraft(a), /RW-X.*pos/);
+  const b = base(), n = b.comps.length; b.setAside = [{ ...b.comps[0], id: 'zz', name: 'RW-back' }, { id: 'u', type: 'sar', name: 'SAR-1' }];
+  const sb = sanitizeSpacecraft(b); assert.equal(sb.comps.length, n + 1); assert.deepEqual(sb.setAside.map(c => c.type), ['sar']);
+  // not an array: dropped; and migrate on a state holding it doesn't throw
+  const c = base(); c.setAside = {}; assert.equal('setAside' in sanitizeSpacecraft(c), false);
+  const s = defaultState(); migrate(s); s.sc.setAside = {}; s.sc.comps = 'junk'; LOAD_NOTES.length = 0; assert.doesNotThrow(() => migrate(s)); assert.deepEqual(s.sc.comps, []); LOAD_NOTES.length = 0;
+});

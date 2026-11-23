@@ -2,9 +2,9 @@
  * App shell: creates the renderer and the three workspaces, wires tabs / keyboard / resize,
  * rebuilds the control rail, and runs the animation loop.
  */
-import { S, save } from './state/store.js';
-import { $, resetBindings, setCardMemory, syncAll, tickLive } from './ui/dom.js';
-import { closeModal } from './ui/overlay.js';
+import { LOAD_NOTES, S, save } from './state/store.js';
+import { $, h, resetBindings, setCardMemory, syncAll, tickLive } from './ui/dom.js';
+import { closeModal, showModal } from './ui/overlay.js';
 import { guardFileDrops } from './ui/files.js';
 import { showConventions } from './ui/conventions.js';
 import { VERSION } from './version.js';
@@ -83,5 +83,7 @@ export function startApp() {
   const start = S.tab; S.tab = 'rot'; VIEWS.rot.V.controls.enabled = false; setTab(start);
   requestAnimationFrame(loop);
 
+  // what loading the save set aside (state/store.js migrate)
+  if (LOAD_NOTES.length) showModal(h('div', null, h('h2', null, 'Some saved parts are set aside'), ...[...new Set(LOAD_NOTES)].map(t => h('p', null, t))));
   return { VIEWS, setTab, renderRail };
 }
