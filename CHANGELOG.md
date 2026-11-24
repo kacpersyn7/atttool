@@ -7,6 +7,10 @@ Every tagged version is downloadable as a single `AttTool.html` from [Releases](
 
 ### Added
 - **SAR antenna** (#11): a new part (Spacecraft Layout): a panel of a given length and height (a thin plate in the mass and inertia), a wavelength, an imaging range of incidence and a look side; its beam is λ/D wide and is drawn as a pyramid with the FOV cones. In the Orbit view, the ground it covers now and the strip it sweeps over ±10 min (Display: *SAR swath*); a *SAR* section in the view's box with its look side and angle, the swath's incidence (near and far edge) and width, and whether it can image (the swath within its imaging range); two timeline rows: when it can image (on one side of the ground track, within its imaging range), and when the target crosses its beam (counted while it can image). In nominal + offsets mode, *SAR look … Roll to it* rolls the spacecraft so it looks at a given angle from nadir on a given side. Geometry on a spherical Earth, tested against sin θᵢ = (r/Rₑ) sin θ.
+
+### Changed
+- **The scenario run is explicit** (#106): its own *Scenario run* card, with when it starts and ends (UTC; each automatic or typed, with *Now* to use the current time and *Auto*), its length, Loop and the progress. The start used to be implicit (the epoch, or the first change if earlier), and the end and Loop sat in the Time card, which now only holds the clock. The timeline shades the time outside the run and marks its start and end. ▶ Scenario plays the run; ▶ Play and the time slider are not limited to it. Scenario files keep the run's start (`runStart`).
+
 ### Fixed
 - **A save with a part of an unknown type no longer stops the app** (#108): opening a save from a version with a newer part type (such as a SAR antenna) failed with *can't access property "color", T is undefined*. Such parts are now set aside, kept in the save but not used, and a message says which; a version that knows the type brings them back.
 

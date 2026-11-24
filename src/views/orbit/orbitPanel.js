@@ -44,7 +44,6 @@ export function orbitPanel(ctx) {
   nowInput.addEventListener('blur', () => syncAll());
   onSync(() => { if (document.activeElement !== nowInput) showNow(); });
   out.push(card('Time', null,
-    ...scenarioRun(o),
     h('div', { class: 'row two' }, h('label', { for: 'now' }, 'Current time (UTC)'), nowInput),
     timeScrubber(o),
     h('div', { class: 'kv' }, h('dt', null, 'From the epoch'), h('dd', null, liveText(() => tPlus(o.t)))),
@@ -89,6 +88,7 @@ export function orbitPanel(ctx) {
   if (g.mode === 'inertial' && g !== o) modeCtl.push(
     note('This change keeps the attitude Rotation Lab had when it was made inertial (reference R = ECI). Set another one there, then take it here.'),
     h('div', { class: 'btns' }, h('button', { class: 'btn', onclick: () => { takeRotation(g, S.rot.q); save(); toast('Rotation Lab attitude taken'); } }, 'Take the Rotation Lab attitude')));
+  out.push(scenarioRunCard(o));
   out.push(scheduleCard(ctx, o));
   out.push(card('Attitude guidance', g === o ? null : liveText(() => 'change at ' + esc(showUTC(g.start))),
     sched.length ? h('p', { class: 'tip', style: 'margin:0' }, g === o ? 'Editing the initial settings, flown before the first change.' : 'Editing the change selected in Mode schedule.') : null,
@@ -155,34 +155,54 @@ function sarLookRow(g, ctx) {
     h('div', { class: 'btns', style: 'align-items:center' }, lookIn, h('span', { class: 'lbl' }, '° from nadir'), sideSeg, go));
 }
 
-/** Playing the whole scenario: Loop, the progress, and the scenario end (UTC, or automatic); ▶ Scenario is in the transport strip. */
-function scenarioRun(o) {
-  const end = dateInput('scEnd'), pending = h('span', { class: 'lbl', hidden: true }, 'Enter to apply · Esc to undo');
-  const shown = () => { end.value = formatEpoch(new Date(Math.floor(epochDate(o).getTime() / 1000 + scenarioSpan(o).end) * 1000)); pending.hidden = true; };
-  // like a change's start: a typed end applies on Enter or on leaving the field
-  const commit = () => {
-    if (pending.hidden) return; pending.hidden = true;
-    if (end.value === '') { o.end = ''; save(); } // cleared: automatic
-    else if (!validDate(end.value)) refused();
-    else if ((parseEpoch(end.value).getTime() - epochDate(o).getTime()) / 1000 <= scenarioSpan(o).start) toast('The end must be after the start of the scenario');
-    else { o.end = end.value; save(); }
-    shown(); syncAll();
+/**
+ * The scenario run, its own card: when it starts and ends (UTC; each automatic or typed), its length, Loop and the
+ * progress. ▶ Scenario (the strip above the plots) plays it; the timeline shades the time outside it. Playing and
+ * the time slider stay free.
+ */
+function scenarioRunCard(o) {
+  // a typed end the start has moved past is ignored (the end is automatic): drop it, and say so, so it can't come back later
+  const endStillAfter = () => { if (validDate(o.end) && scenarioSpan(o).auto) { o.end = ''; toast('The end was before the new start: it is automatic now'); } };
+  // a typed date applies on Enter or on leaving the field, as a change's start; Esc undoes it; '' is automatic
+  const field = (id, key, isStart) => {
+    const inp = dateInput(id), pending = h('span', { class: 'lbl', hidden: true }, 'Enter to apply · Esc to undo');
+    const shown = () => { const sp = scenarioSpan(o); inp.value = formatEpoch(new Date(Math.floor(epochDate(o).getTime() / 1000 + (isStart ? sp.start : sp.end)) * 1000)); pending.hidden = true; };
+    const set = val => {
+      if (val === '') { o[key] = ''; save(); return; }
+      if (!validDate(val)) { refused(); return; }
+      const t = (parseEpoch(val).getTime() - epochDate(o).getTime()) / 1000, sp = scenarioSpan(o);
+      if (isStart && !sp.auto && t >= sp.end) { toast('The start must be before the end of the run'); return; }
+      if (!isStart && t <= sp.start) { toast('The end must be after the start of the run'); return; }
+      o[key] = val; endStillAfter(); save();
+    };
+    const commit = () => { if (pending.hidden) return; set(inp.value); shown(); syncAll(); };
+    inp.addEventListener('input', () => { pending.hidden = false; });
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); commit(); } else if (e.key === 'Escape') { e.preventDefault(); shown(); } });
+    inp.addEventListener('blur', commit);
+    onSync(() => { if (document.activeElement !== inp) shown(); });
+    // End = Now while the run plays: it ends here, so pause here
+    const now = h('button', { class: 'btn', title: `${isStart ? 'Start' : 'End'} the run at the current time`, onclick: () => {
+      const was = o[key]; set(formatEpoch(new Date(Math.floor(currentDate(o).getTime() / 1000) * 1000)));
+      if (!isStart && o.run && o[key] !== was) { o.run = false; o.playing = false; save(); }
+      syncAll(); } }, 'Now');
+    const auto = h('button', { class: 'btn', title: isStart ? 'Start at the epoch, or at the first change if that is earlier' : 'End when the last change has finished its slew, plus 5 min (one orbit from the start without a schedule, or when the schedule has played out before the start)', onclick: () => { o[key] = ''; if (isStart) endStillAfter(); save(); syncAll(); } }, 'Auto');
+    const how = liveText(() => { const sp = scenarioSpan(o);
+      if (isStart) return sp.startAuto ? `automatic: ${sp.autoStart < 0 ? 'the first change' : 'the epoch'}` : 'set by hand';
+      // a typed end the start has moved past (a schedule or epoch edit, a file) is kept, but ignored: say so
+      return sp.auto ? `automatic: ${sp.autoOrbit ? 'one orbit' : 'the last change + 5 min'}${validDate(o.end) ? ' (the end set is before the start)' : ''}` : 'set by hand'; }, 'lbl');
+    return [h('div', { class: 'row two' }, h('label', { for: id }, isStart ? 'Starts (UTC)' : 'Ends (UTC)'), inp),
+      h('div', { style: 'display:flex;justify-content:space-between;align-items:center;gap:8px' }, how, h('span', { style: 'display:flex;gap:6px' }, now, auto)), pending];
   };
-  end.addEventListener('input', () => { pending.hidden = false; });
-  end.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); commit(); } else if (e.key === 'Escape') { e.preventDefault(); shown(); } });
-  end.addEventListener('blur', commit);
-  onSync(() => { if (document.activeElement !== end) shown(); });
-  const autoBtn = h('button', { class: 'btn', title: 'End when the last change has finished its slew, plus 5 min (one orbit without a schedule)', onclick: () => { o.end = ''; save(); syncAll(); } }, 'Auto');
-  return [
-    h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, h('span', { class: 'lbl', title: '▶ Scenario is in the strip above the plots' }, 'Scenario run'),
+  const length = () => { const sp = scenarioSpan(o), s = Math.max(0, Math.round(sp.end - sp.start)), d = Math.floor(s / 86400), hr = Math.floor(s % 86400 / 3600), mi = Math.floor(s % 3600 / 60);
+    return (d ? d + ' d ' : '') + (d || hr ? hr + ' h ' : '') + mi + ' min'; };
+  return card('Scenario run', liveText(length),
+    ...field('runStart', 'runStart', true), ...field('scEnd', 'end', false),
+    h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' },
       check('runLoop', 'Loop', () => !!o.runLoop, v => { o.runLoop = v; save(); }),
-      liveText(() => { const p = runProgress(o); return p === null ? '' : `<span class="lbl">Scenario · ${(100 * p).toFixed(0)} %</span>`; })),
-    liveText(() => { const p = runProgress(o); return p === null ? '' : `<div class="runbar"><span style="width:${(100 * p).toFixed(1)}%"></span></div>`; }),
-    h('div', { class: 'row two' }, h('label', { for: 'scEnd' }, 'Scenario ends (UTC)'), end),
-    h('div', { style: 'display:flex;justify-content:space-between;align-items:center;gap:8px' }, pending,
-      liveText(() => { const sp = scenarioSpan(o); return sp.auto ? `automatic: ${(o.schedule || []).length ? 'the last change + 5 min' : 'one orbit'}` : 'set by hand'; }, 'lbl'),
-      autoBtn),
-  ];
+      liveText(() => { const p = runProgress(o); return `<span class="lbl">${p === null ? 'Not playing the run' : `Playing the run · ${(100 * p).toFixed(0)} %`}</span>`; })),
+    // always there, empty when no run plays: the card keeps its height
+    liveText(() => { const p = runProgress(o); return `<div class="runbar"><span style="width:${p === null ? 0 : (100 * p).toFixed(1)}%"></span></div>`; }),
+    note('<b>▶ Scenario</b>, in the strip above the plots, plays the run from its start to its end, then pauses (or loops). The timeline shades the time outside it; ▶ Play and the time slider are not limited to it.'));
 }
 
 /** The slew to and from a ground target (s), for the settings g being edited. */

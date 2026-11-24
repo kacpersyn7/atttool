@@ -6,7 +6,7 @@
 import { S, save, scVersion } from '../../state/store.js';
 import { syncAll } from '../../ui/dom.js';
 import { clampTime, epochDate, formatEpoch } from '../../sim/scenario.js';
-import { changeAtTime, startNear } from '../../sim/schedule.js';
+import { changeAtTime, scenarioSpan, startNear } from '../../sim/schedule.js';
 import { computeTimeline } from '../../sim/timeline.js';
 
 const LEFT = 112, RIGHT = 52; // px reserved for row names / percentages
@@ -24,8 +24,16 @@ export function createTimelineView(tlc, band = {}) {
     const x = tlc.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0); x.clearRect(0, 0, W, Hh);
     const L = LEFT, w = W - LEFT - RIGHT;
     x.font = '500 11px "JetBrains Mono", monospace'; x.textBaseline = 'middle';
-    x.fillStyle = '#8697ae'; x.fillText('One orbit · ' + (tl.T / 60).toFixed(1) + ' min', 0, 7);
-    for (let m = 10; m <= tl.T / 60; m += 10) { const px = L + m * 60 / tl.T * w; x.fillStyle = '#26375080'; x.fillRect(px, top - 2, 1, Hh - top); x.fillStyle = '#5d6e86'; x.textAlign = 'center'; x.fillText(m + 'm', px, 7); x.textAlign = 'left'; }
+    const head = 'One orbit · ' + (tl.T / 60).toFixed(1) + ' min', headW = x.measureText(head).width;
+    x.fillStyle = '#8697ae'; x.fillText(head, 0, 7);
+    // the scenario run (▶ Scenario plays it): where its start and end tags go on this page; a minute label they would cover is left out
+    const sp = scenarioSpan(S.orbit), xs = t => L + (t - tl.W0) / tl.T * w, clip = v => Math.max(L, Math.min(L + w, v));
+    x.font = '600 10px "JetBrains Mono", monospace';
+    const tags = [[sp.start, 'run ▸', true], [sp.end, '◂ end', false]].map(([t, lb, right]) => { const px = xs(t); if (px < L || px > L + w) return null;
+      const lw = x.measureText(lb).width, lx = right ? Math.min(px + 2, L + w - lw - 4) : Math.max(px - lw - 6, L); return { px, lb, lx, x1: lx + lw + 4 }; }).filter(Boolean);
+    x.font = '500 11px "JetBrains Mono", monospace';
+    const covered = (px, tw) => tags.some(g => px + tw / 2 + 2 > g.lx && px - tw / 2 - 2 < g.x1);
+    for (let m = 10; m <= tl.T / 60; m += 10) { const px = L + m * 60 / tl.T * w; x.fillStyle = '#26375080'; x.fillRect(px, top - 2, 1, Hh - top); x.fillStyle = '#5d6e86'; x.textAlign = 'center'; if (!covered(px, x.measureText(m + 'm').width)) x.fillText(m + 'm', px, 7); x.textAlign = 'left'; }
     tl.rows.forEach((r, i) => {
       const y = top + i * rowH; x.fillStyle = '#c8d3e2'; x.fillText(r.name.length > 15 ? r.name.slice(0, 14) + '…' : r.name, 0, y + rowH / 2);
       x.fillStyle = '#162232'; x.fillRect(L, y + 2, w, rowH - 4);
@@ -51,6 +59,13 @@ export function createTimelineView(tlc, band = {}) {
       }
       x.fillStyle = '#8697ae'; x.textAlign = 'right'; x.fillText(tl.stats[i] === null ? '' : typeof tl.stats[i] === 'string' ? tl.stats[i] : tl.stats[i].toFixed(0) + '%', W, y + rowH / 2); x.textAlign = 'left';
     });
+    // the time outside the run shaded, its start and end marked
+    const a = clip(xs(sp.start)), b = clip(xs(sp.end));
+    x.fillStyle = 'rgba(5,8,13,.62)'; if (a > L) x.fillRect(L, top, a - L, Hh - top); if (b < L + w) x.fillRect(b, top, L + w - b, Hh - top);
+    x.font = '600 10px "JetBrains Mono", monospace';
+    // a tag over the header (a run starting at the page's left edge) is left out: its line marks it
+    for (const g of tags) { x.fillStyle = '#f2a93b'; x.fillRect(g.px - .75, top - 2, 1.5, Hh - top + 2); if (g.lx < headW + 4) continue; x.fillStyle = '#0a1018e0'; x.fillRect(g.lx, 1, g.x1 - g.lx, 12); x.fillStyle = '#f2a93b'; x.fillText(g.lb, g.lx + 2, 7); }
+    x.font = '500 11px "JetBrains Mono", monospace';
     const cx = L + ((S.orbit.t - tl.W0) / tl.T) * w; x.fillStyle = '#ffffff'; x.fillRect(cx - 1, top - 4, 2, Hh - top + 4);
     const bi = tl.rows.findIndex(r => r.kind === 'mode'); geom = bi < 0 ? null : { L, w, y0: top + bi * rowH, y1: top + (bi + 1) * rowH };
     if (drag && drag.id && drag.moved && geom) { // the start being dragged, and its time

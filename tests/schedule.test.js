@@ -367,6 +367,39 @@ test('scenario span: automatic end after the last slew + 5 min, one orbit withou
   o.end = ''; o.schedule = [{ id: 'early', start: at(s, -3000), slew: 0, mode: 'sun' }]; close(scenarioSpan(o).start, -3000, 1e-6, 'starts at a change before the epoch');
 });
 
+test('scenario run: a typed start wins over the automatic one; the automatic end stays after it; old saves and files have none', () => {
+  const s = fresh(), o = s.orbit, T = 2 * Math.PI * Math.sqrt(orbitElements(o).a ** 3 / 398600.4418);
+  assert.equal(o.runStart, '', 'automatic by default');
+  o.schedule = [{ id: 'a', start: at(s, 600), slew: 60, mode: 'sun' }];
+  let sp = scenarioSpan(o); assert.equal(sp.startAuto, true); assert.equal(sp.start, 0); assert.equal(sp.autoOrbit, false); close(sp.end, 600 + 60 + AUTO_END_MARGIN, 1e-6);
+  o.runStart = at(s, 300); sp = scenarioSpan(o); assert.equal(sp.startAuto, false); close(sp.start, 300, 1e-6); assert.equal(sp.autoStart, 0); close(sp.end, 960, 1e-6, 'the end still follows the schedule');
+  // a start after the schedule has played out (less than 5 min of it left): one orbit from the start, never a run of seconds
+  o.runStart = at(s, 5000); sp = scenarioSpan(o); close(sp.start, 5000, 1e-6); assert.equal(sp.autoOrbit, true); close(sp.end, 5000 + T, 1e-6);
+  o.runStart = at(s, 900); sp = scenarioSpan(o); assert.equal(sp.autoOrbit, true, '60 s of it left'); close(sp.end, 900 + T, 1e-6);
+  o.runStart = at(s, 960 - AUTO_END_MARGIN); sp = scenarioSpan(o); assert.equal(sp.autoOrbit, false, 'exactly 5 min left'); close(sp.end, 960, 1e-6);
+  // without a schedule: one orbit from the typed start; a typed end before it is ignored (automatic)
+  o.schedule = []; o.runStart = at(s, -1200); sp = scenarioSpan(o); close(sp.start, -1200, 1e-6, 'before the epoch too'); close(sp.end, -1200 + T, 1e-6);
+  o.end = at(s, -1500); assert.equal(scenarioSpan(o).auto, true); o.end = at(s, -1200); assert.equal(scenarioSpan(o).auto, true, 'at the start: automatic');
+  o.end = at(s, 0); assert.equal(scenarioSpan(o).auto, false);
+  o.runStart = 'soon'; assert.equal(scenarioSpan(o).startAuto, true, 'not a date: automatic');
+  // ▶ Scenario starts at the typed start
+  o.runStart = at(s, 300); o.end = ''; o.schedule = [{ id: 'a', start: at(s, 600), slew: 60, mode: 'sun' }]; o.t = 4000; startRun(o); close(o.t, 300, 1e-6);
+});
+
+test('scenario run with a start after the epoch: progress, Loop and playing backwards count from it; scenario files keep it', () => {
+  const s = fresh(), o = s.orbit; o.runStart = at(s, 1000); o.end = at(s, 3000); o.schedule = [];
+  startRun(o); close(o.t, 1000, 1e-6); assert.equal(runProgress(o), 0);
+  o.t = 2000; close(runProgress(o), 0.5, 1e-9, 'halfway');
+  o.runLoop = true; let t0 = 2990; o.t = 3010; assert.equal(runStep(o, t0), true); close(o.t, 1000, 1e-6, 'loops back to the typed start');
+  o.runLoop = false; o.dir = -1; o.playing = true; t0 = 1010; o.t = 990; assert.equal(runStep(o, t0), true); close(o.t, 1000, 1e-6, 'backwards: stops at the typed start');
+  assert.equal(o.playing, false); assert.equal(o.run, false); o.dir = 1;
+  // a file: kept on import; not a date: the default (automatic), and the import says so
+  const j = JSON.parse(JSON.stringify(exportScenario(s))); assert.equal(j.orbit.runStart, at(s, 1000));
+  const t = fresh(); importScenario(t, j, scenarioData(defaultState().orbit)); assert.equal(t.orbit.runStart, at(s, 1000));
+  j.orbit.runStart = 'soon'; const u = fresh(), rep = importScenario(u, j, scenarioData(defaultState().orbit)); assert.equal(u.orbit.runStart, '');
+  assert.match(JSON.stringify(rep), /scenario run start/);
+});
+
 test('scenario run: starts at the start, stops at the end (or loops) when a playback step reaches it', () => {
   const s = fresh(), o = s.orbit; o.schedule = [{ id: 'a', start: at(s, 600), slew: 60, mode: 'sun' }]; o.t = 5000; o.playing = false;
   startRun(o); assert.equal(o.t, 0); assert.equal(o.run, true); assert.equal(o.playing, true); assert.equal(runProgress(o), 0);
