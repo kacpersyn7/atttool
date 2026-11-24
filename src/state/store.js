@@ -18,7 +18,7 @@ import { ensureFleet } from '../spacecraft/library.js';
 import { ensureScenarios, scenarioData, fillChanges } from '../sim/scenarioLibrary.js';
 import { normalizeBus, convertLegacyFrame } from '../spacecraft/bus.js';
 import { defaultAlign } from '../spacecraft/alignment.js';
-import { fillParams, cleanMaxRate } from '../spacecraft/component.js';
+import { fillParams, cleanMaxRate, setAsideUnknown } from '../spacecraft/component.js';
 import { EPOCH0 } from '../sim/scenario.js';
 
 export const STORAGE_KEY = 'atttool.v1';
@@ -31,7 +31,7 @@ export function defaultState() {
     orbit: {
       preset: 'sso1030', def: 'elements', r: null, v: null, tle: '', epoch: EPOCH0, hp: 550, ha: 550, i: 97.59, raan: 0, argp: 0, nu0: 0, j2: true, t: 0, playing: true, speed: 60, dir: 1, page: null, scrub: 'orbit', schedule: [], runStart: '', end: '', run: false, runLoop: false,
       mode: 'offsets', refFrame: 'vvlh', roll: 0, pitch: 0, yaw: 0, sunAxis: '-Z', sunSec: 'nadir', sunSecAxis: '+X', tgtLat: 52.23, tgtLon: 21.01, tgtAlt: 0, tgtSlew: 60, rgtR: 143, rgtD: 10, rgtLtan: 22.5, rgtLon: 0, defs: {}, defFrom: '', rvOsc: true, tgtComp: '',
-      show: { eci: true, orbFrame: true, track: true, sunv: true, moonv: true, bv: true, cones: true, follow: false, plView: true, plBorders: true, plCities: true }, scale: 1.0,
+      show: { eci: true, orbFrame: true, track: true, sunv: true, moonv: true, bv: true, cones: true, sar: true, follow: false, plView: true, plBorders: true, plCities: true }, scale: 1.0,
       plot: { sigs: [], win: 'orbit', comma: null, dockH: null, collapsed: false },
     },
     layout: { sel: null, gizmo: 'translate', oriTab: 'ypr', dcmDir: 0, alignDcmDir: 0, imp: { dir: 'CS', order: 'first', fix: true }, view: '3d', table: { sort: '', dir: 1, type: 'all', q: '', comma: null }, show: { cones: true, excl: false, labels: true, bus: 0.55, principal: false, com: true, orbitDirs: true } },
@@ -57,6 +57,12 @@ function load() {
   return s;
 }
 
+/**
+ * What loading the save did that the user should hear about (filled by migrate; app.js shows it at start).
+ * An array mutated in place, never reassigned (the bundle has no live bindings).
+ */
+export const LOAD_NOTES = [];
+
 /** Upgrade saves from older versions in place. */
 export function migrate(s) {
   // v0.2 -> v0.3: the old "LVLH" frame is STK's VVLH; nadir mode became the generic "offsets" mode
@@ -65,9 +71,13 @@ export function migrate(s) {
   // the spacecraft. The old offsets mode flew SCF = selected orbital frame, so start from that.
   // v0.7: the spacecraft library; a save with one spacecraft becomes a library of one
   const f = ensureFleet(s);
-  for (const sc of [s.sc, ...f.items.map(i => i.sc).filter(Boolean)]) {
+  const named = [{ sc: s.sc, name: (f.items.find(i => i.id === f.active) || {}).name, active: true }, ...f.items.filter(i => i.sc).map(i => ({ sc: i.sc, name: i.name }))];
+  for (const { sc, name, active } of named) {
     normalizeBus(sc.bus); convertLegacyFrame(sc);
     if (!sc.align) sc.align = defaultAlign(s.orbit.refFrame || 'vvlh');
+    // parts of a type this version doesn't know: set aside, and said
+    const away = setAsideUnknown(sc);
+    if (away.length) LOAD_NOTES.push(`${active ? 'The spacecraft flown' : 'Library spacecraft'}${name ? ' “' + name + '”' : ''}: ${away.join(', ')}. This version doesn't know ${away.length === 1 ? 'this part\'s type' : 'these parts\' types'}, so ${away.length === 1 ? 'it is' : 'they are'} set aside: kept in the save, but not used. A version that knows the type brings ${away.length === 1 ? 'it' : 'them'} back; settings that pointed with ${away.length === 1 ? 'it' : 'them'} (a pointing axis, a Sun axis) use their defaults meanwhile.`);
     // v0.6: new type parameters (e.g. the star tracker's moonExcl) for parts saved before they existed
     (sc.comps || []).forEach(fillParams);
     // #57: a maximum slew rate for the schedule's automatic slew times
